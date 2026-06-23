@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model LoaImport {
+  id          String         @id @default(cuid())
+  fileName    String
+  recordCount Int
+  totalValue  Decimal        @db.Decimal(18, 2)
+  createdAt   DateTime       @default(now())
+  records     BudgetRecord[]
+}
+
+model BudgetRecord {
+  id                    BigInt    @id @default(autoincrement())
+  importId              String
+  import                 LoaImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  organ                  String
+  budgetUnit             String
+  functionName           String
+  subfunction            String
+  program                String
+  action                  String
+  expenseNature           String
+  subelement              String
+  administrativeProcess   String
+  value                   Decimal  @db.Decimal(18, 2)
+  createdAt               DateTime @default(now())
+
+  @@index([organ])
+  @@index([budgetUnit])
+  @@index([functionName])
+  @@index([subfunction])
+  @@index([program])
+  @@index([action])
+  @@index([expenseNature])
+  @@index([subelement])
+  @@index([administrativeProcess])
+  @@index([value])
+  @@index([importId])
+}

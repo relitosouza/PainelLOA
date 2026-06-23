@@ -1,0 +1,4 @@
+export function SettingsView() {
+  return <><header className="page-heading"><div><p className="eyebrow">Administração</p><h1>Configurações</h1><p>Identidade visual e parâmetros gerais do Visualizador da LOA.</p></div></header><section className="panel expectations"><h2>Identidade da Prefeitura</h2><p className="panel-caption">A interface está preparada para receber o brasão e a paleta oficial.</p><div className="import-summary"><div className="import-stat"><span>Brasão oficial</span><strong>Pendente</strong></div><div className="import-stat"><span>Cor principal</span><strong>#102C3F</strong></div><div className="import-stat"><span>Cor de destaque</span><strong>#137554</strong></div></div><p className="panel-caption">Envie o arquivo PNG/SVG do brasão e os códigos HEX para substituir estes valores provisórios.</p></section></>;
+}
+
