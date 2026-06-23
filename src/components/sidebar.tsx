@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const NAVIGATION = [
   ["dashboard", "▦", "Dashboard LOA"],
+  ["apresentacao", "◫", "Apresentação Executiva"],
   ["importacao", "⇧", "Importação de Dados"],
   ["orgaos", "◆", "Órgãos / Secretarias"],
   ["unidades", "□", "Unidades Orçamentárias"],
@@ -23,8 +24,8 @@ export function Sidebar({ view, collapsed, mobileOpen, onToggle }: { view: strin
         <div className="nav-section">Visão executiva</div>
         {NAVIGATION.map(([path, icon, label], index) => (
           <div key={path}>
-            {index === 2 && <div className="nav-section">Análises</div>}
-            {index === 10 && <div className="nav-section">Administração</div>}
+            {index === 3 && <div className="nav-section">Análises</div>}
+            {index === 11 && <div className="nav-section">Administração</div>}
             <Link href={path === "dashboard" ? "/" : `/${path}`} className={`nav-link ${view === path ? "active" : ""}`} title={collapsed ? label : undefined}>
               <span className="nav-icon" aria-hidden="true">{icon}</span><span>{label}</span>
             </Link>
@@ -35,4 +36,3 @@ export function Sidebar({ view, collapsed, mobileOpen, onToggle }: { view: strin
     </aside>
   );
 }
-

@@ -10,7 +10,7 @@ import { currency, integer, percent } from "@/lib/format";
 import { FIELDS, type DashboardData, type FieldKey } from "@/types/loa";
 
 const EMPTY_DATA: DashboardData = {
-  hasData: false, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 },
+  hasData: false, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 }, spending: { operating: 0, investment: 0 },
   counts: { organs: 0, units: 0, functions: 0, programs: 0, actions: 0, processes: 0 },
   groups: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["groups"],
   filterOptions: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["filterOptions"],
@@ -42,9 +42,18 @@ function MetricCard({ label, value, note, primary }: { label: string; value: str
   return <article className={`metric-card ${primary ? "primary" : ""}`}><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-note">{note}</div></article>;
 }
 
-function CeilingCard({ type, selected, value, loa }: { type: "organ" | "unit"; selected: string[]; value: number; loa: number }) {
-  const isOrgan = type === "organ";
-  return <article className={`ceiling-card ${isOrgan ? "" : "unit"}`}><h2 className="ceiling-title">Valor Teto {isOrgan ? "do Órgão / Secretaria" : "da Unidade Orçamentária"}</h2>{selected.length ? <><div className="ceiling-name">{selected.length === 1 ? selected[0] : `${selected.length} ${isOrgan ? "órgãos selecionados" : "unidades selecionadas"}`}</div><div className="ceiling-value">{currency.format(value)}</div><div className="ceiling-share">Participação na LOA: {percent.format(loa ? value / loa : 0)}</div></> : <p className="ceiling-empty">Selecione {isOrgan ? "um Órgão ou Secretaria" : "uma Unidade Orçamentária"} para visualizar o teto {isOrgan ? "orçamentário" : "da unidade"}.</p>}<span className="ceiling-watermark" aria-hidden="true">{isOrgan ? "◆" : "□"}</span></article>;
+function ExecutiveInsights({ data }: { data: DashboardData }) {
+  const largestProcess = data.groups.administrativeProcess.find((item) => item.label.trim());
+  const concentratedOrgan = data.groups.organ.find((item) => item.label.trim());
+  const topProgram = data.groups.program.find((item) => item.label.trim());
+  const operatingShare = data.totals.filtered ? data.spending.operating / data.totals.filtered : 0;
+  const investmentShare = data.totals.filtered ? data.spending.investment / data.totals.filtered : 0;
+  return <section className="insight-grid" aria-label="Perguntas executivas">
+    <article className="insight-card"><span className="insight-number">01</span><h2>Onde estão os maiores contratos e processos?</h2><p className="insight-label">Maior processo administrativo</p><strong className="insight-value">{currency.format(largestProcess?.value ?? 0)}</strong><p className="insight-name">{largestProcess?.label || "Não informado"}</p></article>
+    <article className="insight-card"><span className="insight-number">02</span><h2>Onde está concentrado o orçamento?</h2><p className="insight-label">Órgão com maior participação</p><strong className="insight-value">{currency.format(concentratedOrgan?.value ?? 0)}</strong><p className="insight-name">{concentratedOrgan?.label || "Não informado"}</p><span className="insight-share">{percent.format(data.totals.filtered ? (concentratedOrgan?.value ?? 0) / data.totals.filtered : 0)} do valor filtrado</span></article>
+    <article className="insight-card"><span className="insight-number">03</span><h2>Quanto está reservado para custeio e investimento?</h2><div className="spending-values"><div><p className="insight-label">Custeio / correntes</p><strong>{currency.format(data.spending.operating)}</strong><span>{percent.format(operatingShare)}</span></div><div><p className="insight-label">Investimento / capital</p><strong>{currency.format(data.spending.investment)}</strong><span>{percent.format(investmentShare)}</span></div></div></article>
+    <article className="insight-card"><span className="insight-number">04</span><h2>Quais programas consomem mais recursos?</h2><p className="insight-label">Programa com maior orçamento</p><strong className="insight-value">{currency.format(topProgram?.value ?? 0)}</strong><p className="insight-name">{topProgram?.label || "Não informado"}</p><span className="insight-share">{percent.format(data.totals.filtered ? (topProgram?.value ?? 0) / data.totals.filtered : 0)} do valor filtrado</span></article>
+  </section>;
 }
 
 export function DashboardView({ view }: { view: string }) {
@@ -77,8 +86,6 @@ export function DashboardView({ view }: { view: string }) {
 
   function updateFilters(next: FilterState) { setFilters(next); setPage(1); }
   function updateSort(field: FieldKey | "value") { if (sort === field) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(field); setDirection("asc"); } setPage(1); }
-  const organCeiling = data.groups.organ.filter((item) => filters.organ.includes(item.label)).reduce((sum, item) => sum + item.value, 0);
-  const unitCeiling = data.groups.budgetUnit.filter((item) => filters.budgetUnit.includes(item.label)).reduce((sum, item) => sum + item.value, 0);
   const [title, subtitle] = VIEW_TITLES[view] ?? VIEW_TITLES.dashboard;
 
   return (
@@ -97,10 +104,8 @@ export function DashboardView({ view }: { view: string }) {
           <MetricCard label="Ações" value={integer.format(data.counts.actions)} note="Projetos e atividades" />
           <MetricCard label="Processos Administrativos" value={integer.format(data.counts.processes)} note="Processos vinculados" />
         </section>
-        <section className="ceiling-grid"><CeilingCard type="organ" selected={filters.organ} value={organCeiling} loa={data.totals.loa} /><CeilingCard type="unit" selected={filters.budgetUnit} value={unitCeiling} loa={data.totals.loa} /></section>
+        <ExecutiveInsights data={data} />
         <section className="charts-grid" aria-label="Gráficos orçamentários">
-          <BarChart title="Orçamento por Órgão" subtitle="Maiores participações" data={data.groups.organ} />
-          <BarChart title="Orçamento por Unidade" subtitle="Unidades com maior teto" data={data.groups.budgetUnit} />
           <BarChart title="Orçamento por Função" subtitle="Distribuição funcional" data={data.groups.functionName} />
           <BarChart title="Orçamento por Subfunção" subtitle="Principais subfunções" data={data.groups.subfunction} />
           <BarChart title="Orçamento por Programa" subtitle="Ranking de programas" data={data.groups.program} />
@@ -115,4 +120,3 @@ export function DashboardView({ view }: { view: string }) {
     </>
   );
 }
-

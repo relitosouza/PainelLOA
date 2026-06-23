@@ -20,6 +20,10 @@ function buildWhere(params: URLSearchParams): Prisma.BudgetRecordWhereInput {
   return AND.length ? { AND } : {};
 }
 
+function withExpensePrefix(where: Prisma.BudgetRecordWhereInput, prefix: string): Prisma.BudgetRecordWhereInput {
+  return { AND: [where, { expenseNature: { startsWith: prefix } }] };
+}
+
 type RawGroup = Record<string, unknown> & { _sum: { value: { toNumber(): number } | null }; _count: { _all: number } };
 
 function normalizeGroups(rows: unknown, field: FieldKey): GroupTotal[] {
@@ -62,10 +66,12 @@ export async function GET(request: Request) {
     const where = buildWhere(params);
     const select = Object.fromEntries(FIELDS.map((field) => [field, true])) as Record<FieldKey, true>;
 
-    const [totalRecords, filteredValue, loaValue, records, optionRows, groups, organs, units, functions, programs, actions, processes] = await Promise.all([
+    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRows, groups, organs, units, functions, programs, actions, processes] = await Promise.all([
       db.budgetRecord.count({ where }),
       db.budgetRecord.aggregate({ where, _sum: { value: true } }),
       db.budgetRecord.aggregate({ _sum: { value: true } }),
+      db.budgetRecord.aggregate({ where: withExpensePrefix(where, "3"), _sum: { value: true } }),
+      db.budgetRecord.aggregate({ where: withExpensePrefix(where, "4"), _sum: { value: true } }),
       db.budgetRecord.findMany({ where, select: { id: true, ...select, value: true }, orderBy: { [sort]: direction }, skip: (page - 1) * pageSize, take: pageSize }),
       db.budgetRecord.findMany({ where, select, distinct: [...FIELDS], take: 5000 }),
       Promise.all(FIELDS.map((field) => groupBy(field, where))),
@@ -83,6 +89,7 @@ export async function GET(request: Request) {
       records: records.map((record) => ({ ...record, id: record.id.toString(), value: record.value.toNumber() })),
       pagination: { page, pageSize, total: totalRecords, pages: Math.max(1, Math.ceil(totalRecords / pageSize)) },
       totals: { loa: loaValue._sum.value?.toNumber() ?? 0, filtered: filteredValue._sum.value?.toNumber() ?? 0 },
+      spending: { operating: operatingValue._sum.value?.toNumber() ?? 0, investment: investmentValue._sum.value?.toNumber() ?? 0 },
       counts: { organs, units, functions, programs, actions, processes },
       groups: Object.fromEntries(FIELDS.map((field, index) => [field, groups[index]])),
       filterOptions,

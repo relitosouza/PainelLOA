@@ -10,8 +10,8 @@ export type DashboardData = {
   records: Array<BudgetRow & { id: string }>;
   pagination: { page: number; pageSize: number; total: number; pages: number };
   totals: { loa: number; filtered: number };
+  spending: { operating: number; investment: number };
   counts: Record<"organs" | "units" | "functions" | "programs" | "actions" | "processes", number>;
   groups: Record<FieldKey, GroupTotal[]>;
   filterOptions: Record<FieldKey, string[]>;
 };
-
