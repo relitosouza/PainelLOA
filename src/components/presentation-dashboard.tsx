@@ -34,7 +34,8 @@ export function PresentationDashboard() {
     const processes = groupPresentation(records, "process");
     const topFunctions = functions.slice(0, 3);
     const others = Math.max(0, total - topFunctions.reduce((sum, item) => sum + item.value, 0));
-    return { total, operating, investment: total - operating, functions, units, programs, processes, donutValues: [...topFunctions.map((item) => item.value), others] };
+    const totalRecords = records.length;
+    return { total, operating, investment: total - operating, functions, units, programs, processes, donutValues: [...topFunctions.map((item) => item.value), others], totalRecords };
   }, [secretariat, year]);
 
   const previousTotal = useMemo(() => getPresentationRecords(2026).filter((record) => !secretariat || record.secretariat === secretariat).reduce((sum, record) => sum + record.value, 0), [secretariat]);
@@ -68,7 +69,19 @@ export function PresentationDashboard() {
         <header className="presentation-header"><div><p>Painel de decisão</p><h1>Dashboard Executivo da LOA</h1><span>Visão sintética do orçamento municipal e dos programas prioritários.</span></div><div className="presentation-header-actions"><span>Exercício {year}</span><button onClick={() => void document.documentElement.requestFullscreen?.()}>⛶ Tela cheia</button></div></header>
 
         <section className="presentation-hero-grid" aria-label="Indicadores executivos">
-          <article className="presentation-total-card"><p>Valor Total da LOA</p><strong>{compactCurrency(summary.total)}</strong><span>{year === 2027 ? `${trend >= 0 ? "+" : ""}${percent.format(trend)} em relação a 2026` : "Base demonstrativa do exercício 2026"}</span></article>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <article className="presentation-total-card"><p>Valor Total da LOA</p><strong>{compactCurrency(summary.total)}</strong><span>{year === 2027 ? `${trend >= 0 ? "+" : ""}${percent.format(trend)} em relação a 2026` : "Base demonstrativa do exercício 2026"}</span></article>
+            <Link href="/transparente" className="presentation-card presentation-transparency-card" style={{ textDecoration: "none" }}>
+              <p>Portal de Transparência</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h2 style={{ margin: 0 }}>LOA Transparente</h2>
+                <span style={{ fontSize: 20, color: "var(--blue)" }}>↗</span>
+              </div>
+              <p style={{ marginTop: 8, marginBottom: 0 }}>
+                Acesse o portal da transparência pública para os cidadãos.
+              </p>
+            </Link>
+          </div>
           <article className="presentation-card presentation-concentration"><h2>Onde está concentrado o dinheiro do município?</h2><div>{concentration.map((item, index) => <div className="presentation-mini-bar" key={item.label}><p><span>{item.label}</span><strong>{percent.format(summary.total ? item.value / summary.total : 0)}</strong></p><div><span style={{ width: `${summary.total ? (item.value / summary.total) * 100 : 0}%`, opacity: 1 - index * .14 }} /></div></div>)}</div></article>
         </section>
 
