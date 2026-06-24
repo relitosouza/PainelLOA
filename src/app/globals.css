@@ -90,11 +90,12 @@ h1 { margin: 0; color: var(--navy); font-size: clamp(25px, 2.5vw, 36px); line-he
 .button:disabled { opacity: .55; cursor: wait; transform: none; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.budget-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metric-card { min-height: 132px; padding: 19px; background: white; border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow); }
 .metric-card.primary { color: white; background: var(--navy); border-color: var(--navy); }
 .metric-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .065em; }
 .primary .metric-label { color: #b9ccd3; }
-.metric-value { margin-top: 14px; color: var(--navy); font-size: clamp(22px, 2vw, 30px); font-weight: 750; letter-spacing: -.035em; white-space: nowrap; }
+.metric-value { margin-top: 14px; color: var(--navy); font-size: clamp(22px, 2vw, 30px); font-variant-numeric: tabular-nums; font-weight: 750; letter-spacing: -.035em; overflow-wrap: anywhere; }
 .primary .metric-value { color: white; }
 .metric-note { margin-top: 7px; color: #7a8a92; font-size: 11px; }
 .primary .metric-note { color: #a8c0c8; }

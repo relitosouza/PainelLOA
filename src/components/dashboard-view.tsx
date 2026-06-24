@@ -7,10 +7,12 @@ import { DataTable } from "./data-table";
 import { EMPTY_FILTERS, Filters, type FilterState } from "./filters";
 import { SummaryCards } from "./summary-cards";
 import { currency, integer, percent } from "@/lib/format";
+import { getSecretariatDemoRecords } from "@/lib/secretariat-data";
 import { FIELDS, type DashboardData, type FieldKey } from "@/types/loa";
 
 const EMPTY_DATA: DashboardData = {
   hasData: false, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 }, spending: { operating: 0, investment: 0 },
+  secretariatCeiling: null,
   counts: { organs: 0, units: 0, functions: 0, programs: 0, actions: 0, processes: 0 },
   groups: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["groups"],
   filterOptions: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["filterOptions"],
@@ -40,6 +42,49 @@ function buildQuery(filters: FilterState, page: number, sort: string, direction:
 
 function MetricCard({ label, value, note, primary }: { label: string; value: string; note: string; primary?: boolean }) {
   return <article className={`metric-card ${primary ? "primary" : ""}`}><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-note">{note}</div></article>;
+}
+
+function buildDemoDashboardData(): DashboardData {
+  const demoRecords = getSecretariatDemoRecords(2027);
+  const loa = demoRecords.reduce((sum, record) => sum + record.value, 0);
+  const organGroups = [...new Map(demoRecords.map((record) => [record.secretariat, demoRecords.filter((item) => item.secretariat === record.secretariat).reduce((sum, item) => sum + item.value, 0)])).entries()]
+    .map(([label, value]) => ({ label, value, count: demoRecords.filter((record) => record.secretariat === label).length }))
+    .sort((a, b) => b.value - a.value);
+  const grouped = (field: "unit" | "functionName" | "program" | "process" | "category") => [...new Map(demoRecords.map((record) => [record[field], demoRecords.filter((item) => item[field] === record[field]).reduce((sum, item) => sum + item.value, 0)])).entries()]
+    .map(([label, value]) => ({ label, value, count: demoRecords.filter((record) => record[field] === label).length }))
+    .sort((a, b) => b.value - a.value);
+  const rows = demoRecords.map((record, index) => ({ id: String(index + 1), organ: record.secretariat, budgetUnit: record.unit, functionName: record.functionName, subfunction: record.functionName, program: record.program, action: record.process, expenseNature: record.category === "operating" ? "3.3.90.39" : "4.4.90.51", subelement: record.category === "operating" ? "33" : "51", administrativeProcess: record.process, value: record.value }));
+  return {
+    hasData: true,
+    records: rows,
+    pagination: { page: 1, pageSize: 20, total: rows.length, pages: 1 },
+    totals: { loa, filtered: loa },
+    secretariatCeiling: organGroups[0] ?? null,
+    spending: {
+      operating: demoRecords.filter((record) => record.category === "operating").reduce((sum, record) => sum + record.value, 0),
+      investment: demoRecords.filter((record) => record.category === "investment").reduce((sum, record) => sum + record.value, 0),
+    },
+    counts: {
+      organs: organGroups.length,
+      units: new Set(demoRecords.map((record) => record.unit)).size,
+      functions: new Set(demoRecords.map((record) => record.functionName)).size,
+      programs: new Set(demoRecords.map((record) => record.program)).size,
+      actions: new Set(demoRecords.map((record) => record.process)).size,
+      processes: new Set(demoRecords.map((record) => record.process)).size,
+    },
+    groups: {
+      organ: organGroups,
+      budgetUnit: grouped("unit"),
+      functionName: grouped("functionName"),
+      subfunction: grouped("functionName"),
+      program: grouped("program"),
+      action: grouped("process"),
+      expenseNature: grouped("category"),
+      subelement: grouped("category"),
+      administrativeProcess: grouped("process"),
+    },
+    filterOptions: Object.fromEntries(FIELDS.map((field) => [field, [...new Set(demoRecords.flatMap((record) => [record.secretariat, record.unit, record.functionName, record.program, record.process]))].sort((a, b) => a.localeCompare(b, "pt-BR"))])) as DashboardData["filterOptions"],
+  };
 }
 
 function ExecutiveInsights({ data }: { data: DashboardData }) {
@@ -78,7 +123,12 @@ export function DashboardView({ view }: { view: string }) {
         setData(result);
         setOptions((current) => Object.fromEntries(FIELDS.map((field) => [field, [...new Set([...filters[field], ...result.filterOptions[field], ...(!filters[field].length ? [] : current[field])])].sort((a, b) => a.localeCompare(b, "pt-BR"))])) as unknown as DashboardData["filterOptions"]);
       } catch (reason) {
-        if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "Falha ao carregar o painel.");
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
+          const demoData = buildDemoDashboardData();
+          setError(reason instanceof Error ? reason.message : "Falha ao carregar o painel.");
+          setData(demoData);
+          setOptions(demoData.filterOptions);
+        }
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
@@ -92,10 +142,15 @@ export function DashboardView({ view }: { view: string }) {
     <>
       <header className="page-heading"><div><p className="eyebrow">Painel Executivo de Análise Orçamentária</p><h1>{title}</h1><p>{subtitle}</p></div><span className="updated">Valores em reais · atualização automática</span></header>
       {error && <div className="alert" role="alert">{error} Verifique a variável DATABASE_URL e se o PostgreSQL está disponível.</div>}
-      {loading && !data.hasData ? <div className="loading"><div><div className="spinner" /><p>Carregando dados orçamentários...</p></div></div> : !data.hasData && !error ? <div className="empty-state"><div><div className="empty-icon">⇧</div><h2>Nenhum dado da LOA foi importado</h2><p>Acesse a aba Importação de Dados para carregar a planilha e começar a análise orçamentária.</p><Link className="button primary" href="/importacao">Ir para Importação de Dados</Link></div></div> : <>
+      {loading && !data.hasData ? <div className="loading"><div><div className="spinner" /><p>Carregando dados orçamentários...</p></div></div> : <>
+        {view === "dashboard" && <section className="metric-grid budget-overview" aria-label="Visão geral do orçamento">
+          <MetricCard primary label="Valor Total do Orçamento" value={currency.format(data.totals.loa)} note="Soma do orçamento de todas as secretarias" />
+          <MetricCard label="Valor Teto por Secretaria" value={currency.format(data.secretariatCeiling?.value ?? 0)} note={data.secretariatCeiling?.label || "Nenhuma secretaria informada"} />
+        </section>}
+        {!error && !data.hasData && <div className="empty-state"><div><div className="empty-icon">⇧</div><h2>Nenhum dado da LOA foi importado</h2><p>Acesse a aba Importação de Dados para carregar a planilha e começar a análise orçamentária.</p><Link className="button primary" href="/importacao">Ir para Importação de Dados</Link></div></div>}
         <Filters filters={filters} options={options} total={data.pagination.total} onChange={updateFilters} onClear={() => updateFilters(EMPTY_FILTERS)} />
         <section className="metric-grid" aria-label="Indicadores principais">
-          <MetricCard primary label="Valor Total da LOA" value={currency.format(data.totals.loa)} note="Orçamento consolidado" />
+          {view !== "dashboard" && <MetricCard primary label="Valor Total da LOA" value={currency.format(data.totals.loa)} note="Orçamento consolidado" />}
           <MetricCard label="Valor Filtrado" value={currency.format(data.totals.filtered)} note={`${integer.format(data.pagination.total)} registros na seleção`} />
           <MetricCard label="Órgãos / Secretarias" value={integer.format(data.counts.organs)} note="Órgãos distintos" />
           <MetricCard label="Unidades Orçamentárias" value={integer.format(data.counts.units)} note="Unidades distintas" />
