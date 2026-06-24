@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     const secretariatWhere = buildSecretariatWhere(params);
     const select = Object.fromEntries(FIELDS.map((field) => [field, true])) as Record<FieldKey, true>;
 
-    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRows, groups, secretariatCeilings, organs, units, functions, programs, actions, processes] = await Promise.all([
+    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRows, groups, secretariatCeilings, organs, units, functions, programs, actions, processes, newProjects] = await Promise.all([
       db.budgetRecord.count({ where }),
       db.budgetRecord.aggregate({ where, _sum: { value: true } }),
       db.budgetRecord.aggregate({ _sum: { value: true } }),
@@ -88,6 +88,7 @@ export async function GET(request: Request) {
       distinctCount("program", where),
       distinctCount("action", where),
       distinctCount("administrativeProcess", where),
+      distinctCount("action", { AND: [where, { action: { contains: "projeto", mode: "insensitive" } }] }),
     ]);
 
     const filterOptions = Object.fromEntries(FIELDS.map((field) => [field, [...new Set(optionRows.map((row) => row[field]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"))]));
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
       totals: { loa: loaValue._sum.value?.toNumber() ?? 0, filtered: filteredValue._sum.value?.toNumber() ?? 0 },
       secretariatCeiling: secretariatCeilings[0] ?? null,
       spending: { operating: operatingValue._sum.value?.toNumber() ?? 0, investment: investmentValue._sum.value?.toNumber() ?? 0 },
-      counts: { organs, units, functions, programs, actions, processes },
+      counts: { organs, units, functions, programs, actions, processes, newProjects },
       groups: Object.fromEntries(FIELDS.map((field, index) => [field, groups[index]])),
       filterOptions,
     });

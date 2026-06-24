@@ -12,7 +12,7 @@ export type DashboardData = {
   totals: { loa: number; filtered: number };
   secretariatCeiling: GroupTotal | null;
   spending: { operating: number; investment: number };
-  counts: Record<"organs" | "units" | "functions" | "programs" | "actions" | "processes", number>;
+  counts: Record<"organs" | "units" | "functions" | "programs" | "actions" | "processes" | "newProjects", number>;
   groups: Record<FieldKey, GroupTotal[]>;
   filterOptions: Record<FieldKey, string[]>;
 };

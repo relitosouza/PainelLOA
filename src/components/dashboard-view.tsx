@@ -13,7 +13,7 @@ import { FIELDS, type DashboardData, type FieldKey } from "@/types/loa";
 const EMPTY_DATA: DashboardData = {
   hasData: false, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 }, spending: { operating: 0, investment: 0 },
   secretariatCeiling: null,
-  counts: { organs: 0, units: 0, functions: 0, programs: 0, actions: 0, processes: 0 },
+  counts: { organs: 0, units: 0, functions: 0, programs: 0, actions: 0, processes: 0, newProjects: 0 },
   groups: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["groups"],
   filterOptions: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["filterOptions"],
 };
@@ -40,8 +40,10 @@ function buildQuery(filters: FilterState, page: number, sort: string, direction:
   return params;
 }
 
-function MetricCard({ label, value, note, primary }: { label: string; value: string; note: string; primary?: boolean }) {
-  return <article className={`metric-card ${primary ? "primary" : ""}`}><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-note">{note}</div></article>;
+type MetricTone = "navy" | "amber" | "blue" | "teal" | "green" | "steel" | "coral";
+
+function MetricCard({ label, value, note, primary, tone = "green", cycling }: { label: string; value: string; note: string; primary?: boolean; tone?: MetricTone; cycling?: boolean }) {
+  return <article className={`metric-card tone-${tone} ${primary ? "primary" : ""}`}><div className="metric-label">{label}</div><div key={`${value}-${note}`} className={cycling ? "metric-content cycling" : "metric-content"}><div className="metric-value">{value}</div><div className="metric-note">{note}</div></div></article>;
 }
 
 function buildDemoDashboardData(): DashboardData {
@@ -50,10 +52,10 @@ function buildDemoDashboardData(): DashboardData {
   const organGroups = [...new Map(demoRecords.map((record) => [record.secretariat, demoRecords.filter((item) => item.secretariat === record.secretariat).reduce((sum, item) => sum + item.value, 0)])).entries()]
     .map(([label, value]) => ({ label, value, count: demoRecords.filter((record) => record.secretariat === label).length }))
     .sort((a, b) => b.value - a.value);
-  const grouped = (field: "unit" | "functionName" | "program" | "process" | "category") => [...new Map(demoRecords.map((record) => [record[field], demoRecords.filter((item) => item[field] === record[field]).reduce((sum, item) => sum + item.value, 0)])).entries()]
+  const grouped = (field: "unit" | "functionName" | "program" | "process" | "category" | "expenseNature") => [...new Map(demoRecords.map((record) => [record[field], demoRecords.filter((item) => item[field] === record[field]).reduce((sum, item) => sum + item.value, 0)])).entries()]
     .map(([label, value]) => ({ label, value, count: demoRecords.filter((record) => record[field] === label).length }))
     .sort((a, b) => b.value - a.value);
-  const rows = demoRecords.map((record, index) => ({ id: String(index + 1), organ: record.secretariat, budgetUnit: record.unit, functionName: record.functionName, subfunction: record.functionName, program: record.program, action: record.process, expenseNature: record.category === "operating" ? "3.3.90.39" : "4.4.90.51", subelement: record.category === "operating" ? "33" : "51", administrativeProcess: record.process, value: record.value }));
+  const rows = demoRecords.map((record, index) => ({ id: String(index + 1), organ: record.secretariat, budgetUnit: record.unit, functionName: record.functionName, subfunction: record.functionName, program: record.program, action: record.process, expenseNature: record.expenseNature, subelement: record.category === "operating" ? "33" : "51", administrativeProcess: record.process, value: record.value }));
   return {
     hasData: true,
     records: rows,
@@ -71,6 +73,7 @@ function buildDemoDashboardData(): DashboardData {
       programs: new Set(demoRecords.map((record) => record.program)).size,
       actions: new Set(demoRecords.map((record) => record.process)).size,
       processes: new Set(demoRecords.map((record) => record.process)).size,
+      newProjects: 12,
     },
     groups: {
       organ: organGroups,
@@ -79,11 +82,21 @@ function buildDemoDashboardData(): DashboardData {
       subfunction: grouped("functionName"),
       program: grouped("program"),
       action: grouped("process"),
-      expenseNature: grouped("category"),
+      expenseNature: grouped("expenseNature"),
       subelement: grouped("category"),
       administrativeProcess: grouped("process"),
     },
-    filterOptions: Object.fromEntries(FIELDS.map((field) => [field, [...new Set(demoRecords.flatMap((record) => [record.secretariat, record.unit, record.functionName, record.program, record.process]))].sort((a, b) => a.localeCompare(b, "pt-BR"))])) as DashboardData["filterOptions"],
+    filterOptions: {
+      organ: [...new Set(demoRecords.map((record) => record.secretariat))],
+      budgetUnit: [...new Set(demoRecords.map((record) => record.unit))],
+      functionName: [...new Set(demoRecords.map((record) => record.functionName))],
+      subfunction: [...new Set(demoRecords.map((record) => record.functionName))],
+      program: [...new Set(demoRecords.map((record) => record.program))],
+      action: [...new Set(demoRecords.map((record) => record.process))],
+      expenseNature: [...new Set(demoRecords.map((record) => record.expenseNature))],
+      subelement: ["33", "51"],
+      administrativeProcess: [...new Set(demoRecords.map((record) => record.process))],
+    },
   };
 }
 
@@ -108,9 +121,22 @@ export function DashboardView({ view }: { view: string }) {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("value");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
+  const [secretariatIndex, setSecretariatIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const query = useMemo(() => buildQuery(filters, page, sort, direction).toString(), [filters, page, sort, direction]);
+  const displayedSecretariats = useMemo(() => {
+    if (!filters.organ.length) return data.groups.organ;
+    const selected = new Set(filters.organ);
+    return data.groups.organ.filter((item) => selected.has(item.label));
+  }, [data.groups.organ, filters.organ]);
+  const displayedSecretariat = displayedSecretariats[secretariatIndex % Math.max(displayedSecretariats.length, 1)] ?? (filters.organ.length ? null : data.secretariatCeiling);
+
+  useEffect(() => {
+    if (displayedSecretariats.length < 2) return;
+    const interval = window.setInterval(() => setSecretariatIndex((current) => current + 1), 3200);
+    return () => window.clearInterval(interval);
+  }, [displayedSecretariats.length]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -144,28 +170,29 @@ export function DashboardView({ view }: { view: string }) {
       {error && <div className="alert" role="alert">{error} Verifique a variável DATABASE_URL e se o PostgreSQL está disponível.</div>}
       {loading && !data.hasData ? <div className="loading"><div><div className="spinner" /><p>Carregando dados orçamentários...</p></div></div> : <>
         {view === "dashboard" && <section className="metric-grid budget-overview" aria-label="Visão geral do orçamento">
-          <MetricCard primary label="Valor Total do Orçamento" value={currency.format(data.totals.loa)} note="Soma do orçamento de todas as secretarias" />
-          <MetricCard label="Valor Teto por Secretaria" value={currency.format(data.secretariatCeiling?.value ?? 0)} note={data.secretariatCeiling?.label || "Nenhuma secretaria informada"} />
+          <MetricCard primary tone="navy" label="Valor Total do Orçamento" value={currency.format(data.totals.loa)} note="Soma do orçamento de todas as secretarias" />
+          <MetricCard primary tone="amber" cycling={displayedSecretariats.length > 1} label="Valor Teto por Secretaria" value={currency.format(displayedSecretariat?.value ?? 0)} note={displayedSecretariat?.label || "Selecione uma secretaria"} />
         </section>}
         {!error && !data.hasData && <div className="empty-state"><div><div className="empty-icon">⇧</div><h2>Nenhum dado da LOA foi importado</h2><p>Acesse a aba Importação de Dados para carregar a planilha e começar a análise orçamentária.</p><Link className="button primary" href="/importacao">Ir para Importação de Dados</Link></div></div>}
         <Filters filters={filters} options={options} total={data.pagination.total} onChange={updateFilters} onClear={() => updateFilters(EMPTY_FILTERS)} />
         <section className="metric-grid" aria-label="Indicadores principais">
-          {view !== "dashboard" && <MetricCard primary label="Valor Total da LOA" value={currency.format(data.totals.loa)} note="Orçamento consolidado" />}
-          <MetricCard label="Valor Filtrado" value={currency.format(data.totals.filtered)} note={`${integer.format(data.pagination.total)} registros na seleção`} />
-          <MetricCard label="Órgãos / Secretarias" value={integer.format(data.counts.organs)} note="Órgãos distintos" />
-          <MetricCard label="Unidades Orçamentárias" value={integer.format(data.counts.units)} note="Unidades distintas" />
-          <MetricCard label="Funções" value={integer.format(data.counts.functions)} note="Funções de governo" />
-          <MetricCard label="Programas" value={integer.format(data.counts.programs)} note="Programas orçamentários" />
-          <MetricCard label="Ações" value={integer.format(data.counts.actions)} note="Projetos e atividades" />
-          <MetricCard label="Processos Administrativos" value={integer.format(data.counts.processes)} note="Processos vinculados" />
+          {view !== "dashboard" && <MetricCard primary tone="navy" label="Valor Total da LOA" value={currency.format(data.totals.loa)} note="Orçamento consolidado" />}
+          <MetricCard tone="green" label="Valor Filtrado" value={currency.format(data.totals.filtered)} note={`${integer.format(data.pagination.total)} registros na seleção`} />
+          <MetricCard tone="teal" label="Órgãos / Secretarias" value={integer.format(data.counts.organs)} note="Órgãos distintos" />
+          <MetricCard tone="blue" label="Unidades Orçamentárias" value={integer.format(data.counts.units)} note="Unidades distintas" />
+          <MetricCard tone="steel" label="Funções" value={integer.format(data.counts.functions)} note="Funções de governo" />
+          <MetricCard tone="amber" label="Programas" value={integer.format(data.counts.programs)} note="Programas orçamentários" />
+          <MetricCard tone="coral" label="Ações" value={integer.format(data.counts.actions)} note="Projetos e atividades" />
+          <MetricCard tone="navy" label="Processos Administrativos" value={integer.format(data.counts.processes)} note="Processos vinculados" />
+          <MetricCard tone="green" label="Novos Projetos" value={integer.format(data.counts.newProjects)} note="Projetos em planejamento" />
         </section>
         <ExecutiveInsights data={data} />
         <section className="charts-grid" aria-label="Gráficos orçamentários">
-          <BarChart title="Orçamento por Função" subtitle="Distribuição funcional" data={data.groups.functionName} />
-          <BarChart title="Orçamento por Subfunção" subtitle="Principais subfunções" data={data.groups.subfunction} />
-          <BarChart title="Orçamento por Programa" subtitle="Ranking de programas" data={data.groups.program} />
-          <BarChart title="Orçamento por Ação" subtitle="Ranking de ações" data={data.groups.action} />
-          <BarChart title="Natureza da Despesa" subtitle="Composição da despesa" data={data.groups.expenseNature} />
+          <BarChart changeable title="Orçamento por Função" subtitle="Distribuição funcional" data={data.groups.functionName} />
+          <BarChart changeable title="Orçamento por Subfunção" subtitle="Principais subfunções" data={data.groups.subfunction} />
+          <BarChart changeable title="Orçamento por Programa" subtitle="Ranking de programas" data={data.groups.program} />
+          <BarChart changeable title="Orçamento por Ação" subtitle="Ranking de ações" data={data.groups.action} />
+          <BarChart changeable title="Natureza da Despesa" subtitle="Composição da despesa" data={data.groups.expenseNature} />
           <BarChart title="Orçamento por Subelemento" subtitle="Itens mais relevantes" data={data.groups.subelement} />
         </section>
         <SummaryCards title="Resumo por Órgão / Secretaria" description="Teto e participação no orçamento consolidado" data={data.groups.organ} total={data.totals.loa} />
