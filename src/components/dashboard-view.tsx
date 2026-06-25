@@ -100,19 +100,7 @@ function buildDemoDashboardData(): DashboardData {
   };
 }
 
-function ExecutiveInsights({ data }: { data: DashboardData }) {
-  const largestProcess = data.groups.administrativeProcess.find((item) => item.label.trim());
-  const concentratedOrgan = data.groups.organ.find((item) => item.label.trim());
-  const topProgram = data.groups.program.find((item) => item.label.trim());
-  const operatingShare = data.totals.filtered ? data.spending.operating / data.totals.filtered : 0;
-  const investmentShare = data.totals.filtered ? data.spending.investment / data.totals.filtered : 0;
-  return <section className="insight-grid" aria-label="Perguntas executivas">
-    <article className="insight-card"><span className="insight-number">01</span><h2>Onde estão os maiores contratos e processos?</h2><p className="insight-label">Maior processo administrativo</p><strong className="insight-value">{currency.format(largestProcess?.value ?? 0)}</strong><p className="insight-name">{largestProcess?.label || "Não informado"}</p></article>
-    <article className="insight-card"><span className="insight-number">02</span><h2>Onde está concentrado o orçamento?</h2><p className="insight-label">Órgão com maior participação</p><strong className="insight-value">{currency.format(concentratedOrgan?.value ?? 0)}</strong><p className="insight-name">{concentratedOrgan?.label || "Não informado"}</p><span className="insight-share">{percent.format(data.totals.filtered ? (concentratedOrgan?.value ?? 0) / data.totals.filtered : 0)} do valor filtrado</span></article>
-    <article className="insight-card"><span className="insight-number">03</span><h2>Quanto está reservado para custeio e investimento?</h2><div className="spending-values"><div><p className="insight-label">Custeio / correntes</p><strong>{currency.format(data.spending.operating)}</strong><span>{percent.format(operatingShare)}</span></div><div><p className="insight-label">Investimento / capital</p><strong>{currency.format(data.spending.investment)}</strong><span>{percent.format(investmentShare)}</span></div></div></article>
-    <article className="insight-card"><span className="insight-number">04</span><h2>Quais programas consomem mais recursos?</h2><p className="insight-label">Programa com maior orçamento</p><strong className="insight-value">{currency.format(topProgram?.value ?? 0)}</strong><p className="insight-name">{topProgram?.label || "Não informado"}</p><span className="insight-share">{percent.format(data.totals.filtered ? (topProgram?.value ?? 0) / data.totals.filtered : 0)} do valor filtrado</span></article>
-  </section>;
-}
+
 
 export function DashboardView({ view }: { view: string }) {
   const [data, setData] = useState(EMPTY_DATA);
@@ -186,7 +174,7 @@ export function DashboardView({ view }: { view: string }) {
           <MetricCard tone="navy" label="Processos Administrativos" value={integer.format(data.counts.processes)} note="Processos vinculados" />
           <MetricCard tone="green" label="Novos Projetos" value={integer.format(data.counts.newProjects)} note="Projetos em planejamento" />
         </section>
-        <ExecutiveInsights data={data} />
+
         <section className="charts-grid" aria-label="Gráficos orçamentários">
           <BarChart changeable title="Orçamento por Função" subtitle="Distribuição funcional" data={data.groups.functionName} />
           <BarChart changeable title="Orçamento por Subfunção" subtitle="Principais subfunções" data={data.groups.subfunction} />

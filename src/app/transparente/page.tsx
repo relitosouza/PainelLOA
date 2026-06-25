@@ -144,6 +144,215 @@ export default function TransparentePage() {
             </div>
           </section>
 
+          {/* How the Budget Impacts Your Life Section */}
+          <section className="py-16 bg-surface-container-low border-b border-outline-variant/30">
+            <div className="px-margin-desktop max-w-container-max mx-auto">
+              <div className="text-center mb-12">
+                <h2 className="font-headline-lg text-headline-lg text-primary mb-3 animate-in-target">Como o orçamento impacta a sua vida?</h2>
+                <p className="text-body-md text-on-surface-variant max-w-2xl mx-auto">
+                  Entenda onde os recursos da Lei Orçamentária Anual (LOA) são aplicados de forma prática e direta no seu dia a dia.
+                </p>
+                <div className="w-24 h-1 bg-secondary mx-auto rounded-full mt-3"></div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter mb-10">
+                {/* Saúde */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-emerald-600">medical_services</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Saúde</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-emerald-600">1,65 Bilhão</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">15% da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Hospitais', 'UBS', 'medicamentos', 'atendimento à população'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Educação */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-blue-600">school</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Educação</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-blue-600">1,75 Bilhão</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">25% da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Escolas', 'merenda', 'transporte escolar', 'ensino'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobilidade Urbana */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-amber-100 dark:bg-amber-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-amber-600">directions_bus</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Mobilidade Urbana</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-amber-600">R$ 540 Milhões</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Trânsito', 'transporte', 'infraestrutura viária'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Obras */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-purple-100 dark:bg-purple-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-purple-600">engineering</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Obras</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-purple-600">R$ 780 Milhões</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Pavimentação', 'drenagem', 'melhorias urbanas'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Assistência Social */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-rose-100 dark:bg-rose-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-rose-600">shield</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Assistência Social</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-rose-600">R$ 125 Milhões</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Guarda Municipal', 'monitoramento', 'proteção urbana'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cultura */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-pink-100 dark:bg-pink-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-pink-600">palette</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Cultura</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-pink-600">R$ 98 Milhões</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">1,7% da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Eventos culturais', 'bibliotecas', 'incentivo à cultura'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Habitação */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-teal-100 dark:bg-teal-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-teal-600">home</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Habitação</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-teal-600">R$ 165 Milhões</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">2,8% da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Construção de moradias', 'melhorias habitacionais para famílias'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Emprego */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-cyan-100 dark:bg-cyan-950/40 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-cyan-600">work</span>
+                      </div>
+                      <p className="text-label-md text-on-surface-variant font-semibold">Emprego</p>
+                    </div>
+                    <h3 className="font-headline-lg text-headline-lg text-cyan-600">R$ 72 Milhões</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">1,2% da LOA</p>
+                  </div>
+                  <div className="border-t border-outline-variant/50 pt-4 mt-4">
+                    <div className="flex flex-wrap gap-1">
+                      {['Qualificação profissional', 'apoio ao empreendedorismo', 'geração de empregos', 'inovação e fortalecimento da economia local'].map((tag) => (
+                        <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Disclaimer Banner */}
+              <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant flex items-start gap-3 max-w-3xl mx-auto shadow-sm">
+                <span className="material-symbols-outlined text-primary">info</span>
+                <div className="text-sm text-on-surface-variant leading-relaxed">
+                  <p>
+                    <strong>Nota Informativa:</strong> Esses dados serão somente informativos até as informações serem inseridas nos relatórios analíticos oficiais.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Pillars of Transparency */}
           <section className="py-20 px-margin-desktop max-w-container-max mx-auto">
             <div className="text-center mb-16">

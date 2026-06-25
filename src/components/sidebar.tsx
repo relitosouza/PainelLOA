@@ -19,7 +19,7 @@ const NAVIGATION = [
 export function Sidebar({ view, collapsed, mobileOpen, onToggle }: { view: string; collapsed: boolean; mobileOpen: boolean; onToggle(): void }) {
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`} aria-label="Navegação principal">
-      <div className="brand"><div className="brand-mark">LOA</div><div><strong>Visualizador da LOA</strong><span>Gestão Orçamentária</span></div></div>
+      <div className="brand"><div className="brand-mark">LOA</div><div><strong>Gestão Orçamentária</strong><span>Secretaria de Finanças</span></div></div>
       <nav className="nav">
         <div className="nav-section">Visão executiva</div>
         {NAVIGATION.map(([path, icon, label], index) => (

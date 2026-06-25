@@ -854,6 +854,74 @@ h1 {
   letter-spacing: .08em; 
 }
 
+/* Gradient backgrounds for presentation insight cards */
+.presentation-shell .insight-card:nth-child(1),
+.presentation-shell .insight-card:nth-child(2),
+.presentation-shell .insight-card:nth-child(3),
+.presentation-shell .insight-card:nth-child(4) {
+  border-top: 0;
+  color: #ffffff;
+}
+
+.presentation-shell .insight-card:nth-child(1) { background: linear-gradient(135deg, #10b981, #059669); }
+.presentation-shell .insight-card:nth-child(2) { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+.presentation-shell .insight-card:nth-child(3) { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.presentation-shell .insight-card:nth-child(4) { background: linear-gradient(135deg, #64748b, #475569); }
+
+.presentation-shell .insight-card:nth-child(1) h2,
+.presentation-shell .insight-card:nth-child(2) h2,
+.presentation-shell .insight-card:nth-child(3) h2,
+.presentation-shell .insight-card:nth-child(4) h2,
+.presentation-shell .insight-card:nth-child(1) .insight-value,
+.presentation-shell .insight-card:nth-child(2) .insight-value,
+.presentation-shell .insight-card:nth-child(3) .insight-value,
+.presentation-shell .insight-card:nth-child(4) .insight-value,
+.presentation-shell .insight-card:nth-child(1) .spending-values strong,
+.presentation-shell .insight-card:nth-child(2) .spending-values strong,
+.presentation-shell .insight-card:nth-child(3) .spending-values strong,
+.presentation-shell .insight-card:nth-child(4) .spending-values strong {
+  color: #ffffff !important;
+}
+
+.presentation-shell .insight-card:nth-child(1) .insight-label,
+.presentation-shell .insight-card:nth-child(2) .insight-label,
+.presentation-shell .insight-card:nth-child(3) .insight-label,
+.presentation-shell .insight-card:nth-child(4) .insight-label,
+.presentation-shell .insight-card:nth-child(1) .insight-name,
+.presentation-shell .insight-card:nth-child(2) .insight-name,
+.presentation-shell .insight-card:nth-child(3) .insight-name,
+.presentation-shell .insight-card:nth-child(4) .insight-name {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.presentation-shell .insight-card:nth-child(1) .insight-share,
+.presentation-shell .insight-card:nth-child(2) .insight-share,
+.presentation-shell .insight-card:nth-child(3) .insight-share,
+.presentation-shell .insight-card:nth-child(4) .insight-share,
+.presentation-shell .insight-card:nth-child(1) .spending-values span,
+.presentation-shell .insight-card:nth-child(2) .spending-values span,
+.presentation-shell .insight-card:nth-child(3) .spending-values span,
+.presentation-shell .insight-card:nth-child(4) .spending-values span {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.presentation-shell .insight-card:nth-child(1) .insight-number,
+.presentation-shell .insight-card:nth-child(2) .insight-number,
+.presentation-shell .insight-card:nth-child(3) .insight-number,
+.presentation-shell .insight-card:nth-child(4) .insight-number {
+  color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.presentation-shell .insight-card:nth-child(4) ul li {
+  color: #ffffff !important;
+}
+.presentation-shell .insight-card:nth-child(4) ul li span {
+  color: #ffffff !important;
+}
+.presentation-shell .insight-card:nth-child(4) ul li span strong {
+  color: #ffffff !important;
+}
+
 .insight-card h2 { 
   max-width: 88%; 
   min-height: 52px; 
@@ -2059,11 +2127,9 @@ tbody tr:hover {
 
 .presentation-concentration h2 { 
   margin-bottom: 18px; 
-  font-size: 13px; 
-  font-weight: 800; 
-  letter-spacing: .05em; 
-  text-transform: uppercase; 
-  color: var(--muted);
+  font-size: 18px; 
+  font-weight: 700; 
+  color: var(--navy); 
 }
 
 .presentation-concentration > div { 
@@ -2108,7 +2174,7 @@ tbody tr:hover {
   margin-bottom: 24px; 
 }
 
-.presentation-donut-card, .presentation-units { 
+.presentation-treemap-card, .presentation-donut-card, .presentation-units { 
   min-height: 470px; 
   padding: 28px 32px; 
 }
@@ -2248,6 +2314,25 @@ tbody tr:hover {
   display: grid; 
   grid-template-columns: 1fr 1fr; 
   gap: 24px; 
+}
+
+.presentation-strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.presentation-strategy-grid > article { 
+  min-height: 250px; 
+  padding: 28px; 
+}
+
+.presentation-strategy-grid h2 { 
+  min-height: 48px; 
+  margin-bottom: 20px; 
+  font-size: 16px; 
+  font-weight: 700;
 }
 
 .presentation-questions > article { 
@@ -2441,11 +2526,11 @@ tbody tr:hover {
 }
 
 @media (max-width: 760px) {
-  .presentation-sidebar-body, .presentation-hero-grid, .presentation-charts, .presentation-questions { grid-template-columns: 1fr; }
+  .presentation-sidebar-body, .presentation-hero-grid, .presentation-charts, .presentation-questions, .presentation-strategy-grid { grid-template-columns: 1fr; }
   .presentation-header { align-items: flex-start; flex-direction: column; }
   .presentation-main { padding: 24px 16px 40px; }
   .presentation-concentration > div { grid-template-columns: 1fr; }
-  .presentation-donut-card, .presentation-units { min-height: auto; padding: 24px 20px; }
+  .presentation-treemap-card, .presentation-donut-card, .presentation-units { min-height: auto; padding: 24px 20px; }
 }
 
 @media (max-width: 560px) {
