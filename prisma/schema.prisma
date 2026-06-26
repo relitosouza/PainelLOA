@@ -44,3 +44,15 @@ model BudgetRecord {
   @@index([value])
   @@index([importId])
 }
+
+model BudgetUnit {
+  code String @id
+  name String
+}
+
+model BudgetOrgan {
+  code String @id
+  name String
+}
+
+

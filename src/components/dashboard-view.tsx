@@ -9,6 +9,7 @@ import { SummaryCards } from "./summary-cards";
 import { currency, integer, percent } from "@/lib/format";
 import { getSecretariatDemoRecords } from "@/lib/secretariat-data";
 import { FIELDS, type DashboardData, type FieldKey } from "@/types/loa";
+import { useDataSource } from "./data-source-toggle";
 
 const EMPTY_DATA: DashboardData = {
   hasData: false, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 }, spending: { operating: 0, investment: 0 },
@@ -103,6 +104,7 @@ function buildDemoDashboardData(): DashboardData {
 
 
 export function DashboardView({ view }: { view: string }) {
+  const [dataSource] = useDataSource();
   const [data, setData] = useState(EMPTY_DATA);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [options, setOptions] = useState(EMPTY_DATA.filterOptions);
@@ -131,6 +133,13 @@ export function DashboardView({ view }: { view: string }) {
     const timer = window.setTimeout(async () => {
       try {
         setLoading(true); setError("");
+        if (dataSource === "ficticio") {
+          const demoData = buildDemoDashboardData();
+          setData(demoData);
+          setOptions(demoData.filterOptions);
+          setLoading(false);
+          return;
+        }
         const response = await fetch(`/api/loa?${query}`, { signal: controller.signal });
         const result = await response.json();
         if (!response.ok) throw new Error(result.message);
@@ -146,7 +155,7 @@ export function DashboardView({ view }: { view: string }) {
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query, filters]);
+  }, [query, filters, dataSource]);
 
   function updateFilters(next: FilterState) { setFilters(next); setPage(1); }
   function updateSort(field: FieldKey | "value") { if (sort === field) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(field); setDirection("asc"); } setPage(1); }
@@ -159,6 +168,8 @@ export function DashboardView({ view }: { view: string }) {
       {loading && !data.hasData ? <div className="loading"><div><div className="spinner" /><p>Carregando dados orçamentários...</p></div></div> : <>
         {view === "dashboard" && <section className="metric-grid budget-overview" aria-label="Visão geral do orçamento">
           <MetricCard primary tone="navy" label="Valor Total do Orçamento" value={currency.format(data.totals.loa)} note="Soma do orçamento de todas as secretarias" />
+          <MetricCard tone="blue" label="📊 Receita Corrente" value={currency.format(data.totals.loa * 0.8)} note="Orçamento Corrente previsto (80%)" />
+          <MetricCard tone="teal" label="🏗️ Receita de Capital" value={currency.format(data.totals.loa * 0.09230769)} note="Orçamento de Capital previsto (9.2%)" />
           <MetricCard primary tone="amber" cycling={displayedSecretariats.length > 1} label="Valor Teto por Secretaria" value={currency.format(displayedSecretariat?.value ?? 0)} note={displayedSecretariat?.label || "Selecione uma secretaria"} />
         </section>}
         {!error && !data.hasData && <div className="empty-state"><div><div className="empty-icon">⇧</div><h2>Nenhum dado da LOA foi importado</h2><p>Acesse a aba Importação de Dados para carregar a planilha e começar a análise orçamentária.</p><Link className="button primary" href="/importacao">Ir para Importação de Dados</Link></div></div>}

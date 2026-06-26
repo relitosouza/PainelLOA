@@ -1,10 +1,121 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { useDataSource, DataSourceToggle } from "@/components/data-source-toggle";
 
 export default function TransparentePage() {
   const statsRef = useRef<HTMLDivElement>(null);
+  const [dataSource] = useDataSource();
+  const [dbData, setDbData] = useState<any>(null);
+  const [loadingDb, setLoadingDb] = useState(false);
+
+  useEffect(() => {
+    if (dataSource === "real" && !dbData) {
+      setLoadingDb(true);
+      fetch("/api/loa?all=true")
+        .then((res) => res.json())
+        .then((res) => {
+          setDbData(res);
+        })
+        .catch(console.error)
+        .finally(() => setLoadingDb(false));
+    }
+  }, [dataSource, dbData]);
+
+  // Dynamic calculations based on active data source
+  const isReal = dataSource === "real" && dbData && dbData.records;
+  
+  // Total LOA
+  const totalLoa = isReal ? dbData.totals.loa : 6500000000;
+  
+  // Investimento por Habitante
+  const invPerHab = isReal ? Math.round(totalLoa / 760000) : 8552;
+
+  // New Projects count (Obras)
+  const obrasCount = isReal ? dbData.counts.newProjects : 124;
+
+  // Category values (Saúde, Educação, Mobilidade, Obras, Assistência Social, Cultura, Habitação, Emprego)
+  const getCategoryValue = (prefix: string) => {
+    if (!isReal) return 0;
+    return dbData.records
+      .filter((r: any) => r.organ.startsWith(prefix))
+      .reduce((sum: number, r: any) => sum + r.value, 0);
+  };
+
+  const values = useMemo(() => {
+    if (!isReal) {
+      return {
+        saude: 975000000,
+        educacao: 1625000000,
+        mobilidade: 1140000000,
+        obras: 1540000000,
+        social: 760000000,
+        cultura: 120000000,
+        habitacao: 300000000,
+        emprego: 160000000,
+      };
+    }
+    return {
+      saude: getCategoryValue("01.09"),
+      educacao: getCategoryValue("01.08"),
+      mobilidade: getCategoryValue("01.19"),
+      obras: getCategoryValue("01.11"),
+      social: getCategoryValue("01.14") + getCategoryValue("01.36") + getCategoryValue("01.20"),
+      cultura: getCategoryValue("01.15"),
+      habitacao: getCategoryValue("01.13"),
+      emprego: getCategoryValue("01.07"),
+    };
+  }, [isReal, dbData]);
+
+  // Format Helper
+  const formatBillion = (val: number) => {
+    if (val >= 1e9) {
+      const formatted = (val / 1e9).toFixed(1).replace(".", ",");
+      return `R$ ${formatted} Bi`;
+    }
+    return `R$ ${Math.round(val / 1e6)} Mi`;
+  };
+
+  const formatValueDescription = (val: number) => {
+    if (val >= 1e9) {
+      const formatted = (val / 1e9).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 3 });
+      return `R$ ${formatted} Bilhão`;
+    }
+    return `R$ ${Math.round(val / 1e6)} Milhões`;
+  };
+
+  const saudePct = totalLoa ? (values.saude / totalLoa) * 100 : 0;
+  const educacaoPct = totalLoa ? (values.educacao / totalLoa) * 100 : 0;
+  const obrasPct = totalLoa ? (values.obras / totalLoa) * 100 : 0;
+  const mobilidadePct = totalLoa ? (values.mobilidade / totalLoa) * 100 : 0;
+  const socialPct = totalLoa ? (values.social / totalLoa) * 100 : 0;
+  const culturaPct = totalLoa ? (values.cultura / totalLoa) * 100 : 0;
+  const habitacaoPct = totalLoa ? (values.habitacao / totalLoa) * 100 : 0;
+  const empregoPct = totalLoa ? (values.emprego / totalLoa) * 100 : 0;
+
+  const totalOfThesePct = saudePct + educacaoPct + obrasPct + mobilidadePct + socialPct;
+  const otherPct = Math.max(0, 100 - totalOfThesePct);
+
+  const topInvestments = useMemo(() => {
+    if (!isReal) {
+      return [
+        { title: "Modernização Hospital Municipal", value: 45000000, trend: "arrow_upward", trendColor: "text-green-600" },
+        { title: "Pavimentação Zona Norte", value: 32500000, trend: "remove", trendColor: "text-on-surface-variant" },
+        { title: "Creche Integral Munhoz", value: 18200000, trend: "arrow_upward", trendColor: "text-green-600" },
+      ];
+    }
+    const investments = dbData.records
+      .filter((r: any) => r.expenseNature.startsWith("4") || r.subelement === "51")
+      .sort((a: any, b: any) => b.value - a.value);
+
+    return investments.slice(0, 3).map((inv: any) => ({
+      title: inv.administrativeProcess || inv.action || "Investimento",
+      value: inv.value,
+      trend: "arrow_upward",
+      trendColor: "text-green-600",
+    }));
+  }, [isReal, dbData]);
 
   useEffect(() => {
     const stats = document.querySelectorAll('.animate-in-target');
@@ -56,6 +167,9 @@ export default function TransparentePage() {
               <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Relatórios</a>
             </div>
             <div className="flex items-center gap-4">
+              <div className="transparent-nav-toggle">
+                <DataSourceToggle />
+              </div>
               <button className="material-symbols-outlined p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-soft">search</button>
               <button className="bg-primary text-on-primary px-6 py-2 rounded-full font-label-md text-label-md hover:opacity-80 transition-opacity">Entrar</button>
             </div>
@@ -98,18 +212,36 @@ export default function TransparentePage() {
           {/* Overview Stats */}
           <section className="py-16 bg-surface-container-low">
             <div className="px-margin-desktop max-w-container-max mx-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter" ref={statsRef}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter" ref={statsRef}>
                 {/* Total Budget */}
                 <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft">
                   <div className="w-12 h-12 bg-primary-fixed rounded-lg flex items-center justify-center mb-4">
                     <span className="material-symbols-outlined text-primary">payments</span>
                   </div>
-                  <p className="text-label-md text-on-surface-variant mb-1">Orçamento Total 2024</p>
-                  <h3 className="font-headline-lg text-headline-lg text-primary animate-in-target">R$ 4.2 Bi</h3>
+                  <p className="text-label-md text-on-surface-variant mb-1">Orçamento Total 2027</p>
+                  <h3 className="font-headline-lg text-headline-lg text-primary animate-in-target">{formatBillion(totalLoa)}</h3>
                   <div className="flex items-center gap-1 mt-2 text-green-600 font-label-md">
                     <span className="material-symbols-outlined text-sm">trending_up</span>
-                    <span>+8% vs 2023</span>
+                    <span>+54,8% vs 2024</span>
                   </div>
+                </div>
+                {/* Receita Corrente */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft">
+                  <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950/40 rounded-lg flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-blue-600">bar_chart</span>
+                  </div>
+                  <p className="text-label-md text-on-surface-variant mb-1">📊 Receita Corrente</p>
+                  <h3 className="font-headline-lg text-headline-lg text-blue-600 animate-in-target">{formatBillion(totalLoa * 0.8)}</h3>
+                  <p className="text-label-md text-on-surface-variant mt-2 italic">80% do total planejado</p>
+                </div>
+                {/* Receita de Capital */}
+                <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft">
+                  <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/40 rounded-lg flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-emerald-600">engineering</span>
+                  </div>
+                  <p className="text-label-md text-on-surface-variant mb-1">🏗️ Receita de Capital</p>
+                  <h3 className="font-headline-lg text-headline-lg text-emerald-600 animate-in-target">{formatBillion(totalLoa * 0.09230769)}</h3>
+                  <p className="text-label-md text-on-surface-variant mt-2 italic">9.2% do total planejado</p>
                 </div>
                 {/* Investment per Inhabitant */}
                 <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft">
@@ -117,7 +249,7 @@ export default function TransparentePage() {
                     <span className="material-symbols-outlined text-secondary">person_pin_circle</span>
                   </div>
                   <p className="text-label-md text-on-surface-variant mb-1">Investimento por Habitante</p>
-                  <h3 className="font-headline-lg text-headline-lg text-secondary animate-in-target">R$ 5.920</h3>
+                  <h3 className="font-headline-lg text-headline-lg text-secondary animate-in-target">R$ {invPerHab.toLocaleString("pt-BR")}</h3>
                   <p className="text-label-md text-on-surface-variant mt-2 italic">Foco em infraestrutura</p>
                 </div>
                 {/* Execution Rate */}
@@ -137,7 +269,7 @@ export default function TransparentePage() {
                     <span className="material-symbols-outlined text-primary">construction</span>
                   </div>
                   <p className="text-label-md text-on-surface-variant mb-1">Obras em Andamento</p>
-                  <h3 className="font-headline-lg text-headline-lg text-primary animate-in-target">124</h3>
+                  <h3 className="font-headline-lg text-headline-lg text-primary animate-in-target">{obrasCount}</h3>
                   <p className="text-label-md text-on-surface-variant mt-2">Clique para ver o mapa</p>
                 </div>
               </div>
@@ -165,12 +297,12 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Saúde</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-emerald-600">1,65 Bilhão</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">15% da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-emerald-600">{formatValueDescription(values.saude)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{saudePct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
-                      {['Hospitais', 'UBS', 'medicamentos', 'atendimento à população'].map((tag) => (
+                      {['Hospitais', 'UBS', 'medicamentos', 'atendimento à population'].map((tag) => (
                         <span key={tag} className="bg-surface-container-low text-on-surface-variant text-[11px] px-2 py-0.5 rounded border border-outline-variant/30">
                           {tag}
                         </span>
@@ -188,8 +320,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Educação</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-blue-600">1,75 Bilhão</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">25% da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-blue-600">{formatValueDescription(values.educacao)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{educacaoPct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -211,8 +343,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Mobilidade Urbana</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-amber-600">R$ 540 Milhões</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-amber-600">{formatValueDescription(values.mobilidade)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{mobilidadePct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -234,8 +366,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Obras</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-purple-600">R$ 780 Milhões</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-purple-600">{formatValueDescription(values.obras)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{obrasPct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -257,8 +389,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Assistência Social</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-rose-600">R$ 125 Milhões</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-rose-600">{formatValueDescription(values.social)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{socialPct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -280,8 +412,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Cultura</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-pink-600">R$ 98 Milhões</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">1,7% da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-pink-600">{formatValueDescription(values.cultura)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{culturaPct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -303,8 +435,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Habitação</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-teal-600">R$ 165 Milhões</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">2,8% da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-teal-600">{formatValueDescription(values.habitacao)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{habitacaoPct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -326,8 +458,8 @@ export default function TransparentePage() {
                       </div>
                       <p className="text-label-md text-on-surface-variant font-semibold">Emprego</p>
                     </div>
-                    <h3 className="font-headline-lg text-headline-lg text-cyan-600">R$ 72 Milhões</h3>
-                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">1,2% da LOA</p>
+                    <h3 className="font-headline-lg text-headline-lg text-cyan-600">{formatValueDescription(values.emprego)}</h3>
+                    <p className="text-label-md text-on-surface-variant mt-2 font-semibold">{empregoPct.toFixed(1).replace(".", ",")}% da LOA</p>
                   </div>
                   <div className="border-t border-outline-variant/50 pt-4 mt-4">
                     <div className="flex flex-wrap gap-1">
@@ -399,50 +531,60 @@ export default function TransparentePage() {
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
                         <span>Saúde</span>
-                        <span>R$ 28,50</span>
+                        <span>R$ {saudePct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
-                        <div className="bg-[#A7F3D0] h-full rounded-full" style={{ width: "28.5%" }}></div>
+                        <div className="bg-[#A7F3D0] h-full rounded-full" style={{ width: `${saudePct}%` }}></div>
                       </div>
                     </div>
                     {/* Education */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
                         <span>Educação</span>
-                        <span>R$ 25,20</span>
+                        <span>R$ {educacaoPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
-                        <div className="bg-[#BAE6FD] h-full rounded-full" style={{ width: "25.2%" }}></div>
+                        <div className="bg-[#BAE6FD] h-full rounded-full" style={{ width: `${educacaoPct}%` }}></div>
                       </div>
                     </div>
-                    {/* Security */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between font-label-md">
-                        <span>Segurança e Mobilidade</span>
-                        <span>R$ 15,80</span>
-                      </div>
-                      <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
-                        <div className="bg-[#FEF08A] h-full rounded-full" style={{ width: "15.8%" }}></div>
-                      </div>
-                    </div>
-                    {/* Infrastructure */}
+                    {/* Obras */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
                         <span>Obras e Infraestrutura</span>
-                        <span>R$ 12,50</span>
+                        <span>R$ {obrasPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
-                        <div className="bg-[#FED7AA] h-full rounded-full" style={{ width: "12.5%" }}></div>
+                        <div className="bg-[#FED7AA] h-full rounded-full" style={{ width: `${obrasPct}%` }}></div>
+                      </div>
+                    </div>
+                    {/* Transport */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between font-label-md">
+                        <span>Transporte e Mobilidade</span>
+                        <span>R$ {mobilidadePct.toFixed(2).replace(".", ",")}</span>
+                      </div>
+                      <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
+                        <div className="bg-[#FEF08A] h-full rounded-full" style={{ width: `${mobilidadePct}%` }}></div>
+                      </div>
+                    </div>
+                    {/* Social */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between font-label-md">
+                        <span>Assistência Social e Segurança</span>
+                        <span>R$ {socialPct.toFixed(2).replace(".", ",")}</span>
+                      </div>
+                      <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
+                        <div className="bg-[#F87171] h-full rounded-full" style={{ width: `${socialPct}%` }}></div>
                       </div>
                     </div>
                     {/* Other */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md opacity-70">
-                        <span>Demais Encargos</span>
-                        <span>R$ 18,00</span>
+                        <span>Demais Secretarias</span>
+                        <span>R$ {otherPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
-                        <div className="bg-white/40 h-full rounded-full" style={{ width: "18%" }}></div>
+                        <div className="bg-white/40 h-full rounded-full" style={{ width: `${otherPct}%` }}></div>
                       </div>
                     </div>
                   </div>
@@ -458,33 +600,19 @@ export default function TransparentePage() {
               <div className="bg-surface-container-low p-8 rounded-2xl border border-outline-variant">
                 <div className="flex items-center gap-4 mb-8">
                   <span className="material-symbols-outlined text-primary text-3xl">star</span>
-                  <h3 className="font-headline-md text-headline-md text-on-surface animate-in-target">Maiores Investimentos 2024</h3>
+                  <h3 className="font-headline-md text-headline-md text-on-surface animate-in-target">Maiores Investimentos {isReal ? "2027" : "2024"}</h3>
                 </div>
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4 bg-surface-container-lowest p-4 rounded-xl shadow-sm">
-                    <span className="font-data-mono text-primary text-xl">#1</span>
-                    <div className="flex-1">
-                      <p className="font-label-md text-on-surface">Modernização Hospital Municipal</p>
-                      <p className="text-sm text-on-surface-variant">R$ 45.000.000,00</p>
+                  {topInvestments.map((inv: any, idx: number) => (
+                    <div key={idx} className="flex items-center gap-4 bg-surface-container-lowest p-4 rounded-xl shadow-sm">
+                      <span className="font-data-mono text-primary text-xl">#{idx + 1}</span>
+                      <div className="flex-1">
+                        <p className="font-label-md text-on-surface">{inv.title}</p>
+                        <p className="text-sm text-on-surface-variant">{inv.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+                      </div>
+                      <span className={`material-symbols-outlined ${inv.trendColor}`}>{inv.trend}</span>
                     </div>
-                    <span className="material-symbols-outlined text-green-600">arrow_upward</span>
-                  </div>
-                  <div className="flex items-center gap-4 bg-surface-container-lowest p-4 rounded-xl shadow-sm">
-                    <span className="font-data-mono text-primary text-xl">#2</span>
-                    <div className="flex-1">
-                      <p className="font-label-md text-on-surface">Pavimentação Zona Norte</p>
-                      <p className="text-sm text-on-surface-variant">R$ 32.500.000,00</p>
-                    </div>
-                    <span className="material-symbols-outlined text-on-surface-variant">remove</span>
-                  </div>
-                  <div className="flex items-center gap-4 bg-surface-container-lowest p-4 rounded-xl shadow-sm">
-                    <span className="font-data-mono text-primary text-xl">#3</span>
-                    <div className="flex-1">
-                      <p className="font-label-md text-on-surface">Creche Integral Munhoz</p>
-                      <p className="text-sm text-on-surface-variant">R$ 18.200.000,00</p>
-                    </div>
-                    <span className="material-symbols-outlined text-green-600">arrow_upward</span>
-                  </div>
+                  ))}
                 </div>
               </div>
               {/* What does LOA finance? */}

@@ -1750,6 +1750,71 @@ tbody tr:hover {
   color: rgba(255, 255, 255, 0.7); 
   background: #0f172a; 
   border-right: 1px solid rgba(255, 255, 255, 0.06); 
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), flex 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (min-width: 1025px) {
+  .presentation-sidebar.collapsed {
+    width: 0;
+    flex: 0 0 0;
+    border-right-color: transparent;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+}
+
+.presentation-toggle-btn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.62);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: var(--transition);
+}
+
+.presentation-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+}
+
+.presentation-floating-toggle-btn {
+  position: absolute;
+  left: clamp(24px, 4vw, 64px);
+  top: 36px;
+  z-index: 10;
+  height: 42px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0f172a;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.presentation-floating-toggle-btn:hover {
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 1024px) {
+  .presentation-floating-toggle-btn {
+    display: none !important;
+  }
 }
 
 .presentation-brand { 
@@ -1991,6 +2056,7 @@ tbody tr:hover {
 }
 
 .presentation-main { 
+  position: relative;
   min-width: 0; 
   flex: 1; 
   padding: 40px clamp(24px, 4vw, 64px) 56px; 
@@ -2169,7 +2235,7 @@ tbody tr:hover {
 
 .presentation-charts { 
   display: grid; 
-  grid-template-columns: minmax(320px, 5fr) minmax(0, 7fr); 
+  grid-template-columns: minmax(0, 8fr) minmax(300px, 4fr); 
   gap: 24px; 
   margin-bottom: 24px; 
 }
@@ -2548,3 +2614,55 @@ tbody tr:hover {
     transition-duration: .01ms !important; 
   } 
 }
+
+/* Data Source Toggle Switch Styles */
+.data-source-toggle {
+  display: inline-flex;
+  background: var(--surface-container-high);
+  border: 1px solid var(--outline-variant);
+  border-radius: 99px;
+  padding: 3px;
+  position: relative;
+  gap: 2px;
+}
+
+.data-source-toggle button {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 16px;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.data-source-toggle button:hover {
+  color: var(--on-surface);
+}
+
+.data-source-toggle button.active {
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Make it look nice on transparent page navbar too */
+.transparent-nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.transparent-nav-toggle .data-source-toggle {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+}
+
+.transparent-nav-toggle .data-source-toggle button.active {
+  background: #1e3a8a; /* primary blue */
+  color: #ffffff;
+}
+

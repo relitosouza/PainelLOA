@@ -64,8 +64,9 @@ async function distinctCount(field: FieldKey, where: Prisma.BudgetRecordWhereInp
 export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
-    const page = Math.max(1, Number(params.get("page")) || 1);
-    const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize")) || 20));
+    const isAll = params.get("all") === "true";
+    const page = isAll ? 1 : Math.max(1, Number(params.get("page")) || 1);
+    const pageSize = isAll ? 10000 : Math.min(100, Math.max(10, Number(params.get("pageSize")) || 20));
     const sort = SORTABLE.has(params.get("sort") ?? "") ? params.get("sort")! : "value";
     const direction = params.get("direction") === "asc" ? "asc" : "desc";
     const where = buildWhere(params);
