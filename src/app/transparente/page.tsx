@@ -3,23 +3,21 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useDataSource, DataSourceToggle } from "@/components/data-source-toggle";
+import type { DashboardData, BudgetRow } from "@/types/loa";
 
 export default function TransparentePage() {
   const statsRef = useRef<HTMLDivElement>(null);
   const [dataSource] = useDataSource();
-  const [dbData, setDbData] = useState<any>(null);
-  const [loadingDb, setLoadingDb] = useState(false);
+  const [dbData, setDbData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
     if (dataSource === "real" && !dbData) {
-      setLoadingDb(true);
       fetch("/api/loa?all=true")
         .then((res) => res.json())
         .then((res) => {
           setDbData(res);
         })
-        .catch(console.error)
-        .finally(() => setLoadingDb(false));
+        .catch(console.error);
     }
   }, [dataSource, dbData]);
 
@@ -36,14 +34,14 @@ export default function TransparentePage() {
   const obrasCount = isReal ? dbData.counts.newProjects : 124;
 
   // Category values (Saúde, Educação, Mobilidade, Obras, Assistência Social, Cultura, Habitação, Emprego)
-  const getCategoryValue = (prefix: string) => {
-    if (!isReal) return 0;
-    return dbData.records
-      .filter((r: any) => r.organ.startsWith(prefix))
-      .reduce((sum: number, r: any) => sum + r.value, 0);
-  };
-
   const values = useMemo(() => {
+    const getCategoryValue = (prefix: string) => {
+      if (!isReal) return 0;
+      return dbData.records
+        .filter((r: BudgetRow) => r.organ.startsWith(prefix))
+        .reduce((sum: number, r: BudgetRow) => sum + r.value, 0);
+    };
+
     if (!isReal) {
       return {
         saude: 975000000,
@@ -106,10 +104,10 @@ export default function TransparentePage() {
       ];
     }
     const investments = dbData.records
-      .filter((r: any) => r.expenseNature.startsWith("4") || r.subelement === "51")
-      .sort((a: any, b: any) => b.value - a.value);
+      .filter((r: BudgetRow) => r.expenseNature.startsWith("4") || r.subelement === "51")
+      .sort((a: BudgetRow, b: BudgetRow) => b.value - a.value);
 
-    return investments.slice(0, 3).map((inv: any) => ({
+    return investments.slice(0, 3).map((inv: BudgetRow) => ({
       title: inv.administrativeProcess || inv.action || "Investimento",
       value: inv.value,
       trend: "arrow_upward",
@@ -167,6 +165,13 @@ export default function TransparentePage() {
               <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Relatórios</a>
             </div>
             <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="hidden md:inline-flex items-center gap-2 rounded-full border border-outline-variant px-4 py-2 font-label-md text-label-md text-on-surface hover:bg-surface-container-low transition-soft"
+              >
+                <span className="material-symbols-outlined text-[18px]">dashboard</span>
+                Painel Executivo
+              </Link>
               <div className="transparent-nav-toggle">
                 <DataSourceToggle />
               </div>
@@ -603,7 +608,7 @@ export default function TransparentePage() {
                   <h3 className="font-headline-md text-headline-md text-on-surface animate-in-target">Maiores Investimentos {isReal ? "2027" : "2024"}</h3>
                 </div>
                 <div className="space-y-6">
-                  {topInvestments.map((inv: any, idx: number) => (
+                  {topInvestments.map((inv, idx: number) => (
                     <div key={idx} className="flex items-center gap-4 bg-surface-container-lowest p-4 rounded-xl shadow-sm">
                       <span className="font-data-mono text-primary text-xl">#{idx + 1}</span>
                       <div className="flex-1">

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { currency, percent } from "@/lib/format";
 import { getPresentationRecords, groupPresentation, PRESENTATION_SECRETARIATS, type PresentationRecord } from "@/lib/presentation-data";
 import { useDataSource, DataSourceToggle } from "./data-source-toggle";
+import type { DashboardData, BudgetRow } from "@/types/loa";
 
 function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -123,25 +124,22 @@ export function PresentationDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   
   const [dataSource] = useDataSource();
-  const [dbData, setDbData] = useState<any>(null);
-  const [loadingDb, setLoadingDb] = useState(false);
+  const [dbData, setDbData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
     if (dataSource === "real" && !dbData) {
-      setLoadingDb(true);
       fetch("/api/loa?all=true")
         .then((res) => res.json())
         .then((res) => {
           setDbData(res);
         })
-        .catch(console.error)
-        .finally(() => setLoadingDb(false));
+        .catch(console.error);
     }
   }, [dataSource, dbData]);
 
   const realRecords = useMemo((): PresentationRecord[] => {
     if (!dbData || !dbData.records) return [];
-    return dbData.records.map((r: any) => {
+    return dbData.records.map((r: BudgetRow) => {
       const isOperating = r.expenseNature.startsWith("3") || r.subelement === "33";
       let nature: "Pessoal" | "Custeio" | "Investimentos" | "Amortização" = "Custeio";
       if (r.expenseNature.startsWith("3.1")) nature = "Pessoal";
@@ -170,7 +168,7 @@ export function PresentationDashboard() {
         return getPresentationRecords(y);
       }
       if (y === 2027) return realRecords;
-      return realRecords.map((r: any, index: number) => ({
+      return realRecords.map((r: PresentationRecord, index: number) => ({
         ...r,
         value: Math.round(r.value * (0.88 + (index % 4) * 0.01)),
       }));
@@ -272,7 +270,7 @@ export function PresentationDashboard() {
       { label: "Transporte Escolar", value: getDeliveryValue("Transporte Escolar") },
       { label: "Iluminação Pública", value: getDeliveryValue("Iluminação Pública") },
     ].sort((a, b) => b.value - a.value);
-  }, [secretariat, year]);
+  }, [secretariat, year, getCurrentRecords]);
 
 
   return (
