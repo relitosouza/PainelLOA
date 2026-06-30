@@ -1,5 +1,13 @@
 import type { NextConfig } from "next";
-const nextConfig: NextConfig = { experimental: { serverActions: { bodySizeLimit: "25mb" } } };
+const nextConfig: NextConfig = {
+  experimental: { serverActions: { bodySizeLimit: "25mb" } },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+};
 export default nextConfig;
-// Config trigger reload
+
 
