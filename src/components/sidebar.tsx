@@ -45,7 +45,7 @@ export function Sidebar({
                 </span>
               </div>
               <div className="min-w-0">
-                {view !== "dashboard" && (
+                {view === "transparente" && (
                   <h1 className="font-headline font-bold text-base leading-tight text-white whitespace-nowrap">
                     Portal Transparência
                   </h1>

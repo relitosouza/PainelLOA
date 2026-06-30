@@ -6,6 +6,8 @@ import { ImportView } from "./import-view";
 import { PresentationDashboard } from "./presentation-dashboard";
 import { SettingsView } from "./settings-view";
 import { Sidebar } from "./sidebar";
+import { RevenueDetailView } from "./revenue-detail-view";
+import { ExpenseDetailView } from "./expense-detail-view";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 
@@ -67,6 +69,10 @@ export function AppShell({ view }: { view: string }) {
             <ImportView />
           ) : view === "configuracoes" ? (
             <SettingsView />
+          ) : view === "receitas" ? (
+            <RevenueDetailView />
+          ) : view === "despesas" ? (
+            <ExpenseDetailView />
           ) : (
             <DashboardView
               view={view}
