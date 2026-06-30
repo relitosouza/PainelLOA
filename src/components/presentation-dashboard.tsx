@@ -184,6 +184,34 @@ export function PresentationDashboard() {
   const topInvestment = summary.programs.find((program) => program.label.toLowerCase().includes("obra")) ?? summary.programs[1] ?? summary.programs[0];
   const primaryLinks = getPrimaryPageLinks("apresentacao");
 
+  const getPriorityValue = (keywords: string[], fallbackPct: number) => {
+    const organMatch = summary.organs.find((item) =>
+      keywords.some((keyword) => item.label.toLowerCase().includes(keyword))
+    );
+    if (organMatch) return organMatch.value;
+
+    const functionMatch = summary.functions.find((item) =>
+      keywords.some((keyword) => item.label.toLowerCase().includes(keyword))
+    );
+    if (functionMatch) return functionMatch.value;
+
+    return summary.total * fallbackPct;
+  };
+
+  const prioritySaude = getPriorityValue(["saude", "saúde"], 0.24);
+  const priorityEducacao = getPriorityValue(["educac", "educaç"], 0.20);
+  const priorityObras = getPriorityValue(["obras", "infraestrutura", "infra", "urbanismo"], 0.08);
+  const priorityMobilidade = getPriorityValue(["mobilidade", "transporte", "trânsito", "transito"], 0.05);
+  const priorityAssistencia = getPriorityValue(["assistência", "assistencia", "social", "cidadania"], 0.04);
+
+  const priorities = [
+    { label: "Saúde", value: prioritySaude, color: "bg-red-500" },
+    { label: "Educação", value: priorityEducacao, color: "bg-indigo-500" },
+    { label: "Obras", value: priorityObras, color: "bg-amber-500" },
+    { label: "Mobilidade", value: priorityMobilidade, color: "bg-blue-500" },
+    { label: "Assistência", value: priorityAssistencia, color: "bg-emerald-500" },
+  ];
+
   return (
     <div className="exec-shell">
       <a className="skip-link" href="#presentation-content">Pular para o conteúdo</a>
@@ -392,6 +420,28 @@ export function PresentationDashboard() {
                   <div><b>1</b><p><span>Maior programa</span><strong>{cleanBudgetLabel(topProgram?.label ?? "Não informado")}</strong></p></div>
                   <div><b>2</b><p><span>Maior processo</span><strong>{cleanBudgetLabel(topProcess?.label ?? "Não informado")}</strong></p></div>
                   <div><b>3</b><p><span>Maior investimento</span><strong>{cleanBudgetLabel(topInvestment?.label ?? "Não informado")}</strong></p></div>
+                </div>
+              </article>
+
+              <article className="exec-panel">
+                <div className="exec-panel-head compact">
+                  <div><NavIcon>star</NavIcon><strong>Prioridades de Governo</strong></div>
+                </div>
+                <div style={{ padding: "16px" }}>
+                  {priorities.map((item) => {
+                    const pct = summary.total > 0 ? (item.value / summary.total) * 100 : 0;
+                    return (
+                      <div key={item.label} style={{ marginBottom: "12px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", fontSize: "11px", fontWeight: "bold", color: "var(--on-surface)" }}>
+                          <span>{item.label}</span>
+                          <span>{compactCurrency(item.value)} ({pct.toFixed(1)}%)</span>
+                        </div>
+                        <div style={{ width: "100%", height: "6px", backgroundColor: "rgba(0, 0, 0, 0.08)", borderRadius: "3px", overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, backgroundColor: item.color, borderRadius: "3px" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </article>
 

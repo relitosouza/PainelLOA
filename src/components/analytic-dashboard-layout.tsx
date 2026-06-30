@@ -5,6 +5,7 @@ import { DataSourceToggle } from "./data-source-toggle";
 import { currency } from "@/lib/format";
 import type { DashboardData } from "@/types/loa";
 import { getPrimaryPageLinks } from "@/lib/page-navigation";
+import { Filters, EMPTY_FILTERS, type FilterState } from "./filters";
 
 function normalizeText(value: string) {
   return value
@@ -27,13 +28,151 @@ function findGroup(items: { label: string; value: number }[], keywords: string[]
   return items.find((item) => keywords.some((keyword) => normalizeText(item.label).includes(normalizeText(keyword)))) ?? null;
 }
 
-export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
+export function AnalyticDashboardLayout({
+  data,
+  filters,
+  onChange,
+}: {
+  data: DashboardData;
+  filters: FilterState;
+  onChange: (filters: FilterState) => void;
+}) {
   const totalVal = data.totals.loa;
   const operatingVal = data.spending.operating;
   const investmentVal = data.spending.investment;
   const expenseTotal = operatingVal + investmentVal;
   const isBalanced = totalVal >= expenseTotal;
   const population = 723500;
+
+  const handleQuestionClick = (questionId: string) => {
+    switch (questionId) {
+      case "saude": {
+        const saudeOpt = data.filterOptions.functionName?.find(
+          (opt) => opt.toLowerCase().includes("saude") || opt.toLowerCase().includes("saúde")
+        );
+        onChange({
+          ...EMPTY_FILTERS,
+          functionName: saudeOpt ? [saudeOpt] : [],
+        });
+        break;
+      }
+      case "secretariat": {
+        const topOrgan = data.groups.organ[0]?.label;
+        onChange({
+          ...EMPTY_FILTERS,
+          organ: topOrgan ? [topOrgan] : [],
+        });
+        break;
+      }
+      case "obras": {
+        const obraOpt = data.filterOptions.functionName?.find(
+          (opt) =>
+            opt.toLowerCase().includes("obra") ||
+            opt.toLowerCase().includes("infra") ||
+            opt.toLowerCase().includes("urbanismo")
+        );
+        if (obraOpt) {
+          onChange({
+            ...EMPTY_FILTERS,
+            functionName: [obraOpt],
+          });
+        } else {
+          onChange({
+            ...EMPTY_FILTERS,
+            subelement: ["51"],
+          });
+        }
+        break;
+      }
+      case "programa": {
+        const topProgram = data.groups.program[0]?.label;
+        onChange({
+          ...EMPTY_FILTERS,
+          program: topProgram ? [topProgram] : [],
+        });
+        break;
+      }
+      case "educacao": {
+        const educacaoOpt = data.filterOptions.functionName?.find(
+          (opt) => opt.toLowerCase().includes("educac") || opt.toLowerCase().includes("educaç")
+        );
+        onChange({
+          ...EMPTY_FILTERS,
+          functionName: educacaoOpt ? [educacaoOpt] : [],
+        });
+        break;
+      }
+      case "futuro": {
+        onChange({
+          ...EMPTY_FILTERS,
+          subelement: ["51"],
+        });
+        break;
+      }
+      case "acoes": {
+        const topAction = data.groups.action[0]?.label;
+        onChange({
+          ...EMPTY_FILTERS,
+          action: topAction ? [topAction] : [],
+        });
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
+  const questions = [
+    {
+      id: "saude",
+      label: "Quanto será investido em Saúde?",
+      icon: "medical_services",
+      colorClass: "bg-red-50 hover:bg-red-100 border-red-200 text-red-700 dark:bg-red-950/20 dark:border-red-900/30 dark:text-red-300",
+      iconColorClass: "text-red-500",
+    },
+    {
+      id: "secretariat",
+      label: "Qual secretaria recebe mais recursos?",
+      icon: "leaderboard",
+      colorClass: "bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 dark:bg-blue-950/20 dark:border-blue-900/30 dark:text-blue-300",
+      iconColorClass: "text-blue-500",
+    },
+    {
+      id: "obras",
+      label: "Quanto será investido em obras?",
+      icon: "engineering",
+      colorClass: "bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-300",
+      iconColorClass: "text-amber-500",
+    },
+    {
+      id: "programa",
+      label: "Qual programa possui maior orçamento?",
+      icon: "star",
+      colorClass: "bg-teal-50 hover:bg-teal-100 border-teal-200 text-teal-700 dark:bg-teal-950/20 dark:border-teal-900/30 dark:text-teal-300",
+      iconColorClass: "text-teal-500",
+    },
+    {
+      id: "educacao",
+      label: "Quanto vai para Educação?",
+      icon: "school",
+      colorClass: "bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900/30 dark:text-indigo-300",
+      iconColorClass: "text-indigo-500",
+    },
+    {
+      id: "futuro",
+      label: "Quanto está sendo investido no futuro da cidade?",
+      icon: "wb_sunny",
+      colorClass: "bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-300",
+      iconColorClass: "text-emerald-500",
+    },
+    {
+      id: "acoes",
+      label: "Quais são as maiores ações?",
+      icon: "receipt_long",
+      colorClass: "bg-cyan-50 hover:bg-cyan-100 border-cyan-200 text-cyan-700 dark:bg-cyan-950/20 dark:border-cyan-900/30 dark:text-cyan-300",
+      iconColorClass: "text-cyan-500",
+    },
+  ];
 
   const currentRevenue = totalVal * 0.896;
   const capitalRevenue = totalVal * 0.104;
@@ -44,6 +183,7 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
   const healthValue = findGroupValue(data.groups.functionName, ["saude", "saúde"]);
   const educationValue = findGroupValue(data.groups.functionName, ["educacao", "educação"]);
   const infrastructureValue = findGroupValue(data.groups.functionName, ["obra", "infra"]);
+
 
   const perCapitaRows = [
     {
@@ -103,7 +243,7 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
               <Link
                 key={link.key}
                 href={link.href}
-                className="inline-flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
+                className="inline-flex items-center gap-2 bg-surface border border-outline-variant px-4 py-2 text-sm font-medium text-on-surface rounded-lg shadow-sm hover:bg-surface-container-low transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">{link.icon}</span>
                 {link.label}
@@ -111,49 +251,57 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
             ))}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 md:gap-3 bg-surface px-4 py-2 rounded-lg shadow-sm border border-outline-variant text-sm font-medium">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3 bg-surface px-4 py-2 border border-outline-variant rounded-lg shadow-sm text-sm font-medium text-on-surface">
           <DataSourceToggle />
           <span className="flex items-center gap-2 border-l border-outline-variant/30 pl-4 text-on-surface-variant">
-            <span className="material-symbols-outlined text-tertiary">calendar_today</span>
+            <span className="material-symbols-outlined text-on-surface-variant">calendar_today</span>
             Exercício: {exerciseYear}
           </span>
         </div>
       </header>
 
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <article className="glass-card revenue-gradient p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+        <article className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border-l-4 border-l-blue-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
-            <p className="text-xs font-bold text-tertiary uppercase tracking-wider mb-1">Receita Total</p>
-            <h3 className="text-3xl font-headline font-bold text-on-surface">{formatCompactMoney(totalVal)}</h3>
+            <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Receita Total</p>
+            <h3 className="text-3xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
           </div>
-          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-tertiary/10">account_balance_wallet</span>
+          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-blue-500/10">account_balance_wallet</span>
         </article>
-        <article className="glass-card expense-gradient p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+        <article className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border-l-4 border-l-orange-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
-            <p className="text-xs font-bold text-orange-700 uppercase tracking-wider mb-1">Despesa Total Fixada</p>
-            <h3 className="text-3xl font-headline font-bold text-on-surface">{formatCompactMoney(expenseTotal)}</h3>
+            <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">Despesa Total Fixada</p>
+            <h3 className="text-3xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(expenseTotal)}</h3>
           </div>
-          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-700/10">payments</span>
+          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-500/10">payments</span>
         </article>
-        <article className="glass-card p-5 flex flex-col justify-center h-32 border-l-4 border-l-green-500">
+        <article className="glass-card bg-green-50/60 dark:bg-green-950/20 border-l-4 border-l-green-500 p-5 flex flex-col justify-center h-32">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Equilíbrio</p>
-              <h3 className="text-lg font-headline font-bold text-on-surface">{isBalanced ? "Despesa = Receita" : "Despesa > Receita"}</h3>
+              <p className="text-xs font-bold text-green-700 dark:text-green-300 uppercase tracking-wider mb-1">Equilíbrio</p>
+              <h3 className="text-lg font-headline font-bold text-green-900 dark:text-green-100">{isBalanced ? "Despesa = Receita" : "Despesa > Receita"}</h3>
             </div>
-            <div className="px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded uppercase">
+            <div className="px-2 py-1 bg-green-500 text-white text-[10px] font-bold rounded uppercase">
               {isBalanced ? "Equilibrado" : "Atenção"}
             </div>
           </div>
         </article>
-        <article className="glass-card p-5 flex flex-col justify-center h-32 bg-primary/5">
+        <article className="glass-card bg-purple-50/60 dark:bg-purple-950/20 border-l-4 border-l-purple-500 p-5 flex flex-col justify-center h-32">
           <div>
-            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">População Estimada</p>
-            <h3 className="text-xl font-headline font-bold text-on-surface">723.500 Hab.</h3>
-            <p className="text-xs text-on-surface-variant">Base para métricas per capita</p>
+            <p className="text-xs font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider mb-1">População Estimada</p>
+            <h3 className="text-xl font-headline font-bold text-purple-900 dark:text-purple-100">723.500 Hab.</h3>
+            <p className="text-xs text-purple-600 dark:text-purple-400">Base para métricas per capita</p>
           </div>
         </article>
       </section>
+
+      <Filters
+        filters={filters}
+        options={data.filterOptions}
+        total={data.totals.filtered}
+        onChange={onChange}
+        onClear={() => onChange(EMPTY_FILTERS)}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="flex flex-col gap-6">
@@ -322,12 +470,31 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
                 Investimentos representam {expenseTotal ? `${Math.round((investmentVal / expenseTotal) * 100)}%` : "0%"} do orçamento, com maior peso nos projetos de expansão.
               </div>
               <div className="p-3 bg-surface-container rounded text-sm text-on-surface-variant">
-                Identificadas {data.counts.actions} ações vinculadas ao plano, indicando boa granularidade de execução.
+                Identificadas {data.counts.actions} ações vinculadas al plano, indicando boa granularidade de execução.
               </div>
             </div>
           </section>
         </div>
       </div>
+
+      <section className="glass-card p-6 bg-surface">
+        <div className="flex items-center gap-2 mb-4 text-primary">
+          <span className="material-symbols-outlined text-xl">help_outline</span>
+          <h4 className="text-sm font-bold uppercase tracking-wider text-on-surface">Pergunte ao orçamento</h4>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {questions.map((q) => (
+            <button
+              key={q.id}
+              onClick={() => handleQuestionClick(q.id)}
+              className={`inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] cursor-pointer ${q.colorClass}`}
+            >
+              <span className={`material-symbols-outlined text-[16px] ${q.iconColorClass}`}>{q.icon}</span>
+              {q.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="glass-card p-8">
         <div className="text-center mb-8">
@@ -364,27 +531,31 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
       </section>
 
       <section className="glass-card overflow-hidden">
-        <div className="p-6 border-b border-outline-variant/30">
-          <h4 className="text-sm font-bold uppercase text-on-surface-variant">Indicadores de Despesa por Habitante</h4>
+        <div className="p-6 border-b border-outline-variant bg-surface">
+          <h4 className="text-sm font-semibold text-on-surface">Indicadores de Despesa por Habitante</h4>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm border-collapse">
             <thead>
-              <tr className="bg-surface-container text-on-surface-variant font-bold text-[10px] uppercase">
-                <th className="px-6 py-3">Indicador</th>
-                <th className="px-6 py-3">Valor Total</th>
-                <th className="px-6 py-3">Valor por Habitante</th>
-                <th className="px-6 py-3">Status</th>
+              <tr className="bg-surface-container border-b border-outline-variant text-on-surface-variant font-semibold text-xs tracking-wider">
+                <th className="px-6 py-4">Indicador</th>
+                <th className="px-6 py-4">Valor Total</th>
+                <th className="px-6 py-4">Valor por Habitante</th>
+                <th className="px-6 py-4">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-outline-variant/20">
+            <tbody className="divide-y divide-outline-variant/30">
               {perCapitaRows.map((row) => (
-                <tr key={row.label}>
-                  <td className="px-6 py-4 font-medium">{row.label}</td>
-                  <td className="px-6 py-4">{formatCompactMoney(row.total)}</td>
-                  <td className="px-6 py-4 font-bold">{currency.format(row.perCapita)}</td>
+                <tr key={row.label} className="hover:bg-surface-container-low/30">
+                  <td className="px-6 py-4 font-semibold text-on-surface">{row.label}</td>
+                  <td className="px-6 py-4 text-on-surface font-medium">{formatCompactMoney(row.total)}</td>
+                  <td className="px-6 py-4 font-semibold text-on-surface">{currency.format(row.perCapita)}</td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${row.tone === "green" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                      row.tone === "green" 
+                        ? "bg-green-100 text-green-800" 
+                        : "bg-blue-100 text-blue-800"
+                    }`}>
                       {row.status}
                     </span>
                   </td>
@@ -396,17 +567,17 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <article className="glass-card p-5">
+        <article className="glass-card bg-surface p-5">
           <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Receita Corrente</p>
           <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(currentRevenue)}</h4>
           <p className="text-xs text-on-surface-variant mt-2">{topHealthFunction?.label || "Maior função"}</p>
         </article>
-        <article className="glass-card p-5">
+        <article className="glass-card bg-surface p-5">
           <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Educação</p>
           <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(educationValue || totalVal * 0.2)}</h4>
           <p className="text-xs text-on-surface-variant mt-2">{topEducationFunction?.label || "Segundo maior eixo"}</p>
         </article>
-        <article className="glass-card p-5">
+        <article className="glass-card bg-surface p-5">
           <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Obras e Infraestrutura</p>
           <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(infrastructureValue || totalVal * 0.08)}</h4>
           <p className="text-xs text-on-surface-variant mt-2">{topInfrastructureFunction?.label || "Carteira estratégica"}</p>

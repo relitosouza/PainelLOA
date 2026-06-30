@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart } from "./bar-chart";
 import { DataTable } from "./data-table";
 import { AnalyticDashboardLayout } from "./analytic-dashboard-layout";
-import { type FilterState } from "./filters";
+import { type FilterState, EMPTY_FILTERS, Filters } from "./filters";
 import { SummaryCards } from "./summary-cards";
 import { currency, integer } from "@/lib/format";
 import { getSecretariatDemoRecords } from "@/lib/secretariat-data";
@@ -175,17 +175,21 @@ export function DashboardView({
   if (view === "dashboard") {
     return (
       <>
-        {error && <div className="alert animate-fade-in" role="alert">{error} Verifique a variÃ¡vel DATABASE_URL e se o PostgreSQL estÃ¡ disponÃ­vel.</div>}
+        {error && <div className="alert animate-fade-in" role="alert">{error} Verifique a variável DATABASE_URL e se o PostgreSQL está disponível.</div>}
 
         {loading && !data.hasData ? (
           <div className="loading flex items-center justify-center h-64">
             <div className="text-center">
               <div className="spinner mx-auto mb-4" />
-              <p className="text-on-surface-variant font-medium">Carregando dados orÃ§amentÃ¡rios...</p>
+              <p className="text-on-surface-variant font-medium">Carregando dados orçamentários...</p>
             </div>
           </div>
         ) : (
-          <AnalyticDashboardLayout data={data} />
+          <AnalyticDashboardLayout
+            data={data}
+            filters={filters}
+            onChange={updateFilters}
+          />
         )}
       </>
     );
@@ -536,7 +540,7 @@ export function DashboardView({
               </div>
             </div>
           ) : (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in space-y-6">
               <header className="page-heading flex justify-between items-center">
                 <div>
                   <p className="eyebrow font-medium">Visão Analítica da LOA</p>
@@ -622,6 +626,14 @@ export function DashboardView({
                   note="Projetos em planejamento"
                 />
               </section>
+
+              <Filters
+                filters={filters}
+                options={data.filterOptions}
+                total={data.totals.filtered}
+                onChange={updateFilters}
+                onClear={() => updateFilters(EMPTY_FILTERS)}
+              />
 
               <section className="charts-grid mt-6" aria-label="Gráficos orçamentários">
                 <BarChart
