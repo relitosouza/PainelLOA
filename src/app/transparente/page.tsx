@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useDataSource, DataSourceToggle } from "@/components/data-source-toggle";
 import type { DashboardData, BudgetRow } from "@/types/loa";
+import { getPrimaryPageLinks } from "@/lib/page-navigation";
 
 export default function TransparentePage() {
   const statsRef = useRef<HTMLDivElement>(null);
@@ -94,6 +95,7 @@ export default function TransparentePage() {
 
   const totalOfThesePct = saudePct + educacaoPct + obrasPct + mobilidadePct + socialPct;
   const otherPct = Math.max(0, 100 - totalOfThesePct);
+  const primaryLinks = getPrimaryPageLinks("transparente");
 
   const topInvestments = useMemo(() => {
     if (!isReal) {
@@ -159,19 +161,13 @@ export default function TransparentePage() {
           <nav className="flex justify-between items-center w-full px-margin-desktop max-w-container-max mx-auto h-20">
             <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">LOA Transparente</Link>
             <div className="hidden md:flex items-center space-x-8 font-body-md text-body-md">
-              <a className="text-primary border-b-2 border-primary pb-1 font-semibold" href="#">Orçamento</a>
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Transparência</a>
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Departamentos</a>
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Relatórios</a>
+              {primaryLinks.map((link) => (
+                <Link key={link.key} href={link.href} className="text-on-surface-variant hover:text-primary transition-colors">
+                  {link.label}
+                </Link>
+              ))}
             </div>
             <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="hidden md:inline-flex items-center gap-2 rounded-full border border-outline-variant px-4 py-2 font-label-md text-label-md text-on-surface hover:bg-surface-container-low transition-soft"
-              >
-                <span className="material-symbols-outlined text-[18px]">dashboard</span>
-                Painel Executivo
-              </Link>
               <div className="transparent-nav-toggle">
                 <DataSourceToggle />
               </div>

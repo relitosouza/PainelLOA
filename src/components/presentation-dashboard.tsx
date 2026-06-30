@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { currency, percent } from "@/lib/format";
 import { getPresentationRecords, groupPresentation, PRESENTATION_SECRETARIATS, type PresentationRecord } from "@/lib/presentation-data";
+import { getPrimaryPageLinks } from "@/lib/page-navigation";
 import { useDataSource, DataSourceToggle } from "./data-source-toggle";
 import type { DashboardData, BudgetRow } from "@/types/loa";
 
@@ -11,10 +12,22 @@ function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
+function cleanBudgetLabel(label: string) {
+  return label
+    .replace(/^\d{2}\.\d{2}\.\d{3}\.\d{2}\s*-\s*/i, "")
+    .replace(/=$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function share(value: number, total: number) {
+  return total ? percent.format(value / total) : "0%";
+}
+
 function Treemap({ items, total }: { items: { label: string; value: number }[]; total: number }) {
   const nodes = useMemo(() => {
-    const sorted = [...items].sort((a, b) => b.value - a.value);
-    
+    const sorted = [...items].sort((a, b) => b.value - a.value).slice(0, 6);
+
     type TreemapNode = {
       label: string;
       value: number;
@@ -26,103 +39,52 @@ function Treemap({ items, total }: { items: { label: string; value: number }[]; 
 
     function layout(list: { label: string; value: number }[], x: number, y: number, w: number, h: number): TreemapNode[] {
       if (list.length === 0) return [];
-      if (list.length === 1) {
-        return [{ ...list[0], x, y, w, h }];
-      }
+      if (list.length === 1) return [{ ...list[0], x, y, w, h }];
 
-      const sum = list.reduce((s, item) => s + item.value, 0);
+      const sum = list.reduce((acc, item) => acc + item.value, 0);
       const first = list[0];
-      const f = sum > 0 ? first.value / sum : 0;
+      const ratio = sum > 0 ? first.value / sum : 0;
 
       if (w > h) {
-        const firstNode = { ...first, x, y, w: w * f, h };
-        const rest = layout(list.slice(1), x + w * f, y, w * (1 - f), h);
-        return [firstNode, ...rest];
-      } else {
-        const firstNode = { ...first, x, y, w, h: h * f };
-        const rest = layout(list.slice(1), x, y + h * f, w, h * (1 - f));
-        return [firstNode, ...rest];
+        const firstNode = { ...first, x, y, w: w * ratio, h };
+        return [firstNode, ...layout(list.slice(1), x + w * ratio, y, w * (1 - ratio), h)];
       }
+
+      const firstNode = { ...first, x, y, w, h: h * ratio };
+      return [firstNode, ...layout(list.slice(1), x, y + h * ratio, w, h * (1 - ratio))];
     }
 
     return layout(sorted, 0, 0, 100, 100);
   }, [items]);
 
-  const colors = [
-    "linear-gradient(135deg, #1e3a8a, #3b82f6)",
-    "linear-gradient(135deg, #0d9488, #14b8a6)",
-    "linear-gradient(135deg, #b45309, #f59e0b)",
-    "linear-gradient(135deg, #15803d, #22c55e)",
-    "linear-gradient(135deg, #475569, #64748b)",
-    "linear-gradient(135deg, #be123c, #f43f5e)",
-    "linear-gradient(135deg, #6d28d9, #8b5cf6)",
-  ];
-
   return (
-    <div style={{ position: "relative", width: "100%", height: 350, background: "var(--background)", borderRadius: 12, overflow: "hidden" }}>
-      {nodes.map((node, index) => {
-        const color = colors[index % colors.length];
-        const isVerySmall = node.w < 12 || node.h < 12;
-        const isExtremelySmall = node.w < 6 || node.h < 6;
-        
-        return (
-          <div
-            key={node.label}
-            style={{
-              position: "absolute",
-              left: `${node.x}%`,
-              top: `${node.y}%`,
-              width: `${node.w}%`,
-              height: `${node.h}%`,
-              padding: 4,
-              boxSizing: "border-box",
-              transition: "all 0.3s ease",
-            }}
-          >
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                background: color,
-                borderRadius: 8,
-                padding: "12px 10px",
-                boxSizing: "border-box",
-                color: "#ffffff",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                overflow: "hidden",
-                boxShadow: "inset 0 1px 3px rgba(255,255,255,0.2)",
-              }}
-              title={`${node.label}: ${compactCurrency(node.value)} (${percent.format(total ? node.value / total : 0)})`}
-            >
-              {!isExtremelySmall && (
-                <>
-                  <span style={{ fontSize: isVerySmall ? 10 : 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.2 }}>
-                    {node.label}
-                  </span>
-                  {!isVerySmall && (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 4 }}>
-                      <strong style={{ fontSize: 15, fontWeight: 800 }}>{compactCurrency(node.value)}</strong>
-                      <span style={{ fontSize: 10, opacity: 0.85 }}>{percent.format(total ? node.value / total : 0)}</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+    <div className="exec-treemap" aria-label="Mapa de valor por secretaria">
+      {nodes.map((node, index) => (
+        <div
+          className="exec-treemap-node"
+          key={node.label}
+          style={{ left: `${node.x}%`, top: `${node.y}%`, width: `${node.w}%`, height: `${node.h}%` }}
+          title={`${cleanBudgetLabel(node.label)}: ${compactCurrency(node.value)} (${share(node.value, total)})`}
+        >
+          <div data-rank={index + 1}>
+            <span>{cleanBudgetLabel(node.label)}</span>
+            <strong>{compactCurrency(node.value)}</strong>
+            <small>{share(node.value, total)}</small>
           </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }
 
+function NavIcon({ children }: { children: string }) {
+  return <span className="material-symbols-outlined" aria-hidden="true">{children}</span>;
+}
 
 export function PresentationDashboard() {
   const [year, setYear] = useState<2026 | 2027>(2027);
   const [secretariat, setSecretariat] = useState("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [dataSource] = useDataSource();
   const [dbData, setDbData] = useState<DashboardData | null>(null);
 
@@ -130,48 +92,40 @@ export function PresentationDashboard() {
     if (dataSource === "real" && !dbData) {
       fetch("/api/loa?all=true")
         .then((res) => res.json())
-        .then((res) => {
-          setDbData(res);
-        })
+        .then((res) => setDbData(res))
         .catch(console.error);
     }
   }, [dataSource, dbData]);
 
   const realRecords = useMemo((): PresentationRecord[] => {
-    if (!dbData || !dbData.records) return [];
-    return dbData.records.map((r: BudgetRow) => {
-      const isOperating = r.expenseNature.startsWith("3") || r.subelement === "33";
-      let nature: "Pessoal" | "Custeio" | "Investimentos" | "Amortização" = "Custeio";
-      if (r.expenseNature.startsWith("3.1")) nature = "Pessoal";
-      else if (r.expenseNature.startsWith("3.3")) nature = "Custeio";
-      else if (r.expenseNature.startsWith("4.4")) nature = "Investimentos";
-      else if (r.expenseNature.startsWith("4.6")) nature = "Amortização";
-      else if (isOperating) nature = "Custeio";
-      else nature = "Investimentos";
+    if (!dbData?.records) return [];
+    return dbData.records.map((record: BudgetRow) => {
+      const isOperating = record.expenseNature.startsWith("3") || record.subelement === "33";
+      let nature: PresentationRecord["nature"] = "Custeio";
+      if (record.expenseNature.startsWith("3.1")) nature = "Pessoal";
+      else if (record.expenseNature.startsWith("3.3")) nature = "Custeio";
+      else if (record.expenseNature.startsWith("4.4")) nature = "Investimentos";
+      else if (record.expenseNature.startsWith("4.6")) nature = "Amortização";
+      else if (!isOperating) nature = "Investimentos";
 
       return {
-        secretariat: r.organ,
-        unit: r.budgetUnit,
-        functionName: r.functionName,
-        program: r.program,
-        process: r.administrativeProcess,
+        secretariat: record.organ,
+        unit: record.budgetUnit,
+        functionName: record.functionName,
+        program: record.program,
+        process: record.administrativeProcess,
         category: isOperating ? "operating" : "investment",
         nature,
-        value: r.value,
+        value: record.value,
       };
     });
   }, [dbData]);
 
   const getCurrentRecords = useMemo(() => {
-    return (y: 2026 | 2027): PresentationRecord[] => {
-      if (dataSource === "ficticio") {
-        return getPresentationRecords(y);
-      }
-      if (y === 2027) return realRecords;
-      return realRecords.map((r: PresentationRecord, index: number) => ({
-        ...r,
-        value: Math.round(r.value * (0.88 + (index % 4) * 0.01)),
-      }));
+    return (selectedYear: 2026 | 2027): PresentationRecord[] => {
+      if (dataSource === "ficticio") return getPresentationRecords(selectedYear);
+      if (selectedYear === 2027) return realRecords;
+      return realRecords.map((record, index) => ({ ...record, value: Math.round(record.value * (0.88 + (index % 4) * 0.01)) }));
     };
   }, [dataSource, realRecords]);
 
@@ -184,421 +138,332 @@ export function PresentationDashboard() {
     const programs = groupPresentation(records, "program");
     const processes = groupPresentation(records, "process");
     const organs = groupPresentation(records, "secretariat");
-    const topFunctions = functions.slice(0, 3);
-    const others = Math.max(0, total - topFunctions.reduce((sum, item) => sum + item.value, 0));
-    const totalRecords = records.length;
-    return { total, operating, investment: total - operating, functions, units, programs, processes, organs, donutValues: [...topFunctions.map((item) => item.value), others], totalRecords };
-  }, [secretariat, year, getCurrentRecords]);
-
-  const previousTotal = useMemo(() => getCurrentRecords(2026).filter((record) => !secretariat || record.secretariat === secretariat).reduce((sum, record) => sum + record.value, 0), [secretariat, getCurrentRecords]);
-  const trend = previousTotal ? summary.total / previousTotal - 1 : 0;
-  const topFunctionTotal = summary.functions.slice(0, 4).reduce((sum, item) => sum + item.value, 0);
-  const remainingFunctions = Math.max(0, summary.total - topFunctionTotal);
-  const concentration = [...summary.functions.slice(0, 4), ...(remainingFunctions ? [{ label: "Demais funções", value: remainingFunctions }] : [])];
-  const maxUnit = summary.units[0]?.value ?? 1;
-
-  const areas = useMemo(() => {
-    const records = getCurrentRecords(year).filter((record) => !secretariat || record.secretariat === secretariat);
-    const getAreaValue = (func: string) => {
-      return records
-        .filter((r) => r.functionName.toLowerCase() === func.toLowerCase())
-        .reduce((sum, r) => sum + r.value, 0);
+    return {
+      total,
+      operating,
+      investment: total - operating,
+      functions,
+      units,
+      programs,
+      processes,
+      organs,
+      totalRecords: records.length,
+      secretariatCount: new Set(records.map((record) => record.secretariat)).size,
+      unitCount: new Set(records.map((record) => record.unit)).size,
+      programCount: new Set(records.map((record) => record.program)).size,
+      processCount: new Set(records.map((record) => record.process)).size,
+      natureTotals: records.reduce<Record<PresentationRecord["nature"], number>>(
+        (acc, record) => {
+          acc[record.nature] += record.value;
+          return acc;
+        },
+        { Pessoal: 0, Custeio: 0, Investimentos: 0, Amortização: 0 },
+      ),
     };
-    
-    return [
-      { label: "Saúde", value: getAreaValue("Saúde") },
-      { label: "Educação", value: getAreaValue("Educação") },
-      { label: "Segurança", value: getAreaValue("Segurança") },
-      { label: "Habitação", value: getAreaValue("Habitação") },
-      { label: "Transporte", value: getAreaValue("Transporte") },
-      { label: "Assistência Social", value: getAreaValue("Assistência Social") },
-      { label: "Cultura", value: getAreaValue("Cultura") },
-    ].sort((a, b) => b.value - a.value);
   }, [secretariat, year, getCurrentRecords]);
 
-  const educationValue = useMemo(() => areas.find(a => a.label === "Educação")?.value ?? 0, [areas]);
-  const healthValue = useMemo(() => areas.find(a => a.label === "Saúde")?.value ?? 0, [areas]);
-  const socialValue = useMemo(() => areas.find(a => a.label === "Assistência Social")?.value ?? 0, [areas]);
-
-  const receitaPerCapita = useMemo(() => summary.total / 760000, [summary.total]);
-  const educacaoPerCapita = useMemo(() => educationValue / 760000, [educationValue]);
-  const saudePerCapita = useMemo(() => healthValue / 760000, [healthValue]);
-  const socialPerCapita = useMemo(() => socialValue / 760000, [socialValue]);
-
-  const programGrowth = useMemo(() => {
-    const filtered2027 = getCurrentRecords(2027).filter((r) => !secretariat || r.secretariat === secretariat);
-    const filtered2026 = getCurrentRecords(2026).filter((r) => !secretariat || r.secretariat === secretariat);
-    
-    const prog2027 = groupPresentation(filtered2027, "program");
-    const prog2026 = groupPresentation(filtered2026, "program");
-    
-    return prog2027.map((p27) => {
-      const p26 = prog2026.find((x) => x.label === p27.label);
-      const val26 = p26 ? p26.value : 0;
-      const diff = p27.value - val26;
-      const percentGrowth = val26 ? (diff / val26) : 0;
-      return { label: p27.label, current: p27.value, diff, percentGrowth };
-    }).sort((a, b) => b.percentGrowth - a.percentGrowth);
+  const previousTotal = useMemo(() => {
+    return getCurrentRecords(2026)
+      .filter((record) => !secretariat || record.secretariat === secretariat)
+      .reduce((sum, record) => sum + record.value, 0);
   }, [secretariat, getCurrentRecords]);
 
-  const topInvestmentProgram = useMemo(() => {
-    const records = getCurrentRecords(year).filter((record) => !secretariat || record.secretariat === secretariat);
-    const investmentRecords = records.filter((r) => r.category === "investment");
-    const grouped = groupPresentation(investmentRecords, "program");
-    return grouped[0] || null;
-  }, [secretariat, year, getCurrentRecords]);
+  const trend = previousTotal ? summary.total / previousTotal - 1 : 0;
+  const topFiveShare = summary.total ? summary.organs.slice(0, 5).reduce((sum, item) => sum + item.value, 0) / summary.total : 0;
+  const ownRevenue = summary.total * 0.41;
+  const transfers = summary.total * 0.53;
+  const capitalRevenue = Math.max(0, summary.total - ownRevenue - transfers);
+  const investmentShare = summary.total ? summary.investment / summary.total : 0;
+  const perCapita = summary.total / 723_500;
+  const maxFunction = summary.functions[0]?.value ?? 1;
+  const maxUnit = summary.units[0]?.value ?? 1;
 
-  const topOperatingProgram = useMemo(() => {
-    const records = getCurrentRecords(year).filter((record) => !secretariat || record.secretariat === secretariat);
-    const operatingRecords = records.filter((r) => r.category === "operating");
-    const grouped = groupPresentation(operatingRecords, "program");
-    return grouped[0] || null;
-  }, [secretariat, year, getCurrentRecords]);
-
-  const deliveries = useMemo(() => {
-    const records = getCurrentRecords(year).filter((record) => !secretariat || record.secretariat === secretariat);
-    const getDeliveryValue = (proc: string) => {
-      return records
-        .filter((r) => r.process.toLowerCase() === proc.toLowerCase())
-        .reduce((sum, r) => sum + r.value, 0);
-    };
-    
-    return [
-      { label: "Construção de UBS", value: getDeliveryValue("Construção de UBS") },
-      { label: "Pavimentação", value: getDeliveryValue("Pavimentação") },
-      { label: "Merenda Escolar", value: getDeliveryValue("Merenda Escolar") },
-      { label: "Transporte Escolar", value: getDeliveryValue("Transporte Escolar") },
-      { label: "Iluminação Pública", value: getDeliveryValue("Iluminação Pública") },
-    ].sort((a, b) => b.value - a.value);
-  }, [secretariat, year, getCurrentRecords]);
-
+  const areas = summary.functions.slice(0, 6);
+  const topProgram = summary.programs[0];
+  const topProcess = summary.processes[0];
+  const topInvestment = summary.programs.find((program) => program.label.toLowerCase().includes("obra")) ?? summary.programs[1] ?? summary.programs[0];
+  const primaryLinks = getPrimaryPageLinks("apresentacao");
 
   return (
-    <div className="presentation-shell">
+    <div className="exec-shell">
       <a className="skip-link" href="#presentation-content">Pular para o conteúdo</a>
-      <aside className={`presentation-sidebar ${sidebarCollapsed ? "collapsed" : ""}`} aria-label="Filtros da apresentação">
-        <div className="presentation-brand">
-          <div>
-            <span>LOA</span>
-            <small>Painel Executivo</small>
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              className="presentation-toggle-btn"
-              onClick={() => setSidebarCollapsed(true)}
-              title="Recolher menu"
-              aria-label="Recolher menu"
-            >
-              ◀
-            </button>
-            <Link href="/" title="Voltar ao sistema" aria-label="Voltar ao sistema">←</Link>
-          </div>
+
+      <nav className="exec-topbar" aria-label="Navegação do painel executivo">
+        <Link href="/" className="exec-brand-link" aria-label="Página inicial da Prefeitura de Osasco">
+          <img src="/brasao.png" alt="Brasão da Prefeitura de Osasco" className="exec-brand-logo" />
+        </Link>
+        <div className="exec-topbar-links">
+          {primaryLinks.map((link) => (
+            <Link key={link.key} href={link.href}>
+              {link.label}
+            </Link>
+          ))}
         </div>
-        <div className="presentation-sidebar-body">
-          <nav className="presentation-nav">
-            <span className="active" title="Dashboard Executivo">
-              <b aria-hidden="true">▦</b>
-              {!sidebarCollapsed && <span>Dashboard Executivo</span>}
-            </span>
-            <Link href="/" title="Painel Analítico">
-              <b aria-hidden="true">◫</b>
-              {!sidebarCollapsed && <span>Painel Analítico</span>}
-            </Link>
-            <Link href="/relatorios" title="Relatórios">
-              <b aria-hidden="true">▥</b>
-              {!sidebarCollapsed && <span>Relatórios</span>}
-            </Link>
-            <Link href="/transparente" title="LOA Transparente">
-              <b aria-hidden="true">⧉</b>
-              {!sidebarCollapsed && <span>LOA Transparente</span>}
-            </Link>
-          </nav>
-          {!sidebarCollapsed && (
-            <>
-              <section className="presentation-filters">
-                <div className="presentation-filter-title">
-                  <span>Filtros</span>
-                  <button onClick={() => { setSecretariat(""); setYear(2027); }}>Limpar</button>
-                </div>
-                <label htmlFor="presentation-secretariat">Secretaria</label>
-                <select
-                  id="presentation-secretariat"
-                  value={secretariat}
-                  onChange={(event) => setSecretariat(event.target.value)}
-                >
-                  <option value="">Todas as Secretarias</option>
-                  {PRESENTATION_SECRETARIATS.map((item) => <option key={item}>{item}</option>)}
-                </select>
-                <fieldset>
-                  <legend>Exercício</legend>
-                  <div className="presentation-years">
-                    <button
-                      aria-pressed={year === 2027}
-                      className={year === 2027 ? "active" : ""}
-                      onClick={() => setYear(2027)}
-                    >
-                      2027
-                    </button>
-                    <button
-                      aria-pressed={year === 2026}
-                      className={year === 2026 ? "active" : ""}
-                      onClick={() => setYear(2026)}
-                    >
-                      2026
-                    </button>
-                  </div>
-                </fieldset>
-              </section>
-              <div className="presentation-context">
-                <span>Apresentando</span>
-                <strong>{secretariat || "Visão consolidada do Município"}</strong>
-                <small>Exercício {year} · Dados demonstrativos</small>
-              </div>
-            </>
-          )}
+        <div className="exec-topbar-actions">
+          <button
+            type="button"
+            className="exec-sidebar-toggle"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+          >
+            <NavIcon>{sidebarCollapsed ? "menu_open" : "menu"}</NavIcon>
+          </button>
+          <div className="exec-search">
+            <NavIcon>search</NavIcon>
+            <input name="presentation-search" autoComplete="off" placeholder="Buscar dado…" aria-label="Buscar dado" />
+          </div>
+          <button type="button" aria-label="Notificações"><NavIcon>notifications</NavIcon></button>
+          <button type="button" aria-label="Configurações"><NavIcon>settings</NavIcon></button>
+          <div className="exec-avatar" aria-label="Gestor municipal">LOA</div>
         </div>
-        <div className="presentation-sidebar-footer">
-          <div>AP</div>
-          {!sidebarCollapsed && (
-            <p>
-              <strong>Modo Apresentação</strong>
-              <span>Visão executiva</span>
-            </p>
-          )}
+      </nav>
+
+      <aside className={`exec-sidebar${sidebarCollapsed ? " collapsed" : ""}`} aria-label="Menu executivo">
+        <nav className="exec-side-nav">
+          <Link href="/" className="exec-side-link"><NavIcon>dashboard</NavIcon><span className="exec-link-label">Visão Geral</span></Link>
+          <span className="exec-side-link active"><NavIcon>payments</NavIcon><span className="exec-link-label">Receitas</span></span>
+          <span className="exec-side-link"><NavIcon>account_balance_wallet</NavIcon><span className="exec-link-label">Despesas</span></span>
+          <div className="exec-side-group">
+            <div className="exec-side-link">
+              <NavIcon>corporate_fare</NavIcon>
+              <span className="exec-link-label">Secretarias</span>
+              <NavIcon>expand_more</NavIcon>
+            </div>
+            <div className="exec-side-search">
+              <NavIcon>search</NavIcon>
+              <input name="presentation-secretariat-search" autoComplete="off" placeholder="Filtrar…" aria-label="Filtrar secretarias" />
+            </div>
+            <select name="presentation-secretariat" value={secretariat} onChange={(event) => setSecretariat(event.target.value)} aria-label="Filtrar por secretaria">
+              <option value="">Todas as Secretarias</option>
+              {PRESENTATION_SECRETARIATS.map((item) => <option key={item} value={item}>{cleanBudgetLabel(item)}</option>)}
+            </select>
+          </div>
+          <div className="exec-side-group">
+            <div className="exec-side-link">
+              <NavIcon>account_balance</NavIcon>
+              <span className="exec-link-label">Unidades Orçamentárias</span>
+              <NavIcon>expand_more</NavIcon>
+            </div>
+            <div className="exec-side-search">
+              <NavIcon>search</NavIcon>
+              <input name="presentation-unit-search" autoComplete="off" placeholder="Filtrar…" aria-label="Filtrar unidades orçamentárias" />
+            </div>
+            <div className="exec-side-list">
+              {summary.units.slice(0, 3).map((unit) => <span key={unit.label}>{cleanBudgetLabel(unit.label)}</span>)}
+            </div>
+          </div>
+          <span className="exec-side-link"><NavIcon>star</NavIcon><span className="exec-link-label">Prioridades</span></span>
+          <span className="exec-side-link"><NavIcon>query_stats</NavIcon><span className="exec-link-label">Insights</span></span>
+          <span className="exec-side-link"><NavIcon>chat</NavIcon><span className="exec-link-label">Pergunte ao Orçamento</span></span>
+        </nav>
+
+        <div className="exec-side-footer">
+          <button type="button">
+            <NavIcon>article</NavIcon>
+            <span className="exec-link-label">Relatório Mensal</span>
+          </button>
+          <Link href="/transparente"><NavIcon>help</NavIcon><span className="exec-link-label">Suporte</span></Link>
+          <Link href="/"><NavIcon>logout</NavIcon><span className="exec-link-label">Sair</span></Link>
         </div>
       </aside>
 
-      <main className="presentation-main" id="presentation-content">
-        {sidebarCollapsed && (
-          <button
-            className="presentation-floating-toggle-btn"
-            onClick={() => setSidebarCollapsed(false)}
-            title="Abrir menu"
-            aria-label="Abrir menu"
-          >
-            ☰ Menu
-          </button>
-        )}
-        <header 
-          className="presentation-header"
-          style={{ 
-            paddingLeft: sidebarCollapsed ? 96 : 0, 
-            transition: "padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)" 
-          }}
-        >
+      <main className={`exec-main${sidebarCollapsed ? " collapsed" : ""}`} id="presentation-content">
+        <header className="exec-header">
           <div>
-            <p>Painel de decisão</p>
-            <h1>Dashboard Executivo da LOA</h1>
-            <span>Visão sintética do orçamento municipal e dos programas prioritários.</span>
+            <div className="exec-title">Painel Executivo da LOA</div>
+            <p>Sala de Situação do Prefeito — Visão Consolidada de Recursos</p>
           </div>
-          <div className="presentation-header-actions" style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div className="exec-header-actions">
             <DataSourceToggle />
-            <span>Exercício {year}</span>
-            <button onClick={() => void document.documentElement.requestFullscreen?.()}>⛶ Tela cheia</button>
+            <div className="exec-year-toggle" aria-label="Selecionar exercício">
+              <NavIcon>calendar_month</NavIcon>
+              <button className={year === 2027 ? "active" : ""} type="button" onClick={() => setYear(2027)}>LOA 2027</button>
+              <button className={year === 2026 ? "active" : ""} type="button" onClick={() => setYear(2026)}>LOA 2026</button>
+            </div>
+            <button type="button">
+              <NavIcon>filter_alt</NavIcon>
+              Filtros
+            </button>
+            <button type="button" onClick={() => { setSecretariat(""); setYear(2027); }}>
+              Atualizar Dados
+            </button>
           </div>
         </header>
 
-        <section className="presentation-hero-grid" aria-label="Indicadores executivos">
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <article className="presentation-total-card"><p>Valor Total da LOA</p><strong>{compactCurrency(summary.total)}</strong><span>{year === 2027 ? `${trend >= 0 ? "+" : ""}${percent.format(trend)} em relação a 2026` : "Base demonstrativa do exercício 2026"}</span></article>
-            
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-              <div className="presentation-card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".1em" }}>📊 Receita Corrente</p>
-                <strong style={{ fontSize: 18, color: "var(--navy)", fontWeight: 700, marginTop: 8 }}>{compactCurrency(summary.total * 0.8)}</strong>
-              </div>
-              <div className="presentation-card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".1em" }}>🏗️ Receita de Capital</p>
-                <strong style={{ fontSize: 18, color: "var(--navy)", fontWeight: 700, marginTop: 8 }}>{compactCurrency(summary.total * 0.09230769)}</strong>
+        <section className="exec-kpi-grid" aria-label="Panorama geral">
+          <article className="exec-kpi-main">
+            <NavIcon>account_balance</NavIcon>
+            <p>Orçamento Total (LOA)</p>
+            <strong>{compactCurrency(summary.total)}</strong>
+            <span><NavIcon>trending_up</NavIcon>{trend >= 0 ? "+" : ""}{percent.format(trend)} vs Ano Anterior</span>
+          </article>
+          <article className="exec-kpi-card">
+            <div><p>Receita vs Despesa</p><NavIcon>check_circle</NavIcon></div>
+            <strong>Equilibrado</strong>
+            <span>Superávit Projetado: R$ 12M</span>
+            <div className="exec-track"><i style={{ width: "100%" }} /></div>
+          </article>
+          <article className="exec-kpi-card">
+            <div><p>Investimento / Hab.</p><NavIcon>person_pin_circle</NavIcon></div>
+            <strong>{currency.format(perCapita)}</strong>
+            <span>População: 723.500 hab.</span>
+            <div className="exec-segments"><i /><i /><i /><i className="muted" /></div>
+          </article>
+          <article className="exec-mini-grid">
+            <div><span>Secretarias</span><strong>{summary.secretariatCount}</strong></div>
+            <div><span>Programas</span><strong>{summary.programCount}</strong></div>
+            <div><span>Ações</span><strong>{summary.unitCount}</strong></div>
+            <div><span>Processos</span><strong>{summary.processCount}</strong></div>
+          </article>
+        </section>
+
+        <section className="exec-money-grid" id="exec-alerts" aria-label="Receitas e despesas">
+          <article className="exec-panel">
+            <div className="exec-panel-head">
+              <div><NavIcon>arrow_downward</NavIcon><strong>De onde vem o dinheiro</strong></div>
+              <span>Fontes {year}</span>
+            </div>
+            <div className="exec-two-cards">
+              <div className="success"><span>Receita própria</span><strong>{compactCurrency(ownRevenue)}</strong><small>IPTU, ISS, taxas e serviços</small></div>
+              <div className="info"><span>Transferências</span><strong>{compactCurrency(transfers)}</strong><small>FPM, ICMS, SUS e FUNDEB</small></div>
+            </div>
+            <div className="exec-alert">
+              <NavIcon>warning</NavIcon>
+              <div>
+                <strong>Alerta estratégico: dependência externa</strong>
+                <p>Transferências representam {share(transfers, summary.total)} do orçamento. A leitura executiva recomenda acompanhar arrecadação própria.</p>
               </div>
             </div>
-
-            <div className="presentation-card" style={{ padding: "24px 28px", display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 224, boxSizing: "border-box" }}>
-              <p style={{ margin: "0 0 16px", color: "var(--blue)", fontSize: 10, fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase" }}>Indicadores Per Capita (760k hab.)</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, justifyContent: "center" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line)", paddingBottom: 6 }}>
-                  <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Receita Per Capita</span>
-                  <strong style={{ fontSize: 15, color: "var(--navy)", fontWeight: 700 }}>{currency.format(receitaPerCapita)}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line)", paddingBottom: 6 }}>
-                  <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Educação por Habitante</span>
-                  <strong style={{ fontSize: 15, color: "var(--navy)", fontWeight: 700 }}>{currency.format(educacaoPerCapita)}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line)", paddingBottom: 6 }}>
-                  <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Saúde por Habitante</span>
-                  <strong style={{ fontSize: 15, color: "var(--navy)", fontWeight: 700 }}>{currency.format(saudePerCapita)}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Social por Habitante</span>
-                  <strong style={{ fontSize: 15, color: "var(--navy)", fontWeight: 700 }}>{currency.format(socialPerCapita)}</strong>
-                </div>
+            <div className="exec-donut-row">
+              <div className="exec-donut" style={{ background: `conic-gradient(#2563eb 0 ${share(ownRevenue, summary.total)}, #0f766e ${share(ownRevenue, summary.total)} ${share(ownRevenue + transfers, summary.total)}, #d1d5db 0)` }}>
+                <strong>{share(ownRevenue, summary.total)}</strong>
               </div>
+              <div className="exec-quote">
+                <p>O município mantém {share(ownRevenue, summary.total)} de receita própria e concentra a decisão em prioridades de impacto.</p>
+                <div><i className="own" />Própria <i className="transfer" />Transferências <i />Capital/outros {compactCurrency(capitalRevenue)}</div>
+              </div>
+            </div>
+          </article>
+
+          <article className="exec-panel">
+            <div className="exec-panel-head danger">
+              <div><NavIcon>arrow_upward</NavIcon><strong>Para onde vai o dinheiro</strong></div>
+              <span>Aplicação {year}</span>
+            </div>
+            <div className="exec-expense-grid">
+              <div><span>Pessoal</span><strong>{compactCurrency(summary.natureTotals.Pessoal)}</strong></div>
+              <div><span>Custeio</span><strong>{compactCurrency(summary.natureTotals.Custeio)}</strong></div>
+              <div><span>Dívida</span><strong>{compactCurrency(summary.natureTotals.Amortização)}</strong></div>
+              <div className="featured"><span>Investimento</span><strong>{compactCurrency(summary.natureTotals.Investimentos)}</strong></div>
+            </div>
+            <div className="exec-investment-callout">
+              <div><NavIcon>trending_up</NavIcon></div>
+              <p>Índice de investimento</p>
+              <strong>{percent.format(investmentShare)} <span>da Receita Líquida</span></strong>
+            </div>
+            <div className="exec-split">
+              <p><span>Manutenção da máquina</span><strong>{share(summary.operating, summary.total)}</strong></p>
+              <div><i style={{ width: `${summary.total ? (summary.operating / summary.total) * 100 : 0}%` }} /></div>
+              <p><span>Obras e novos projetos</span><strong>{share(summary.investment, summary.total)}</strong></p>
+              <div><i className="accent" style={{ width: `${investmentShare * 100}%` }} /></div>
+            </div>
+          </article>
+        </section>
+
+        <section className="exec-priorities" aria-label="Prioridades de governo">
+          <div className="exec-section-title"><NavIcon>dashboard_customize</NavIcon>Prioridades de Governo</div>
+          <div className="exec-priority-grid">
+            <article className="exec-panel exec-treemap-panel">
+              <div className="exec-panel-head">
+                <div><strong>Alocação por Secretaria (Mapa de Valor)</strong></div>
+                <span>{share(topFiveShare, 1)} no top 5</span>
+              </div>
+              <Treemap items={summary.organs} total={summary.total} />
+              <p className="exec-note">As maiores secretarias ocupam espaço proporcional à participação na LOA filtrada.</p>
+            </article>
+
+            <div className="exec-ranking-stack">
+              <article className="exec-panel">
+                <div className="exec-panel-head compact">
+                  <div><NavIcon>hotel_class</NavIcon><strong>Top Rankings {year}</strong></div>
+                </div>
+                <div className="exec-ranking-list">
+                  <div><b>1</b><p><span>Maior programa</span><strong>{cleanBudgetLabel(topProgram?.label ?? "Não informado")}</strong></p></div>
+                  <div><b>2</b><p><span>Maior processo</span><strong>{cleanBudgetLabel(topProcess?.label ?? "Não informado")}</strong></p></div>
+                  <div><b>3</b><p><span>Maior investimento</span><strong>{cleanBudgetLabel(topInvestment?.label ?? "Não informado")}</strong></p></div>
+                </div>
+              </article>
+
+              <article className="exec-summary-card">
+                <NavIcon>insights</NavIcon>
+                <strong>Resumo Executivo</strong>
+                <div>
+                  <p><span>Custeio</span><b>{share(summary.operating, summary.total)}</b></p>
+                  <p><span>Investimento</span><b>{share(summary.investment, summary.total)}</b></p>
+                  <p><span>Top 5</span><b>{percent.format(topFiveShare)}</b></p>
+                  <p><span>Ponto crítico</span><b>{cleanBudgetLabel(summary.functions[0]?.label ?? "N/A")}</b></p>
+                </div>
+              </article>
             </div>
           </div>
-          <article className="presentation-card presentation-concentration">
-            <h2>Onde está concentrado o dinheiro do município?</h2>
-            <div>
-              {concentration.map((item, index) => {
-                const barColors = ["#1e3a8a", "#0d9488", "#b45309", "#15803d", "#475569"];
-                const color = barColors[index % barColors.length];
-                return (
-                  <div className="presentation-mini-bar" key={item.label}>
-                    <p>
-                      <span style={{ color: color, fontWeight: 700 }}>{item.label}</span>
-                      <strong>{percent.format(summary.total ? item.value / summary.total : 0)}</strong>
-                    </p>
-                    <div>
-                      <span style={{ width: `${summary.total ? (item.value / summary.total) * 100 : 0}%`, background: color, opacity: 1 }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </article>
         </section>
 
-        <section className="insight-grid" aria-label="Perguntas executivas">
-          <article className="insight-card">
-            <span className="insight-number">01</span>
-            <h2>Onde estão os maiores contratos e processos?</h2>
-            <p className="insight-label">Maior processo administrativo</p>
-            <strong className="insight-value">{currency.format(summary.processes[0]?.value ?? 0)}</strong>
-            <p className="insight-name">{summary.processes[0]?.label || "Não informado"}</p>
-          </article>
-          <article className="insight-card">
-            <span className="insight-number">02</span>
-            <h2>Onde está concentrado o orçamento?</h2>
-            <p className="insight-label">Órgão com maior participação</p>
-            <strong className="insight-value">{currency.format(summary.organs[0]?.value ?? 0)}</strong>
-            <p className="insight-name">{summary.organs[0]?.label || "Não informado"}</p>
-            <span className="insight-share">{percent.format(summary.total ? (summary.organs[0]?.value ?? 0) / summary.total : 0)} do valor filtrado</span>
-          </article>
-          <article className="insight-card">
-            <span className="insight-number">03</span>
-            <h2>Quanto está reservado para custeio e investimento?</h2>
-            <div className="spending-values">
-              <div>
-                <p className="insight-label">Custeio / correntes</p>
-                <strong>{currency.format(summary.operating)}</strong>
-                <span>{percent.format(summary.total ? summary.operating / summary.total : 0)}</span>
-              </div>
-              <div>
-                <p className="insight-label">Investimento / capital</p>
-                <strong>{currency.format(summary.investment)}</strong>
-                <span>{percent.format(summary.total ? summary.investment / summary.total : 0)}</span>
-              </div>
+        <section className="exec-insights-grid" aria-label="Insights estratégicos">
+          <article className="exec-panel exec-ai-panel">
+            <div className="exec-panel-head compact">
+              <div><NavIcon>auto_awesome</NavIcon><strong>O que merece atenção</strong></div>
+            </div>
+            <div className="exec-ai-list">
+              <p><i />{cleanBudgetLabel(summary.organs[0]?.label ?? "A maior secretaria")} concentra <strong>{share(summary.organs[0]?.value ?? 0, summary.total)}</strong> do orçamento filtrado.</p>
+              <p><i className="warn" />O maior programa é <strong>{cleanBudgetLabel(topProgram?.label ?? "não informado")}</strong>, com {compactCurrency(topProgram?.value ?? 0)}.</p>
+              <p><i className="ok" />Investimentos somam <strong>{compactCurrency(summary.investment)}</strong>, o equivalente a {share(summary.investment, summary.total)} da LOA.</p>
+              <p><i className="risk" />Acompanhar <strong>{cleanBudgetLabel(summary.functions[0]?.label ?? "função principal")}</strong> por representar o maior bloco funcional.</p>
             </div>
           </article>
-          <article className="insight-card" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
-            <span className="insight-number">04</span>
-            <h2>O que a LOA Financia</h2>
-            <p className="insight-label" style={{ marginBottom: 12 }}>A LOA {year} financiará:</p>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              <li style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--navy)", lineHeight: 1.4 }}>
-                <span style={{ color: "var(--green)", fontWeight: 800 }}>✔</span>
-                <span><strong>154</strong> programas públicos</span>
-              </li>
-              <li style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--navy)", lineHeight: 1.4 }}>
-                <span style={{ color: "var(--green)", fontWeight: 800 }}>✔</span>
-                <span><strong>382</strong> ações governamentais</span>
-              </li>
-              <li style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--navy)", lineHeight: 1.4 }}>
-                <span style={{ color: "var(--green)", fontWeight: 800 }}>✔</span>
-                <span><strong>24</strong> secretarias municipais</span>
-              </li>
-              <li style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--navy)", lineHeight: 1.4 }}>
-                <span style={{ color: "var(--green)", fontWeight: 800 }}>✔</span>
-                <span>mais de <strong>1.200</strong> processos administrativos</span>
-              </li>
-            </ul>
-          </article>
-        </section>
 
-        {/* NEW: Quais áreas, programas e entregas */}
-        <section className="presentation-strategy-grid" aria-label="Perguntas estratégicas">
-          <article className="presentation-card">
-            <h2>Quais áreas da cidade são prioridade?</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-              {areas.map((area, index) => (
-                <div key={area.label} className="presentation-mini-bar">
-                  <p style={{ display: "flex", justifyContent: "space-between", margin: 0, fontSize: 13 }}>
-                    <span>{area.label}</span>
-                    <strong>{compactCurrency(area.value)}</strong>
-                  </p>
-                  <div style={{ height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden", marginTop: 4 }}>
-                    <span style={{ 
-                      display: "block",
-                      height: "100%",
-                      background: "var(--blue)",
-                      width: `${summary.total ? (area.value / summary.total) * 100 : 0}%`,
-                      opacity: 1 - index * 0.1
-                    }} />
-                  </div>
-                </div>
+          <article className="exec-panel exec-question-panel">
+            <div className="exec-panel-head compact">
+              <div><NavIcon>forum</NavIcon><strong>Pergunte ao Orçamento</strong></div>
+            </div>
+            <p>Acesso rápido aos dados consolidados para tomada de decisão imediata.</p>
+            <div className="exec-question-list">
+              {[
+                "Quanto será investido em Saúde?",
+                "Qual secretaria recebe mais recursos?",
+                "Quanto será investido em obras?",
+                "Quanto vai para Educação?",
+              ].map((question) => (
+                <button type="button" key={question}>{question}<NavIcon>arrow_forward</NavIcon></button>
               ))}
             </div>
-          </article>
-          <article className="presentation-card">
-            <h2>Quais programas são estratégicos para o governo?</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
-              <div>
-                <p className="insight-label" style={{ margin: 0 }}>Maior Programa</p>
-                <strong style={{ fontSize: 18, color: "var(--navy)" }}>{compactCurrency(summary.programs[0]?.value ?? 0)}</strong>
-                <p className="insight-name" style={{ margin: "2px 0 0", fontSize: 13 }}>{summary.programs[0]?.label || "Não informado"}</p>
-              </div>
-              <div>
-                <p className="insight-label" style={{ margin: 0 }}>Maior Crescimento (2026 → 2027)</p>
-                <strong style={{ fontSize: 18, color: "var(--navy)" }}>
-                  {compactCurrency(programGrowth[0]?.current ?? 0)} 
-                  <span style={{ fontSize: 13, color: "var(--green-dark)", marginLeft: 6 }}>
-                    (+{percent.format(programGrowth[0]?.percentGrowth ?? 0)})
-                  </span>
-                </strong>
-                <p className="insight-name" style={{ margin: "2px 0 0", fontSize: 13 }}>{programGrowth[0]?.label || "Não informado"}</p>
-              </div>
-              <div>
-                <p className="insight-label" style={{ margin: 0 }}>Maior Investimento</p>
-                <strong style={{ fontSize: 18, color: "var(--navy)" }}>{compactCurrency(topInvestmentProgram?.value ?? 0)}</strong>
-                <p className="insight-name" style={{ margin: "2px 0 0", fontSize: 13 }}>{topInvestmentProgram?.label || "Não informado"}</p>
-              </div>
-              <div>
-                <p className="insight-label" style={{ margin: 0 }}>Maior Custeio</p>
-                <strong style={{ fontSize: 18, color: "var(--navy)" }}>{compactCurrency(topOperatingProgram?.value ?? 0)}</strong>
-                <p className="insight-name" style={{ margin: "2px 0 0", fontSize: 13 }}>{topOperatingProgram?.label || "Não informado"}</p>
-              </div>
-            </div>
-          </article>
-          <article className="presentation-card">
-            <h2>Quais entregas o governo pretende realizar?</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
-              {deliveries.map((item) => (
-                <div key={item.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line)", paddingBottom: 10 }}>
-                  <div>
-                    <strong style={{ fontSize: 14, color: "var(--navy)", display: "block" }}>{item.label}</strong>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Processo finalístico</span>
-                  </div>
-                  <strong style={{ fontSize: 16, color: "var(--blue)" }}>{compactCurrency(item.value)}</strong>
-                </div>
-              ))}
+            <div className="exec-question-input">
+              <input name="presentation-question" autoComplete="off" placeholder="Digite sua pergunta…" aria-label="Digite sua pergunta" />
+              <button type="button" aria-label="Enviar pergunta"><NavIcon>send</NavIcon></button>
             </div>
           </article>
         </section>
 
-        <section className="presentation-charts">
-          <article className="presentation-card presentation-treemap-card">
-            <div className="presentation-card-head" style={{ marginBottom: 16 }}>
-              <div>
-                <p>Mapa de Concentração</p>
-                <h2>Distribuição por Órgão (Treemap)</h2>
-              </div>
-              <span>{year}</span>
+        <section className="exec-bottom-metrics" aria-label="Indicadores estratégicos">
+          <div><span>Concentração orçamentária</span><strong>{percent.format(topFiveShare)}</strong><p>Top 5 secretarias</p></div>
+          <div><span>Índice de investimento</span><strong>{share(summary.investment, summary.total)}</strong><p>Percentual da LOA</p></div>
+          <div><span>Receita própria</span><strong>{share(ownRevenue, summary.total)}</strong><p>Capacidade de arrecadação direta</p></div>
+          <div><span>Dependência externa</span><strong>{share(transfers, summary.total)}</strong><p>Participação de repasses</p></div>
+        </section>
+
+        <section className="exec-function-list" aria-label="Ranking por função">
+          {areas.map((area) => (
+            <div key={area.label}>
+              <p><span>{area.label}</span><strong>{compactCurrency(area.value)}</strong></p>
+              <div><i style={{ width: `${maxFunction ? (area.value / maxFunction) * 100 : 0}%` }} /></div>
             </div>
-            <Treemap items={summary.organs} total={summary.total} />
-            <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 12, margin: "12px 0 0" }}>
-              Cada Secretaria ocupa um espaço proporcional ao seu orçamento na LOA.
-            </p>
-          </article>
-          <article className="presentation-card presentation-units"><div className="presentation-card-head"><div><p>Ranking executivo</p><h2>Top Unidades por Valor</h2></div><Link href="/unidades">Ver tudo →</Link></div><div className="presentation-unit-list">{summary.units.slice(0, 5).map((item, index) => <div key={item.label}><p><span>{item.label}</span><strong>{compactCurrency(item.value)}</strong></p><div><span style={{ width: `${(item.value / maxUnit) * 100}%`, opacity: 1 - index * .13 }} /></div></div>)}</div></article>
+          ))}
+          {summary.units.slice(0, 5).map((unit) => (
+            <div key={unit.label}>
+              <p><span>{cleanBudgetLabel(unit.label)}</span><strong>{compactCurrency(unit.value)}</strong></p>
+              <div><i className="secondary" style={{ width: `${maxUnit ? (unit.value / maxUnit) * 100 : 0}%` }} /></div>
+            </div>
+          ))}
         </section>
       </main>
     </div>

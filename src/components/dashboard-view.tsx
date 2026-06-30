@@ -539,7 +539,7 @@ export function DashboardView({
             <div className="animate-fade-in">
               <header className="page-heading flex justify-between items-center">
                 <div>
-                  <p className="eyebrow font-medium">Painel Executivo de Análise Orçamentária</p>
+                  <p className="eyebrow font-medium">Visão Analítica da LOA</p>
                   <h1>{title}</h1>
                   <p>{subtitle}</p>
                 </div>

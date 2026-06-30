@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DataSourceToggle } from "./data-source-toggle";
 import { currency } from "@/lib/format";
 import type { DashboardData } from "@/types/loa";
+import { getPrimaryPageLinks } from "@/lib/page-navigation";
 
 function normalizeText(value: string) {
   return value
@@ -85,6 +86,7 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
   const topInfrastructureFunction = findGroup(data.groups.functionName, ["obra", "infra"]) ?? data.groups.functionName[2] ?? null;
 
   const exerciseYear = 2027;
+  const primaryLinks = getPrimaryPageLinks("dashboard");
 
   return (
     <div className="animate-fade-in space-y-8">
@@ -97,27 +99,16 @@ export function AnalyticDashboardLayout({ data }: { data: DashboardData }) {
             Gestão orçamentária integrada: análise de fontes e aplicações de recursos.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
-            >
-              <span className="material-symbols-outlined text-[18px]">dashboard</span>
-              Painel Analítico
-            </Link>
-            <Link
-              href="/apresentacao"
-              className="inline-flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
-            >
-              <span className="material-symbols-outlined text-[18px]">slideshow</span>
-              Painel Executivo
-            </Link>
-            <Link
-              href="/transparente"
-              className="inline-flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
-            >
-              <span className="material-symbols-outlined text-[18px]">visibility</span>
-              LOA Transparente
-            </Link>
+            {primaryLinks.map((link) => (
+              <Link
+                key={link.key}
+                href={link.href}
+                className="inline-flex items-center gap-2 rounded-full border border-outline-variant bg-surface px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container"
+              >
+                <span className="material-symbols-outlined text-[18px]">{link.icon}</span>
+                {link.label}
+              </Link>
+            ))}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 md:gap-3 bg-surface px-4 py-2 rounded-lg shadow-sm border border-outline-variant text-sm font-medium">

@@ -11,6 +11,7 @@ import { FIELDS } from "@/types/loa";
 
 export function AppShell({ view }: { view: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [options, setOptions] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(FIELDS.map((field) => [field, []]))
@@ -52,12 +53,14 @@ export function AppShell({ view }: { view: string }) {
         options={options}
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
+        collapsed={sidebarCollapsed}
+        setCollapsed={setSidebarCollapsed}
       />
 
       {/* Main Content Canvas */}
       <main
         id="main-content"
-        className="flex-1 md:ml-[280px] mt-16 md:mt-0 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8"
+        className={`loa-main flex-1 ${sidebarCollapsed ? "collapsed md:ml-[84px]" : "md:ml-[280px]"} mt-16 md:mt-0 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8`}
       >
         <div className="content">
           {view === "importacao" ? (

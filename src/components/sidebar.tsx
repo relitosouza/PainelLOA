@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { FieldKey } from "@/types/loa";
 import type { FilterState } from "./filters";
+import { getPrimaryPageLinks } from "@/lib/page-navigation";
 
 export function Sidebar({
   view,
@@ -12,6 +13,8 @@ export function Sidebar({
   options,
   mobileOpen,
   setMobileOpen,
+  collapsed,
+  setCollapsed,
 }: {
   view: string;
   filters: FilterState;
@@ -19,6 +22,8 @@ export function Sidebar({
   options: Record<string, string[]>;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
+  collapsed: boolean;
+  setCollapsed: (collapsed: boolean) => void;
 }) {
   // Local state for text and number inputs to avoid layout latency
   const [localSearch, setLocalSearch] = useState(filters.search);
@@ -68,15 +73,19 @@ export function Sidebar({
     setLocalMax("");
   };
 
+  const primaryLinks = getPrimaryPageLinks(view);
+
   return (
     <aside
-      className={`fixed top-0 bottom-0 left-0 z-40 flex flex-col bg-primary-container text-on-primary-container shrink-0 w-[280px] h-screen transition-transform duration-300 md:translate-x-0 ${
+      className={`loa-sidebar fixed top-0 bottom-0 left-0 z-40 flex flex-col bg-primary-container text-on-primary-container shrink-0 w-[280px] h-screen transition-transform duration-300 md:translate-x-0 ${
+        collapsed ? "collapsed" : ""
+      } ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       }`}
       aria-label="Navegação principal"
     >
       {/* Header */}
-      <div className="p-6">
+      <div className="brand p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-on-primary-container rounded-lg flex items-center justify-center shrink-0">
             <span
@@ -86,92 +95,83 @@ export function Sidebar({
               account_balance
             </span>
           </div>
-          <div>
-            <h1 className="font-headline font-bold text-lg leading-tight text-on-primary-fixed">
-              Portal Transparência
-            </h1>
-            <p className="text-sm opacity-80 font-label">Gestão Orçamentária</p>
+          <div className="min-w-0">
+            <div className="font-headline font-bold text-sm leading-tight text-on-primary-fixed whitespace-nowrap" aria-label="Gestão Orçamentária">
+              Gestão Orçamentária
+            </div>
           </div>
         </div>
-        <button
-          onClick={clearFilters}
-          className="w-full bg-tertiary text-on-tertiary rounded-lg py-2.5 font-medium text-sm flex items-center justify-center gap-2 hover:bg-tertiary-container transition-colors shadow-sm cursor-pointer border-0"
-        >
-          <span className="material-symbols-outlined text-[20px]">refresh</span>
-          Limpar Filtros
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+            title={collapsed ? "Expandir menu" : "Recolher menu"}
+          >
+            <span className="material-symbols-outlined text-[20px]">{collapsed ? "menu_open" : "menu"}</span>
+          </button>
+          <button
+            onClick={clearFilters}
+            className="sidebar-action"
+          >
+            <span className="material-symbols-outlined text-[20px]">refresh</span>
+            <span className="sidebar-label">Limpar Filtros</span>
+          </button>
+        </div>
       </div>
 
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
-        <Link
-          href="/"
-          onClick={() => setMobileOpen(false)}
-          className={`flex items-center gap-3 py-3 px-4 rounded-lg font-medium transition-all ${
-            view === "dashboard" || !["importacao", "relatorios", "configuracoes"].includes(view)
-              ? "bg-on-primary-fixed-variant/20 text-on-primary-container border-l-4 border-secondary-fixed shadow-sm"
-              : "text-on-primary-container/70 hover:bg-on-primary-fixed-variant/10"
-          }`}
-        >
-          <span
-            className="material-symbols-outlined"
-            style={{ fontVariationSettings: view === "dashboard" ? "'FILL' 1" : undefined }}
-          >
-            dashboard
-          </span>
-          Painel Analítico
-        </Link>
-        <Link
-          href="/apresentacao"
-          onClick={() => setMobileOpen(false)}
-          className="flex items-center gap-3 py-3 px-4 rounded-lg font-medium transition-all text-on-primary-container/70 hover:bg-on-primary-fixed-variant/10"
-        >
-          <span className="material-symbols-outlined">slideshow</span>
-          Painel Executivo
-        </Link>
-        <Link
-          href="/transparente"
-          onClick={() => setMobileOpen(false)}
-          className="flex items-center gap-3 py-3 px-4 rounded-lg font-medium transition-all text-on-primary-container/70 hover:bg-on-primary-fixed-variant/10"
-        >
-          <span className="material-symbols-outlined">visibility</span>
-          LOA Transparente
-        </Link>
+        {primaryLinks.map((link) => {
+          const isActive = !["importacao", "relatorios", "configuracoes"].includes(view) && view === link.key;
+          return (
+            <Link
+              key={link.key}
+              href={link.href}
+              onClick={() => setMobileOpen(false)}
+              aria-current={isActive ? "page" : undefined}
+              className={`nav-link ${isActive ? "active" : ""}`}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontVariationSettings: isActive ? "'FILL' 1" : undefined }}
+              >
+                {link.icon}
+              </span>
+              <span className="sidebar-label">{link.label}</span>
+            </Link>
+          );
+        })}
         <Link
           href="/importacao"
           onClick={() => setMobileOpen(false)}
-          className={`flex items-center gap-3 py-3 px-4 rounded-lg font-medium transition-all ${
-            view === "importacao"
-              ? "bg-on-primary-fixed-variant/20 text-on-primary-container border-l-4 border-secondary-fixed shadow-sm"
-              : "text-on-primary-container/70 hover:bg-on-primary-fixed-variant/10"
-          }`}
+          aria-current={view === "importacao" ? "page" : undefined}
+          className={`nav-link ${view === "importacao" ? "active" : ""}`}
         >
           <span className="material-symbols-outlined">upload_file</span>
-          Importação da LOA
+          <span className="sidebar-label">Importação da LOA</span>
         </Link>
         <Link
           href="/relatorios"
           onClick={() => setMobileOpen(false)}
-          className={`flex items-center gap-3 py-3 px-4 rounded-lg font-medium transition-all ${
-            view === "relatorios"
-              ? "bg-on-primary-fixed-variant/20 text-on-primary-container border-l-4 border-secondary-fixed shadow-sm"
-              : "text-on-primary-container/70 hover:bg-on-primary-fixed-variant/10"
-          }`}
+          aria-current={view === "relatorios" ? "page" : undefined}
+          className={`nav-link ${view === "relatorios" ? "active" : ""}`}
         >
           <span className="material-symbols-outlined">assessment</span>
-          Reports
+          <span className="sidebar-label">Reports</span>
         </Link>
 
         {/* Filters Header (only show when Dashboard/Reports views are active and we have options) */}
         {(view === "dashboard" || view === "relatorios" || !["importacao", "configuracoes"].includes(view)) && (
           <>
-            <div className="pt-6 pb-2 px-4">
+            <div className="nav-section pt-6 pb-2 px-4">
               <p className="text-xs font-semibold text-on-primary-container/50 uppercase tracking-wider">
                 Filtros
               </p>
             </div>
 
-            <div className="px-4 space-y-4 pb-8">
+            <div className="nav-section px-4 space-y-4 pb-8">
               {/* Órgão */}
               <div className="space-y-1">
                 <label className="text-xs text-on-primary-container/80 font-medium">Órgão</label>
@@ -356,21 +356,18 @@ export function Sidebar({
       </nav>
 
       {/* Footer Links */}
-      <div className="p-4 border-t border-outline-variant/20 space-y-1">
+      <div className="sidebar-footer p-4 border-t border-outline-variant/20 space-y-1">
         <Link
           href="/configuracoes"
           onClick={() => setMobileOpen(false)}
-          className={`flex items-center gap-3 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-            view === "configuracoes"
-              ? "bg-on-primary-fixed-variant/20 text-on-primary-container shadow-sm border-l-4 border-secondary-fixed"
-              : "text-on-primary-container/70 hover:bg-on-primary-fixed-variant/10"
-          }`}
+          aria-current={view === "configuracoes" ? "page" : undefined}
+          className={`nav-link ${view === "configuracoes" ? "active" : ""}`}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          Configurações
+          <span className="sidebar-label">Configurações</span>
         </Link>
         <a
-          className="flex items-center gap-3 text-on-primary-container/70 py-2 px-4 rounded-lg text-sm font-medium hover:bg-on-primary-fixed-variant/10 transition-all cursor-pointer"
+          className="nav-link cursor-pointer"
           href="#"
           onClick={(e) => {
             e.preventDefault();
@@ -378,7 +375,7 @@ export function Sidebar({
           }}
         >
           <span className="material-symbols-outlined text-[20px]">help</span>
-          Help Center
+          <span className="sidebar-label">Help Center</span>
         </a>
       </div>
     </aside>
