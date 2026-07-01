@@ -61,6 +61,11 @@
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
   --radius-full: 9999px;
+
+  --font-headline: var(--font-public-sans), sans-serif;
+  --font-display: var(--font-public-sans), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+  --font-label: var(--font-inter), sans-serif;
 }
 
 .glass-card {
