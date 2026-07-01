@@ -9,7 +9,6 @@ export function Sidebar({
   mobileOpen,
   setMobileOpen,
   collapsed,
-  setCollapsed,
 }: {
   view: string;
   filters?: FilterState;
@@ -24,8 +23,8 @@ export function Sidebar({
 
   return (
     <aside
-      className={`fixed top-0 bottom-0 left-0 z-40 flex flex-col bg-[#001a4b] text-white shrink-0 transition-transform duration-300 md:translate-x-0 ${
-        collapsed ? "w-[84px]" : "w-[280px]"
+      className={`fixed top-0 bottom-0 left-0 z-40 flex flex-col bg-[#001a4b] text-white shrink-0 transition-all duration-300 md:translate-x-0 w-[280px] ${
+        collapsed ? "md:w-0 md:overflow-hidden md:px-0 md:border-r-0" : "md:w-[280px]"
       } ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       }`}
@@ -33,59 +32,26 @@ export function Sidebar({
     >
       {/* Header */}
       <div className="p-6">
-        {!collapsed ? (
-          <div className="flex items-center justify-between gap-3 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/15 rounded-lg flex items-center justify-center shrink-0">
-                <span
-                  className="material-symbols-outlined text-white text-2xl"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  account_balance
-                </span>
-              </div>
-              <div className="min-w-0">
-                {view === "transparente" && (
-                  <h1 className="font-headline font-bold text-base leading-tight text-white whitespace-nowrap">
-                    Portal Transparência
-                  </h1>
-                )}
-                <p className="text-xs text-white/60 font-label">
-                  Gestão Orçamentária
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="flex items-center justify-center p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all cursor-pointer border-0"
-              onClick={() => setCollapsed(true)}
-              aria-label="Recolher menu"
-              title="Recolher menu"
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-white/15 rounded-lg flex items-center justify-center shrink-0">
+            <span
+              className="material-symbols-outlined text-white text-2xl"
+              style={{ fontVariationSettings: "'FILL' 1" }}
             >
-              <span className="material-symbols-outlined text-[18px]">menu</span>
-            </button>
+              account_balance
+            </span>
           </div>
-        ) : (
-          <div className="flex flex-col items-center gap-4 mb-6">
-            <div className="w-10 h-10 bg-white/15 rounded-lg flex items-center justify-center shrink-0">
-              <span
-                className="material-symbols-outlined text-white text-2xl"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                account_balance
-              </span>
-            </div>
-            <button
-              type="button"
-              className="flex items-center justify-center p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all cursor-pointer border-0 w-10 h-10"
-              onClick={() => setCollapsed(false)}
-              aria-label="Expandir menu"
-              title="Expandir menu"
-            >
-              <span className="material-symbols-outlined text-[18px]">menu_open</span>
-            </button>
+          <div className="min-w-0">
+            {view === "transparente" && (
+              <h1 className="font-headline font-bold text-base leading-tight text-white whitespace-nowrap">
+                Portal Transparência
+              </h1>
+            )}
+            <p className="text-xs text-white/60 font-label">
+              Gestão Orçamentária
+            </p>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Navigation Links */}
@@ -111,7 +77,7 @@ export function Sidebar({
                 >
                   {link.icon}
                 </span>
-                {!collapsed && <span className="text-sm">{link.label}</span>}
+                <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span>
               </Link>
             );
           })}
@@ -126,7 +92,7 @@ export function Sidebar({
             }`}
           >
             <span className="material-symbols-outlined">upload_file</span>
-            {!collapsed && <span className="text-sm">Importações</span>}
+            <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>Importações</span>
           </Link>
           <Link
             href="/relatorios"
@@ -139,7 +105,7 @@ export function Sidebar({
             }`}
           >
             <span className="material-symbols-outlined">assessment</span>
-            {!collapsed && <span className="text-sm">Relatórios</span>}
+            <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>Relatórios</span>
           </Link>
         </div>
       </nav>
@@ -157,7 +123,7 @@ export function Sidebar({
           }`}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          {!collapsed && <span>Configurações</span>}
+          <span className={`${collapsed ? "md:hidden" : ""}`}>Configurações</span>
         </Link>
         <a
           className="flex items-center gap-3 py-2 px-4 rounded-lg text-sm font-medium transition-all text-white/70 hover:bg-white/5 hover:text-white cursor-pointer"
@@ -168,7 +134,7 @@ export function Sidebar({
           }}
         >
           <span className="material-symbols-outlined text-[20px]">help</span>
-          {!collapsed && <span>Central de Ajuda</span>}
+          <span className={`${collapsed ? "md:hidden" : ""}`}>Central de Ajuda</span>
         </a>
       </div>
     </aside>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { DashboardView } from "./dashboard-view";
 import { ImportView } from "./import-view";
 import { PresentationDashboard } from "./presentation-dashboard";
@@ -13,7 +14,7 @@ import { FIELDS } from "@/types/loa";
 
 export function AppShell({ view }: { view: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [options, setOptions] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(FIELDS.map((field) => [field, []]))
@@ -27,17 +28,52 @@ export function AppShell({ view }: { view: string }) {
         Pular para o conteúdo
       </a>
 
-      {/* Mobile TopNavBar */}
-      <nav className="md:hidden bg-surface flex justify-between items-center w-full px-4 h-16 border-b border-outline-variant fixed top-0 z-50 shadow-sm">
-        <div className="text-lg font-headline font-bold text-primary">LOA Orçamentária</div>
-        <div className="flex gap-4 items-center">
+      {/* TopNavBar */}
+      <nav className="bg-surface flex justify-between items-center w-full px-4 h-16 border-b border-outline-variant fixed top-0 z-50 shadow-sm">
+        <div className="flex items-center gap-6">
           <button
-            className="material-symbols-outlined text-primary cursor-pointer p-1 rounded hover:bg-surface-container"
-            onClick={() => setMobileOpen((value) => !value)}
-            aria-label="Abrir menu"
+            className="material-symbols-outlined text-primary cursor-pointer p-2 rounded-xl hover:bg-surface-container transition-colors"
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setMobileOpen((value) => !value);
+              } else {
+                setSidebarCollapsed((value) => !value);
+              }
+            }}
+            aria-label="Alternar menu"
           >
-            menu
+            {sidebarCollapsed ? "menu" : "menu_open"}
           </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <img
+              src="/brasao.png"
+              alt="Brasão de Osasco"
+              className="h-9 w-auto object-contain"
+            />
+            <div className="text-lg font-headline font-bold text-primary hidden sm:block">
+              {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "LOA Transparente" : "LOA Orçamentária"}
+            </div>
+          </div>
+          <div className="hidden md:flex gap-6 font-headline text-sm font-semibold tracking-wide ml-4">
+            <Link
+              className="text-on-surface-variant hover:text-primary transition-colors pb-1"
+              href="/apresentacao"
+            >
+              Painel Executivo
+            </Link>
+            <Link
+              className={`pb-1 transition-colors ${
+                view === "transparente"
+                  ? "text-primary border-b-2 border-primary font-bold"
+                  : "text-on-surface-variant hover:text-primary"
+              }`}
+              href="/transparente"
+            >
+              LOA Transparente
+            </Link>
+          </div>
+        </div>
+        <div className="flex gap-4 items-center">
           <span className="material-symbols-outlined text-primary">notifications</span>
           <img
             alt="User profile"
@@ -62,7 +98,7 @@ export function AppShell({ view }: { view: string }) {
       {/* Main Content Canvas */}
       <main
         id="main-content"
-        className={`loa-main flex-1 ${sidebarCollapsed ? "collapsed md:ml-[84px]" : "md:ml-[280px]"} mt-16 md:mt-0 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8`}
+        className={`loa-main flex-1 transition-all duration-300 ${sidebarCollapsed ? "collapsed md:ml-0" : "md:ml-[280px]"} mt-16 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8`}
       >
         <div className="content">
           {view === "importacao" ? (

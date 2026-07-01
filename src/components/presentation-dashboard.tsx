@@ -116,7 +116,7 @@ function Treemap({
 export function PresentationDashboard() {
   const [year, setYear] = useState<2026 | 2027>(2027);
   const [secretariat, setSecretariat] = useState("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [dataSource, setDataSource] = useDataSource();
   const [dbData, setDbData] = useState<DashboardData | null>(null);
 
@@ -361,7 +361,17 @@ export function PresentationDashboard() {
     <div className="relative min-h-screen bg-background font-body text-on-surface antialiased">
       {/* TopNavBar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-surface/90 backdrop-blur-md border-b border-outline-variant/50 flex justify-between items-center w-full px-8 py-4 shadow-sm">
-        <div className="flex items-center gap-10">
+        <div className="flex items-center gap-6">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-2 hover:bg-surface-container rounded-xl flex items-center justify-center text-on-surface cursor-pointer transition-colors"
+            aria-label="Alternar Menu"
+          >
+            <span className="material-symbols-outlined text-2xl">
+              {sidebarCollapsed ? "menu" : "menu_open"}
+            </span>
+          </button>
           <div className="flex items-center gap-3">
             <img
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuCPv8bxz9qBvO0U-LbRPOpq5Zv3IM3GqYCCJdLPolQmfhY7LWhcVQDNA6O2hlCTigyfqa-Vi8V2Ybvn75DIVi8vi7GszUXwtVR6DaIrN-RouQO7vy-b0Z1MU4e3amKwkEuYL3_hPizKdBt2UjiF9P9o7N03Rdv5u7kbtO9Vsr5wr2h-ikyncy-lB9A8KxhGQfO4QLV97UDbsZm3M4-LAvJQaBHUyuEdX2dffDmmvGzNiE7-SIAosqsO58xtB337OLqhfqs"
@@ -381,21 +391,11 @@ export function PresentationDashboard() {
             </Link>
           </div>
         </div>
-
-        {/* Mobile menu toggle */}
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="lg:hidden p-2 hover:bg-surface-container rounded-xl flex items-center justify-center text-on-surface"
-          aria-label="Alternar Menu"
-        >
-          <span className="material-symbols-outlined text-2xl">menu</span>
-        </button>
       </nav>
 
       {/* SideNavBar */}
       <aside
-        className={`flex flex-col h-screen fixed left-0 top-0 border-r border-inverse-surface/10 pt-24 pb-6 px-4 bg-[#1e2022] text-white w-72 shadow-xl z-40 transition-transform duration-300 lg:translate-x-0 ${
+        className={`flex flex-col h-screen fixed left-0 top-0 border-r border-inverse-surface/10 pt-24 pb-6 px-4 bg-[#1e2022] text-white w-72 shadow-xl z-40 transition-all duration-300 lg:translate-x-0 ${
           sidebarCollapsed ? "-translate-x-full lg:translate-x-0 lg:w-0 lg:overflow-hidden lg:px-0 lg:border-r-0" : "translate-x-0"
         } lg:flex`}
       >
@@ -496,8 +496,18 @@ export function PresentationDashboard() {
         </div>
       </aside>
 
+      {!sidebarCollapsed && (
+        <button
+          aria-label="Fechar menu"
+          onClick={() => setSidebarCollapsed(true)}
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden border-0 cursor-pointer"
+        />
+      )}
+
       {/* Main Content */}
-      <main className="lg:ml-72 pt-28 px-8 pb-12 max-w-[1600px] mx-auto">
+      <main className={`transition-all duration-300 pt-28 px-8 pb-12 max-w-[1600px] mx-auto ${
+        sidebarCollapsed ? "lg:ml-0" : "lg:ml-72"
+      }`}>
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
           <div>
