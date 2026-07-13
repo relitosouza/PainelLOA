@@ -16,4 +16,15 @@ describe("parseRows", () => {
     expect(result.records[0].organ).toContain("19 -");
     expect(result.records[0].value).toBe(1250000);
   });
+
+  it("suporta a omissão do processo administrativo (opcional)", () => {
+    const result = parseRows([
+      ["CD_ÓRGÃO-DS_ÓRGÃO", "19 - SECRETARIA DE TRANSPORTE"],
+      ["CD_UNID.-DS_UNID.", "CD_FUNÇÃO-DS_FUNÇÃO", "CD SUBFUNÇÃO-DS_SUBFUNÇÃO", "CD_PROGRAMA-DS_PROGRAMA", "CD_AÇÃO-DS_AÇÃO", "NATUREZA DE DESPESA", "Desc Sub", "VALOR"],
+      ["001 - GABINETE", "04 - ADMINISTRAÇÃO", "122 - ADMINISTRAÇÃO GERAL", "0013 - MOBILIDADE", "2.034 - MANUTENÇÃO", "3.3.90.39.00 - SERVIÇOS", "SERVIÇOS TÉCNICOS", "1.250.000,00"],
+    ]);
+    expect(result.hasRequiredFields).toBe(true);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].administrativeProcess).toBe("");
+  });
 });

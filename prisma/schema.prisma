@@ -55,4 +55,73 @@ model BudgetOrgan {
   name String
 }
 
+enum StatusImportacao {
+  PROCESSANDO
+  CONCLUIDO
+  CONCLUIDO_COM_ALERTAS
+  ERRO
+  CANCELADO
+}
 
+model ArquivoImportacao {
+  id                  BigInt   @id @default(autoincrement())
+  nomeArquivo         String
+  tipoArquivo         String?
+  tamanhoArquivo      BigInt?
+  exercicioReferencia Int?
+  quantidadeLinhas    Int      @default(0)
+  registrosImportados Int      @default(0)
+  registrosIgnorados  Int      @default(0)
+  registrosComErro    Int      @default(0)
+  status              StatusImportacao @default(PROCESSANDO)
+  mensagemErro        String?  @db.Text
+  usuarioResponsavel  String?
+  iniciadoEm          DateTime @default(now())
+  concluidoEm         DateTime?
+
+  receitas ReceitaHistorica[]
+}
+
+model ReceitaHistorica {
+  id                BigInt    @id @default(autoincrement())
+  dataMovimento     DateTime?
+  receita           String?
+  naturezaReceita   String?
+  contabil          String?
+  vinculo           String?
+  vinculoBanco      String?
+  valor             Decimal   @db.Decimal(18, 2)
+  descricaoReceita  String?
+  descricaoBanco    String?
+  prefixoBanco      String?
+  numeroBanco       String?
+  nomeBanco         String?
+  codigo            String?
+  unidadeOrcamentaria String?
+  exercicio         Int
+  unidadeGestora    String?
+  idUnidadeGestora  String?
+  idSelecionado     String?
+  historico         String?   @db.Text
+  lote              String?
+  sequenciaAvisoCredito String?
+  codigoFundo       String?
+  descricaoFundo    String?
+
+  arquivoImportacaoId BigInt?
+  arquivoImportacao   ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id], onDelete: Cascade)
+
+  hashRegistro       String?  @unique
+  criadoEm           DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
+
+  @@index([exercicio])
+  @@index([dataMovimento])
+  @@index([naturezaReceita])
+  @@index([unidadeOrcamentaria])
+  @@index([unidadeGestora])
+  @@index([vinculo])
+  @@index([codigoFundo])
+  @@index([receita])
+  @@index([arquivoImportacaoId])
+}

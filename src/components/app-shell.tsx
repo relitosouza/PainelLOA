@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DashboardView } from "./dashboard-view";
 import { ImportView } from "./import-view";
@@ -15,10 +15,26 @@ import { FIELDS } from "@/types/loa";
 export function AppShell({ view }: { view: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [options, setOptions] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(FIELDS.map((field) => [field, []]))
   );
+  const sidebarExpanded = isDesktop ? !sidebarCollapsed : mobileOpen;
+  const sidebarId = "primary-sidebar";
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+
+    const syncViewport = () => {
+      setIsDesktop(mediaQuery.matches);
+    };
+
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
 
   if (view === "apresentacao") return <PresentationDashboard />;
 
@@ -32,15 +48,19 @@ export function AppShell({ view }: { view: string }) {
       <nav className="bg-surface flex justify-between items-center w-full px-4 h-16 border-b border-outline-variant fixed top-0 z-50 shadow-sm">
         <div className="flex items-center gap-6">
           <button
+            type="button"
             className="material-symbols-outlined text-primary cursor-pointer p-2 rounded-xl hover:bg-surface-container transition-colors"
             onClick={() => {
-              if (window.innerWidth < 768) {
-                setMobileOpen((value) => !value);
-              } else {
+              if (isDesktop) {
+                setMobileOpen(false);
                 setSidebarCollapsed((value) => !value);
+              } else {
+                setMobileOpen((value) => !value);
               }
             }}
-            aria-label="Alternar menu"
+            aria-label={sidebarExpanded ? "Fechar menu lateral" : "Abrir menu lateral"}
+            aria-controls={sidebarId}
+            aria-expanded={sidebarExpanded}
           >
             {sidebarCollapsed ? "menu" : "menu_open"}
           </button>
@@ -85,6 +105,8 @@ export function AppShell({ view }: { view: string }) {
 
       {/* SideNavBar */}
       <Sidebar
+        id={sidebarId}
+        isDesktop={isDesktop}
         view={view}
         filters={filters}
         setFilters={setFilters}
@@ -98,7 +120,7 @@ export function AppShell({ view }: { view: string }) {
       {/* Main Content Canvas */}
       <main
         id="main-content"
-        className={`loa-main flex-1 transition-all duration-300 ${sidebarCollapsed ? "collapsed md:ml-0" : "md:ml-[280px]"} mt-16 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8`}
+        className={`loa-main flex-1 transition-[margin-left] duration-300 ease-out ${sidebarCollapsed ? "collapsed md:ml-0" : "md:ml-[280px]"} mt-16 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8`}
       >
         <div className="content">
           {view === "importacao" ? (
@@ -124,7 +146,7 @@ export function AppShell({ view }: { view: string }) {
         <button
           aria-label="Fechar menu"
           onClick={() => setMobileOpen(false)}
-          className="fixed inset-0 z-35 bg-black/40 md:hidden border-0 cursor-pointer"
+          className="fixed inset-0 z-35 border-0 cursor-pointer bg-black/40 transition-opacity duration-200 ease-out md:hidden motion-reduce:transition-none"
         />
       )}
     </div>

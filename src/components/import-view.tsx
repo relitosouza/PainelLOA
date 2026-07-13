@@ -17,6 +17,7 @@ async function downloadTemplate() {
     ["MODELO DE IMPORTAÇÃO — VISUALIZADOR DA LOA"],
     ["Preencha os dados na aba Dados_LOA sem alterar os nomes dos cabeçalhos."],
     ["O campo VALOR aceita números ou valores no formato brasileiro, como R$ 1.250.000,00."],
+    ["O campo PROCESSO ADMINISTRATIVO é opcional e pode ser deixado em branco."],
     ["Cada linha deve representar um registro orçamentário. Exclua a linha de exemplo antes da importação."],
     ["Não insira totais, subtotais ou linhas vazias entre os registros."],
   ]);
@@ -26,7 +27,10 @@ async function downloadTemplate() {
   XLSX.utils.book_append_sheet(workbook, dataSheet, "Dados_LOA");
   XLSX.writeFile(workbook, "modelo-importacao-loa.xlsx");
 }
+import { ImportReceitasView } from "./import-receitas-view";
+
 export function ImportView() {
+  const [activeTab, setActiveTab] = useState<"despesa" | "receita">("despesa");
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -82,20 +86,38 @@ export function ImportView() {
       <header className="page-heading border-b border-outline-variant/30 pb-4 mb-6">
         <div>
           <p className="eyebrow font-bold uppercase text-on-surface-variant tracking-wider text-[11px]">Base orçamentária</p>
-          <h1 className="text-3xl font-bold tracking-tight text-on-surface">Importação de Dados da LOA</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-on-surface">Importação de Dados</h1>
           <p className="text-on-surface-variant mt-1">Carregue, valide e confirme a planilha antes de atualizar o painel.</p>
+        </div>
+        
+        {/* Tabs */}
+        <div className="flex gap-2 mt-6">
+          <button 
+            onClick={() => setActiveTab("despesa")} 
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "despesa" ? "border-tertiary text-tertiary bg-surface-container" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+          >
+            Importar Despesas
+          </button>
+          <button 
+            onClick={() => setActiveTab("receita")} 
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "receita" ? "border-tertiary text-tertiary bg-surface-container" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+          >
+            Importar Receitas
+          </button>
         </div>
       </header>
 
-      {message && (
-        <div className={`p-4 rounded-xl text-sm mb-6 border ${
-          message.type === "success" 
-            ? "bg-green-50 border-green-200 text-green-800" 
-            : "bg-red-50 border-red-200 text-red-800"
-        }`} role="alert">
-          {message.text}
-        </div>
-      )}
+      {activeTab === "despesa" ? (
+        <>
+          {message && (
+            <div className={`p-4 rounded-xl text-sm mb-6 border ${
+              message.type === "success" 
+                ? "bg-green-50 border-green-200 text-green-800" 
+                : "bg-red-50 border-red-200 text-red-800"
+            }`} role="alert">
+              {message.text}
+            </div>
+          )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Upload Card */}
@@ -143,6 +165,9 @@ export function ImportView() {
               <li key={field} className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 bg-on-surface-variant shrink-0 rounded-full" />
                 {field}
+                {field === "PROCESSO ADMINISTRATIVO" && (
+                  <span className="text-[10px] text-tertiary ml-1 font-sans font-normal">(Opcional)</span>
+                )}
               </li>
             ))}
           </ul>
@@ -245,6 +270,10 @@ export function ImportView() {
           </section>
         )}
       </div>
+        </>
+      ) : (
+        <ImportReceitasView />
+      )}
     </>
   );
 }

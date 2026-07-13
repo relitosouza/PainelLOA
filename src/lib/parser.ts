@@ -22,7 +22,9 @@ const HEADER_ALIASES: Record<string, FieldKey | "value"> = {
   "VALOR": "value",
 };
 
-const REQUIRED: Array<FieldKey | "value"> = ["budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "administrativeProcess", "value"];
+const REQUIRED: Array<FieldKey | "value"> = ["budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "value"];
+
+const ALL_FIELDS_EXCEPT_ORGAN: FieldKey[] = ["budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "administrativeProcess"];
 
 export function normalizeHeader(value: unknown) {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[._\-/]+/g, " ").replace(/\s+/g, " ").trim();
@@ -104,7 +106,10 @@ export function parseRows(rows: unknown[][]) {
     }
 
     const record = {} as BudgetRow;
-    for (const field of REQUIRED.slice(0, -1) as FieldKey[]) record[field] = clean(row[headerMap.get(field)!]);
+    for (const field of ALL_FIELDS_EXCEPT_ORGAN) {
+      const idx = headerMap.get(field);
+      record[field] = idx !== undefined ? clean(row[idx]) : "";
+    }
     record.organ = rowOrgan || currentOrgan;
     record.value = value;
     records.push(record);
