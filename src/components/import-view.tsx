@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { BudgetRow } from "@/types/loa";
 import { currency, integer } from "@/lib/format";
+import { inferImportExercise } from "@/lib/import-metadata";
 
 type Preview = { records: BudgetRow[]; invalidValues: number[]; missingOrgan: boolean; hasRequiredFields: boolean };
 
@@ -27,14 +28,16 @@ async function downloadTemplate() {
   XLSX.utils.book_append_sheet(workbook, dataSheet, "Dados_LOA");
   XLSX.writeFile(workbook, "modelo-importacao-loa.xlsx");
 }
-import { ImportReceitasView } from "./import-receitas-view";
+
+import { LdoImportForm } from "./ldo-import-form";
 
 export function ImportView() {
-  const [activeTab, setActiveTab] = useState<"despesa" | "receita">("despesa");
+  const [activeTab, setActiveTab] = useState<"despesa" | "receita" | "ldo" | "loa_receita">("despesa");
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [replace, setReplace] = useState(true);
+  const [exercise, setExercise] = useState(new Date().getFullYear() + 1);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
@@ -51,6 +54,7 @@ export function ImportView() {
       const { parseWorkbook } = await import("@/lib/parser");
       const parsed = parseWorkbook(await selected.arrayBuffer());
       setFile(selected);
+      setExercise(inferImportExercise(selected.name, new Date().getFullYear() + 1) ?? new Date().getFullYear() + 1);
       setPreview(parsed);
       if (!parsed.hasRequiredFields || parsed.missingOrgan) setMessage({ type: "error", text: "A planilha não possui todos os campos obrigatórios ou há registros sem Órgão." });
       else if (parsed.invalidValues.length) setMessage({ type: "error", text: `${parsed.invalidValues.length} valor(es) não puderam ser interpretados. Revise a coluna VALOR.` });
@@ -67,12 +71,12 @@ export function ImportView() {
   async function confirm() {
     if (!file || !preview) return;
     setLoading(true); setMessage(null);
-    const body = new FormData(); body.set("file", file); body.set("replace", String(replace));
+    const body = new FormData(); body.set("file", file); body.set("replace", String(replace)); body.set("exercise", String(exercise));
     try {
       const response = await fetch("/api/import", { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message);
-      setMessage({ type: "success", text: `${result.message} ${integer.format(result.summary.rows)} registros e ${currency.format(result.summary.totalValue)} importados.` });
+      setMessage({ type: "success", text: `${result.message} Exercício ${result.summary.exercise}: ${integer.format(result.summary.rows)} registros e ${currency.format(result.summary.totalValue)} importados como dados reais.` });
       setFile(null); setPreview(null);
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Falha na importação." });
@@ -80,7 +84,7 @@ export function ImportView() {
   }
 
   const total = preview?.records.reduce((sum, row) => sum + row.value, 0) ?? 0;
-  const valid = Boolean(preview?.hasRequiredFields && !preview.missingOrgan && !preview.invalidValues.length && preview.records.length);
+  const valid = Boolean(preview?.hasRequiredFields && !preview.missingOrgan && !preview.invalidValues.length && preview.records.length && Number.isInteger(exercise) && exercise >= 2000 && exercise <= 2100);
   return (
     <>
       <header className="page-heading border-b border-outline-variant/30 pb-4 mb-6">
@@ -90,19 +94,31 @@ export function ImportView() {
           <p className="text-on-surface-variant mt-1">Carregue, valide e confirme a planilha antes de atualizar o painel.</p>
         </div>
         
-        {/* Tabs */}
-        <div className="flex gap-2 mt-6">
+        {/* Tabs de Tipos de Importação */}
+        <div className="flex gap-2 mt-6 overflow-x-auto border-b border-outline-variant/20 pb-0.5">
           <button 
             onClick={() => setActiveTab("despesa")} 
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "despesa" ? "border-tertiary text-tertiary bg-surface-container" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "despesa" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
           >
             Importar Despesas
           </button>
           <button 
-            onClick={() => setActiveTab("receita")} 
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "receita" ? "border-tertiary text-tertiary bg-surface-container" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+            onClick={() => setActiveTab("ldo")} 
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "ldo" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
           >
-            Importar Receitas
+            LDO Receitas
+          </button>
+          <button 
+            onClick={() => setActiveTab("loa_receita")} 
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "loa_receita" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+          >
+            LOA Receitas
+          </button>
+          <button 
+            onClick={() => setActiveTab("receita")} 
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "receita" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+          >
+            Receita Arrecadada
           </button>
         </div>
       </header>
@@ -159,6 +175,19 @@ export function ImportView() {
 
         {/* Expected Fields Info */}
         <aside className="lg:col-span-4 panel bg-surface p-6">
+          <label className="block mb-5 text-xs font-semibold text-on-surface" htmlFor="expense-exercise">
+            Exercício da LOA
+            <input
+              id="expense-exercise"
+              type="number"
+              min="2000"
+              max="2100"
+              value={exercise}
+              onChange={(event) => setExercise(Number(event.target.value))}
+              className="mt-2 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
+              required
+            />
+          </label>
           <h2 className="text-md font-bold text-on-surface mb-4">Campos esperados</h2>
           <ul className="space-y-1.5 pl-0 list-none text-xs font-semibold text-on-surface-variant font-mono">
             {["CD_ÓRGÃO-DS_ÓRGÃO", "CD_UNID.-DS_UNID.", "CD_FUNÇÃO-DS_FUNÇÃO", "CD SUBFUNÇÃO-DS_SUBFUNÇÃO", "CD_PROGRAMA-DS_PROGRAMA", "CD_AÇÃO-DS_AÇÃO", "NATUREZA DE DESPESA", "Desc Sub", "PROCESSO ADMINISTRATIVO", "VALOR"].map((field) => (
@@ -271,8 +300,30 @@ export function ImportView() {
         )}
       </div>
         </>
+      ) : activeTab === "ldo" ? (
+        <LdoImportForm />
+      ) : activeTab === "loa_receita" ? (
+        <div className="bg-surface border border-outline-variant rounded-xl p-6 space-y-4">
+          <h2 className="text-md font-bold text-on-surface">Importação das Receitas da LOA</h2>
+          <p className="text-xs text-on-surface-variant">
+            Envie a planilha de previsão definitiva das receitas da LOA para vinculação e distribuição por naturezas.
+          </p>
+          <div className="border-2 border-dashed border-outline-variant rounded-xl p-8 text-center space-y-3 bg-surface-container-low">
+            <span className="material-symbols-outlined text-4xl text-primary">upload_file</span>
+            <p className="text-xs font-semibold text-on-surface">Selecione o arquivo XLSX, XLS ou CSV da LOA Receitas</p>
+          </div>
+        </div>
       ) : (
-        <ImportReceitasView />
+        <div className="bg-surface border border-outline-variant rounded-xl p-6 space-y-4">
+          <h2 className="text-md font-bold text-on-surface">Importação da Receita Arrecadada</h2>
+          <p className="text-xs text-on-surface-variant">
+            Carregue o arquivo de movimento financeiro e arrecadação efetiva contendo Data_Movto, Exercicio, Valor, Receita, Vinculo, etc.
+          </p>
+          <div className="border-2 border-dashed border-outline-variant rounded-xl p-8 text-center space-y-3 bg-surface-container-low">
+            <span className="material-symbols-outlined text-4xl text-primary">upload_file</span>
+            <p className="text-xs font-semibold text-on-surface">Selecione o arquivo XLSX, XLS ou CSV da Receita Arrecadada</p>
+          </div>
+        </div>
       )}
     </>
   );

@@ -63,65 +63,105 @@ enum StatusImportacao {
   CANCELADO
 }
 
+enum TipoImportacaoReceita {
+  RECEITA_ARRECADADA
+  LDO_RECEITAS
+  LOA_RECEITAS
+}
+
 model ArquivoImportacao {
   id                  BigInt   @id @default(autoincrement())
   nomeArquivo         String
   tipoArquivo         String?
   tamanhoArquivo      BigInt?
+  tipoImportacao      TipoImportacaoReceita @default(RECEITA_ARRECADADA)
   exercicioReferencia Int?
   quantidadeLinhas    Int      @default(0)
   registrosImportados Int      @default(0)
   registrosIgnorados  Int      @default(0)
   registrosComErro    Int      @default(0)
+  valorTotalImportado Decimal? @db.Decimal(18, 2)
   status              StatusImportacao @default(PROCESSANDO)
   mensagemErro        String?  @db.Text
   usuarioResponsavel  String?
   iniciadoEm          DateTime @default(now())
   concluidoEm         DateTime?
 
-  receitas ReceitaHistorica[]
+  receitasArrecadadas ReceitaArrecadada[]
+  ldoReceitas         LdoReceita[]
 }
 
-model ReceitaHistorica {
-  id                BigInt    @id @default(autoincrement())
-  dataMovimento     DateTime?
-  receita           String?
-  naturezaReceita   String?
-  contabil          String?
-  vinculo           String?
-  vinculoBanco      String?
-  valor             Decimal   @db.Decimal(18, 2)
-  descricaoReceita  String?
-  descricaoBanco    String?
-  prefixoBanco      String?
-  numeroBanco       String?
-  nomeBanco         String?
-  codigo            String?
-  unidadeOrcamentaria String?
-  exercicio         Int
-  unidadeGestora    String?
-  idUnidadeGestora  String?
-  idSelecionado     String?
-  historico         String?   @db.Text
-  lote              String?
-  sequenciaAvisoCredito String?
-  codigoFundo       String?
-  descricaoFundo    String?
+model ReceitaArrecadada {
+  id                    BigInt   @id @default(autoincrement())
 
-  arquivoImportacaoId BigInt?
-  arquivoImportacao   ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id], onDelete: Cascade)
+  dataMovimento          DateTime?
+  exercicio              Int
+  valor                  Decimal  @db.Decimal(18, 2)
 
-  hashRegistro       String?  @unique
-  criadoEm           DateTime @default(now())
-  atualizadoEm       DateTime @updatedAt
+  receita                String?
+  naturezaReceita        String?
+  descricaoReceita       String?
+  unidadeOrcamentaria    String?
+  codigoFundo            String?
+  vinculo                String?
+
+  arquivoImportacaoId    BigInt?
+  arquivoImportacao      ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id])
+
+  hashRegistro           String?  @unique
+  criadoEm               DateTime @default(now())
+  atualizadoEm           DateTime @updatedAt
 
   @@index([exercicio])
   @@index([dataMovimento])
+  @@index([receita])
   @@index([naturezaReceita])
   @@index([unidadeOrcamentaria])
-  @@index([unidadeGestora])
-  @@index([vinculo])
   @@index([codigoFundo])
-  @@index([receita])
+  @@index([vinculo])
   @@index([arquivoImportacaoId])
 }
+
+enum StatusDistribuicaoLdo {
+  NAO_INICIADO
+  PARCIALMENTE_DISTRIBUIDO
+  TOTALMENTE_DISTRIBUIDO
+  ACIMA_LDO
+}
+
+model LdoReceita {
+  id                    BigInt   @id @default(autoincrement())
+  exercicio             Int
+  numeroLdo             String?  @db.VarChar(100)
+  
+  // Regra do campo Apelido: alfanumerico obrigatoriamente preservado como string
+  apelidoOriginal       String   @db.VarChar(255)
+  apelidoNormalizado    String   @db.VarChar(255)
+
+  vinculo               String   @db.VarChar(100)
+  descricaoVinculo      String   @db.Text
+  valorTotalLdo         Decimal  @db.Decimal(18, 2)
+
+  arquivoImportacaoId   BigInt?
+  arquivoImportacao     ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id], onDelete: SetNull)
+
+  linhaOrigem           Int?
+  versaoImportacao      Int      @default(1)
+  situacaoValidacao     String   @default("VÁLIDO") // VÁLIDO, ALERTA, DUPLICADO, INVALIDO
+  mensagemValidacao     String?  @db.Text
+
+  statusDistribuicao    StatusDistribuicaoLdo @default(NAO_INICIADO)
+  valorDistribuidoLoa   Decimal  @default(0) @db.Decimal(18, 2)
+  saldoDistribuir       Decimal  @default(0) @db.Decimal(18, 2)
+  observacoes           String?  @db.Text
+
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+
+  @@index([exercicio])
+  @@index([apelidoNormalizado])
+  @@index([vinculo])
+  @@index([arquivoImportacaoId])
+  @@index([statusDistribuicao])
+}
+

@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const resultado = await evolucaoAnual(filtros);
 
     return NextResponse.json(resultado, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erro ao obter evolucao:', error);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
   }

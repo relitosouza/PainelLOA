@@ -7,14 +7,15 @@ import { ImportView } from "./import-view";
 import { PresentationDashboard } from "./presentation-dashboard";
 import { SettingsView } from "./settings-view";
 import { Sidebar } from "./sidebar";
-import { RevenueDetailView } from "./revenue-detail-view";
+import { ReceitaArrecadadaView } from "./receita-arrecadada-view";
 import { ExpenseDetailView } from "./expense-detail-view";
+import { AnaliseLoaView } from "./analise-loa-view";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 
 export function AppShell({ view }: { view: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [options, setOptions] = useState<Record<string, string[]>>(() =>
@@ -128,9 +129,11 @@ export function AppShell({ view }: { view: string }) {
           ) : view === "configuracoes" ? (
             <SettingsView />
           ) : view === "receitas" ? (
-            <RevenueDetailView />
+            <ReceitaArrecadadaView />
           ) : view === "despesas" ? (
             <ExpenseDetailView />
+          ) : view === "analise-loa" ? (
+            <AnaliseLoaView />
           ) : (
             <DashboardView
               view={view}

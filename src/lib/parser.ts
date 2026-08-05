@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import type { BudgetRow, FieldKey } from "@/types/loa";
 
-const HEADER_ALIASES: Record<string, FieldKey | "value"> = {
+const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "CD ORGAO DS ORGAO": "organ",
   "ORGAO": "organ",
   "CD UNID DS UNID": "budgetUnit",
@@ -20,6 +20,7 @@ const HEADER_ALIASES: Record<string, FieldKey | "value"> = {
   "SUBELEMENTO": "subelement",
   "PROCESSO ADMINISTRATIVO": "administrativeProcess",
   "VALOR": "value",
+  "PECA ORCAMENTARIA": "budgetPiece",
 };
 
 const REQUIRED: Array<FieldKey | "value"> = ["budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "value"];
@@ -95,6 +96,12 @@ export function parseRows(rows: unknown[][]) {
     if (rowOrgan && !clean(row[valueIndex])) {
       currentOrgan = rowOrgan;
       return;
+    }
+
+    const budgetPieceIdx = headerMap.get("budgetPiece" as any);
+    if (budgetPieceIdx !== undefined) {
+      const pieceVal = clean(row[budgetPieceIdx]).toUpperCase();
+      if (pieceVal && pieceVal !== "LOA") return;
     }
 
     const value = parseBrazilianMoney(row[valueIndex]);

@@ -1,11 +1,33 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
+
+interface ResumoData {
+  totalArrecadado: number;
+  quantidadeLancamentos: number;
+  grupos: {
+    propria: number;
+    transferencias: number;
+    capital: number;
+    detalhes: {
+      iptu: number;
+      iss: number;
+      fpm: number;
+      icms: number;
+      fundeb: number;
+    };
+  };
+  anosDisponiveis: number[];
+}
+
+interface EvolucaoItem {
+  exercicio: number;
+  valor: number;
+}
 
 export function RevenueDetailView() {
-  const [resumo, setResumo] = useState<any>(null);
-  const [evolucao, setEvolucao] = useState<any[]>([]);
+  const [resumo, setResumo] = useState<ResumoData | null>(null);
+  const [, setEvolucao] = useState<EvolucaoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [anoSelecionado, setAnoSelecionado] = useState<number | null>(null);
 
@@ -15,12 +37,12 @@ export function RevenueDetailView() {
       try {
         const queryParams = anoSelecionado ? `?exercicioInicial=${anoSelecionado}&exercicioFinal=${anoSelecionado}` : '';
         const [resResumo, resEvolucao] = await Promise.all([
-          fetch(`/api/receitas-historicas/resumo${queryParams}`),
-          fetch(`/api/receitas-historicas/evolucao`)
+          fetch(`/api/receitas/arrecadada/resumo${queryParams}`),
+          fetch(`/api/receitas/arrecadada/por-exercicio${queryParams}`)
         ]);
         
-        setResumo(await resResumo.json());
-        setEvolucao(await resEvolucao.json());
+        setResumo(await resResumo.json() as ResumoData);
+        setEvolucao(await resEvolucao.json() as EvolucaoItem[]);
       } catch (err) {
         console.error(err);
       } finally {
@@ -36,7 +58,7 @@ export function RevenueDetailView() {
   };
 
   const total = resumo?.totalArrecadado || 0;
-  const grupos = resumo?.grupos || {};
+  const grupos: ResumoData['grupos'] = resumo?.grupos ?? { propria: 0, transferencias: 0, capital: 0, detalhes: { iptu: 0, iss: 0, fpm: 0, icms: 0, fundeb: 0 } };
   const pctTransferencias = total ? Math.round((grupos.transferencias / total) * 100) : 0;
   const acimaDaMedia = pctTransferencias > 48;
   const pctCapital = total ? Math.round(((grupos.capital || 0) / total) * 100) : 0;
@@ -60,8 +82,8 @@ export function RevenueDetailView() {
       {/* Header & Action Row */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-headline font-black text-on-surface tracking-tight">Análise Detalhada de Receitas</h1>
-          <p className="text-on-surface-variant mt-1">Acompanhamento em tempo real da arrecadação e transferências.</p>
+          <h1 className="text-3xl font-headline font-black text-on-surface tracking-tight">Análise de Receita Arrecadada</h1>
+          <p className="text-on-surface-variant mt-1">Acompanhamento em tempo real da arrecadação.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 bg-surface-container-high p-1 rounded-lg">
           <button 

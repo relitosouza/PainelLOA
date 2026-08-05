@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const resultado = await processarArquivoReceitas(buffer, nomeArquivo, tipoArquivo);
 
     return NextResponse.json(resultado, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erro na rota de importação:', error);
     return NextResponse.json({ error: 'Erro interno ao processar arquivo' }, { status: 500 });
   }

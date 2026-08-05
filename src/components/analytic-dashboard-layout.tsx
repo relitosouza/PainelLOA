@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { DataSourceToggle } from "./data-source-toggle";
-import { currency } from "@/lib/format";
+import { currency, integer, percent } from "@/lib/format";
 import type { DashboardData } from "@/types/loa";
 import { getPrimaryPageLinks } from "@/lib/page-navigation";
 import { Filters, EMPTY_FILTERS, type FilterState } from "./filters";
+import { BarChart } from "./bar-chart";
+import { AnalisesCombinadasSection } from "./analises-combinadas";
+import { SecretariasMenu } from "./secretarias-menu";
 
 function normalizeText(value: string) {
   return value
@@ -28,19 +31,30 @@ function findGroup(items: { label: string; value: number }[], keywords: string[]
   return items.find((item) => keywords.some((keyword) => normalizeText(item.label).includes(normalizeText(keyword)))) ?? null;
 }
 
+function findCodeGroupValue(items: { label: string; value: number }[], code: string) {
+  return items.find((item) => item.label.startsWith(`${code} —`))?.value ?? 0;
+}
+
 export function AnalyticDashboardLayout({
   data,
   filters,
   onChange,
+  dataSource,
+  selectedImportId,
+  onSelectImport,
 }: {
   data: DashboardData;
   filters: FilterState;
   onChange: (filters: FilterState) => void;
+  dataSource: "ficticio" | "real";
+  selectedImportId: string;
+  onSelectImport: (importId: string) => void;
 }) {
-  const totalVal = data.totals.loa;
+  const totalVal = data.totals.filtered;
   const operatingVal = data.spending.operating;
   const investmentVal = data.spending.investment;
-  const expenseTotal = operatingVal + investmentVal;
+  const isRealData = dataSource === "real";
+  const expenseTotal = isRealData ? totalVal : operatingVal + investmentVal;
   const isBalanced = totalVal >= expenseTotal;
   const population = 723500;
 
@@ -174,8 +188,8 @@ export function AnalyticDashboardLayout({
     },
   ];
 
-  const currentRevenue = totalVal * 0.896;
-  const capitalRevenue = totalVal * 0.104;
+  const currentRevenue = isRealData ? operatingVal : totalVal * 0.896;
+  const capitalRevenue = isRealData ? investmentVal : totalVal * 0.104;
 
   const organLeader = data.secretariatCeiling ?? data.groups.organ[0] ?? null;
   const topPrograms = data.groups.program.slice(0, 2);
@@ -209,23 +223,54 @@ export function AnalyticDashboardLayout({
     },
   ];
 
-  const expenseBlocks = [
-    { label: "Pessoal e Encargos", value: expenseTotal * 0.36, share: 36 },
-    { label: "Custeio (Manutenção)", value: expenseTotal * 0.43, share: 43 },
-    { label: "Investimentos & Expansão", value: expenseTotal * 0.17, share: 17, highlight: true },
-  ];
+  const sumByPrefixes = (prefixes: string[]) =>
+    data.classifications.economic
+      .filter((item) => prefixes.some((p) => item.label.startsWith(p)))
+      .reduce((sum, item) => sum + item.value, 0);
 
-  const originBlocks = [
-    { label: "Transferências", value: 53, tone: "bg-tertiary", text: "text-white" },
-    { label: "Própria", value: 41, tone: "bg-blue-400", text: "text-white" },
-    { label: "Outros", value: 6, tone: "bg-blue-200", text: "text-on-surface" },
+  const realPessoalValue = sumByPrefixes(["3.1.9"]);
+  const realOutrasCorrentesValue = sumByPrefixes(["3.3.50", "3.3.71"]);
+  const realInvestimentosValue = sumByPrefixes(["4.4", "4.5"]);
+  const realAmortizacaoValue = sumByPrefixes(["4.6"]);
+
+  const realExpenseBlocks = [
+    { label: "Pessoal e Encargos (3.1.9)", value: realPessoalValue },
+    { label: "Outras Despesas Correntes (3.3.50, 3.3.71)", value: realOutrasCorrentesValue },
+    { label: "Investimentos e Inversões (4.4 e 4.5)", value: realInvestimentosValue, highlight: true },
   ];
+  const expenseBlocks = isRealData
+    ? realExpenseBlocks.map((block) => ({ ...block, share: expenseTotal ? Math.round((block.value / expenseTotal) * 100) : 0 }))
+    : [
+        { label: "Pessoal e Encargos", value: expenseTotal * 0.36, share: 36 },
+        { label: "Custeio (Manutenção)", value: expenseTotal * 0.43, share: 43 },
+        { label: "Investimentos & Expansão", value: expenseTotal * 0.17, share: 17, highlight: true },
+      ];
+  const amortizationValue = isRealData ? realAmortizacaoValue : totalVal * 0.026;
+  const contingencyValue = isRealData ? sumByPrefixes(["9.9"]) || findCodeGroupValue(data.classifications.expenseGroup, "9") : totalVal * 0.009;
+
+  const modalityTones = ["bg-tertiary", "bg-blue-400", "bg-blue-200"];
+  const topModalities = data.classifications.modality.slice(0, 3);
+  const originBlocks = isRealData
+    ? topModalities.map((item, index) => ({
+        label: item.label,
+        value: totalVal ? Math.round((item.value / totalVal) * 1000) / 10 : 0,
+        tone: modalityTones[index],
+        text: index < 2 ? "text-white" : "text-on-surface",
+      }))
+    : [
+        { label: "Transferências", value: 53, tone: "bg-tertiary", text: "text-white" },
+        { label: "Própria", value: 41, tone: "bg-blue-400", text: "text-white" },
+        { label: "Outros", value: 6, tone: "bg-blue-200", text: "text-on-surface" },
+      ];
 
   const topHealthFunction = findGroup(data.groups.functionName, ["saude", "saúde"]) ?? data.groups.functionName[0] ?? null;
   const topEducationFunction = findGroup(data.groups.functionName, ["educacao", "educação"]) ?? data.groups.functionName[1] ?? null;
   const topInfrastructureFunction = findGroup(data.groups.functionName, ["obra", "infra"]) ?? data.groups.functionName[2] ?? null;
 
-  const exerciseYear = 2027;
+  const currentImportId = selectedImportId || data.selection.importId || "";
+  const exerciseYear = dataSource === "ficticio" ? 2027 : data.selection.exercise;
+  const importYears = [...new Set(data.imports.map((item) => item.exercise).filter((year): year is number => year !== null))].sort((left, right) => right - left);
+  const importsForExercise = data.imports.filter((item) => item.exercise === exerciseYear);
   const primaryLinks = getPrimaryPageLinks("dashboard");
 
   return (
@@ -233,10 +278,10 @@ export function AnalyticDashboardLayout({
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-2xl md:text-3xl font-headline font-extrabold text-on-surface tracking-tight">
-            Visualização Analítica da LOA - Equilíbrio entre Receita e Despesa
+            {isRealData ? "Visualização Analítica da LOA — Dados Importados" : "Visualização Analítica da LOA - Equilíbrio entre Receita e Despesa"}
           </h2>
           <p className="text-on-surface-variant mt-1">
-            Gestão orçamentária integrada: análise de fontes e aplicações de recursos.
+            {isRealData ? "Valores, classificações e alertas da importação selecionada." : "Gestão orçamentária integrada: análise de fontes e aplicações de recursos."}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {primaryLinks.map((link) => (
@@ -251,49 +296,82 @@ export function AnalyticDashboardLayout({
             ))}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 md:gap-3 bg-surface px-4 py-2 border border-outline-variant rounded-lg shadow-sm text-sm font-medium text-on-surface">
+        <div className="flex flex-wrap items-end gap-3 bg-surface px-4 py-3 border border-outline-variant rounded-lg text-sm font-medium text-on-surface">
           <DataSourceToggle />
-          <span className="flex items-center gap-2 border-l border-outline-variant/30 pl-4 text-on-surface-variant">
-            <span className="material-symbols-outlined text-on-surface-variant">calendar_today</span>
-            Exercício: {exerciseYear}
-          </span>
+          <label className="grid gap-1 border-l border-outline-variant/30 pl-3 text-xs text-on-surface-variant">
+            Exercício
+            <select
+              className="min-w-24 rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm font-semibold text-on-surface disabled:opacity-70"
+              value={exerciseYear ?? ""}
+              disabled={dataSource === "ficticio" || !importYears.length}
+              onChange={(event) => {
+                const nextExercise = Number(event.target.value);
+                const nextImport = data.imports.find((item) => item.exercise === nextExercise);
+                if (nextImport) onSelectImport(nextImport.id);
+              }}
+            >
+              {dataSource === "ficticio" ? <option value="2027">2027</option> : importYears.length ? importYears.map((year) => <option key={year} value={year}>{year}</option>) : <option value="">Sem exercício</option>}
+            </select>
+          </label>
+          <label className="grid min-w-56 gap-1 text-xs text-on-surface-variant">
+            Importação
+            <select
+              className="max-w-80 rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm font-semibold text-on-surface disabled:opacity-70"
+              value={currentImportId}
+              disabled={dataSource === "ficticio" || !importsForExercise.length}
+              onChange={(event) => onSelectImport(event.target.value)}
+            >
+              {dataSource === "ficticio" ? <option value="">Base simulada</option> : importsForExercise.length ? importsForExercise.map((item) => (
+                <option key={item.id} value={item.id}>{item.fileName} · {integer.format(item.recordCount)} linhas</option>
+              )) : <option value="">Nenhuma importação</option>}
+            </select>
+          </label>
         </div>
       </header>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <article className="glass-card bg-emerald-50/60 dark:bg-emerald-950/20 border-l-4 border-l-emerald-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+          <div className="z-10">
+            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1">Despesa LDO (2027)</p>
+            <h3 className="text-2xl font-headline font-bold text-emerald-900 dark:text-emerald-100">{formatCompactMoney(5868871609.91)}</h3>
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">Previsão 1.142 registros</p>
+          </div>
+          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-emerald-500/10">gavel</span>
+        </article>
         <article className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border-l-4 border-l-blue-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
-            <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Receita Total</p>
-            <h3 className="text-3xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
+            <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Despesa LOA (2027)</p>
+            <h3 className="text-2xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
+            <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1">{integer.format(data.quality.totalRecords)} registros fixados</p>
           </div>
           <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-blue-500/10">account_balance_wallet</span>
         </article>
         <article className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border-l-4 border-l-orange-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
-            <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">Despesa Total Fixada</p>
-            <h3 className="text-3xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(expenseTotal)}</h3>
+            <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Despesa Total Fixada"}</p>
+            <h3 className="text-2xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(isRealData ? operatingVal : expenseTotal)}</h3>
+            <p className="text-[11px] text-orange-600 dark:text-orange-400 mt-1">Pessoal e Custeio</p>
           </div>
           <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-500/10">payments</span>
         </article>
-        <article className="glass-card bg-green-50/60 dark:bg-green-950/20 border-l-4 border-l-green-500 p-5 flex flex-col justify-center h-32">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold text-green-700 dark:text-green-300 uppercase tracking-wider mb-1">Equilíbrio</p>
-              <h3 className="text-lg font-headline font-bold text-green-900 dark:text-green-100">{isBalanced ? "Despesa = Receita" : "Despesa > Receita"}</h3>
-            </div>
-            <div className="px-2 py-1 bg-green-500 text-white text-[10px] font-bold rounded uppercase">
-              {isBalanced ? "Equilibrado" : "Atenção"}
-            </div>
+        <article className="glass-card bg-teal-50/60 dark:bg-teal-950/20 border-l-4 border-l-teal-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+          <div className="z-10">
+            <p className="text-xs font-bold text-teal-700 dark:text-teal-300 uppercase tracking-wider mb-1">Investimentos (LOA)</p>
+            <h3 className="text-2xl font-headline font-bold text-teal-900 dark:text-teal-100">{formatCompactMoney(investmentVal)}</h3>
+            <p className="text-[11px] text-teal-600 dark:text-teal-400 mt-1">Obras e Capital</p>
           </div>
+          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-teal-500/10">engineering</span>
         </article>
-        <article className="glass-card bg-purple-50/60 dark:bg-purple-950/20 border-l-4 border-l-purple-500 p-5 flex flex-col justify-center h-32">
+        <article className="glass-card bg-amber-50/60 dark:bg-amber-950/20 border-l-4 border-l-amber-500 p-5 flex flex-col justify-center h-32">
           <div>
-            <p className="text-xs font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider mb-1">População Estimada</p>
-            <h3 className="text-xl font-headline font-bold text-purple-900 dark:text-purple-100">723.500 Hab.</h3>
-            <p className="text-xs text-purple-600 dark:text-purple-400">Base para métricas per capita</p>
+            <p className="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1">Conformidade LOA</p>
+            <h3 className="text-lg font-headline font-bold text-amber-900 dark:text-amber-100">{percent.format(data.quality.coverage)}</h3>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{integer.format(data.quality.warningRecords)} alertas de cadastro</p>
           </div>
         </article>
       </section>
+
+      <AnalisesCombinadasSection />
 
       <Filters
         filters={filters}
@@ -303,11 +381,75 @@ export function AnalyticDashboardLayout({
         onClear={() => onChange(EMPTY_FILTERS)}
       />
 
+      <section aria-labelledby="classification-title" className="space-y-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 id="classification-title" className="text-xl font-headline font-bold text-on-surface">Classificação da Despesa</h3>
+            <p className="text-sm text-on-surface-variant">Categoria, grupo, modalidade, classificação econômica e subelemento no recorte selecionado.</p>
+          </div>
+          <span className="text-xs font-semibold text-on-surface-variant">{dataSource === "real" ? `Importação real · exercício ${exerciseYear ?? "não identificado"}` : "Base simulada preservada"}</span>
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <BarChart title="Categoria da Despesa" subtitle="Participação no valor importado" data={data.classifications.category} changeable />
+          <BarChart title="Grupo de Despesa" subtitle="Distribuição por grupo orçamentário" data={data.classifications.expenseGroup} changeable />
+          <BarChart title="Modalidade de Aplicação" subtitle="Principais formas de aplicação" data={data.classifications.modality} changeable />
+          <BarChart title="Classificação Econômica" subtitle="Naturezas com maior valor previsto" data={data.classifications.economic} changeable />
+          <BarChart title="Subelementos" subtitle="Detalhamento informado na planilha" data={data.classifications.subelement} changeable />
+        </div>
+      </section>
+
+      <section aria-labelledby="quality-title" className="rounded-xl border border-outline-variant bg-surface overflow-hidden">
+        <div className="flex flex-col gap-2 border-b border-outline-variant px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 id="quality-title" className="text-lg font-headline font-bold text-on-surface">Qualidade dos dados importados</h3>
+            <p className="text-sm text-on-surface-variant">Registros com alerta continuam incluídos em todos os totais e gráficos.</p>
+          </div>
+          <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${data.quality.warningRecords ? "bg-amber-100 text-amber-900" : "bg-green-100 text-green-900"}`}>
+            {data.quality.available ? `${percent.format(data.quality.coverage)} em conformidade` : "Disponível para dados reais"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-y divide-outline-variant md:grid-cols-4 md:divide-y-0">
+          {[
+            ["Registros analisados", integer.format(data.quality.totalRecords)],
+            ["Em conformidade", integer.format(data.quality.validRecords)],
+            ["Com alerta", integer.format(data.quality.warningRecords)],
+            ["Valor sinalizado", currency.format(data.quality.warningValue)],
+          ].map(([label, value]) => (
+            <div key={label} className="px-5 py-4">
+              <p className="text-xs text-on-surface-variant">{label}</p>
+              <p className="mt-1 text-lg font-bold text-on-surface">{value}</p>
+            </div>
+          ))}
+        </div>
+        {data.quality.issues.length > 0 && (
+          <div className="overflow-x-auto border-t border-outline-variant">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead className="bg-surface-container text-xs text-on-surface-variant">
+                <tr><th className="px-5 py-3">Código da Despesa</th><th className="px-5 py-3">Desc Sub</th><th className="px-5 py-3">Tipo do alerta</th><th className="px-5 py-3 text-right">Registros</th><th className="px-5 py-3 text-right">Valor mantido</th></tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/50">
+                {data.quality.issues.map((issue) => (
+                  <tr key={`${issue.type}-${issue.expenseCode}-${issue.subelementDescription}`}>
+                    <td className="whitespace-nowrap px-5 py-3 font-mono font-semibold text-on-surface">{issue.expenseCode}</td>
+                    <td className="max-w-md px-5 py-3 text-on-surface">{issue.subelementDescription}</td>
+                    <td className="px-5 py-3 text-on-surface-variant">{issue.type === "missing-nature" ? "Natureza ausente" : issue.type === "invalid-nature" ? "Código não cadastrado" : "Subelemento não localizado"}</td>
+                    <td className="px-5 py-3 text-right font-semibold">{integer.format(issue.count)}</td>
+                    <td className="px-5 py-3 text-right font-semibold">{currency.format(issue.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <SecretariasMenu data={data} filters={filters} onChange={onChange} totalVal={totalVal} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="flex flex-col gap-6">
           <div className="flex items-center gap-2 px-1">
             <span className="material-symbols-outlined text-tertiary">trending_up</span>
-            <h3 className="text-xl font-headline font-bold text-on-surface">Análise da Receita Pública</h3>
+            <h3 className="text-xl font-headline font-bold text-on-surface">{isRealData ? "Composição Econômica da Despesa" : "Análise da Receita Pública"}</h3>
           </div>
 
           <section className="glass-card p-6">
@@ -315,7 +457,7 @@ export function AnalyticDashboardLayout({
             <div className="space-y-4">
               <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/30">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">Receita Corrente</span>
+                  <span className="text-sm font-medium">{isRealData ? "Despesas Correntes" : "Receita Corrente"}</span>
                   <span className="text-sm font-bold text-tertiary">{formatCompactMoney(currentRevenue)}</span>
                 </div>
                 <div className="w-full bg-surface-variant rounded-full h-1.5">
@@ -324,7 +466,7 @@ export function AnalyticDashboardLayout({
               </div>
               <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/30">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">Receita de Capital</span>
+                  <span className="text-sm font-medium">{isRealData ? "Despesas de Capital" : "Receita de Capital"}</span>
                   <span className="text-sm font-bold text-tertiary">{formatCompactMoney(capitalRevenue)}</span>
                 </div>
                 <div className="w-full bg-surface-variant rounded-full h-1.5">
@@ -334,11 +476,11 @@ export function AnalyticDashboardLayout({
             </div>
 
             <div className="mt-8">
-              <h5 className="text-xs font-bold uppercase text-on-surface-variant mb-3">Distribuição por Origem</h5>
+              <h5 className="text-xs font-bold uppercase text-on-surface-variant mb-3">{isRealData ? "Distribuição por Modalidade de Aplicação" : "Distribuição por Origem"}</h5>
               <div className="flex h-10 rounded-lg overflow-hidden shadow-inner mb-4">
                 {originBlocks.map((block) => (
                   <div key={block.label} className={`${block.tone} h-full flex items-center justify-center text-[10px] font-bold ${block.text}`} style={{ width: `${block.value}%` }}>
-                    {block.value}%
+                    {String(block.value).replace(".", ",")}%
                   </div>
                 ))}
               </div>
@@ -354,15 +496,15 @@ export function AnalyticDashboardLayout({
           </section>
 
           <section className="glass-card p-6">
-            <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Métricas Per Capita (Receita)</h4>
+            <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">{isRealData ? "Métricas Per Capita (Despesa)" : "Métricas Per Capita (Receita)"}</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-4 bg-surface rounded-lg border border-outline-variant/30">
                 <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Total / Habitante</p>
                 <p className="text-xl font-bold text-on-surface">{currency.format(totalVal / population)}</p>
               </div>
               <div className="p-4 bg-surface rounded-lg border border-outline-variant/30">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Própria / Habitante</p>
-                <p className="text-xl font-bold text-tertiary">{currency.format((totalVal * 0.41) / population)}</p>
+                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">{isRealData ? "Capital / Habitante" : "Própria / Habitante"}</p>
+                <p className="text-xl font-bold text-tertiary">{currency.format((isRealData ? investmentVal : totalVal * 0.41) / population)}</p>
               </div>
             </div>
           </section>
@@ -370,16 +512,16 @@ export function AnalyticDashboardLayout({
           <section className="glass-card p-6">
             <div className="flex items-center gap-2 mb-4 text-tertiary">
               <span className="material-symbols-outlined text-sm">lightbulb</span>
-              <h4 className="text-sm font-bold uppercase">Insights de Receita</h4>
+              <h4 className="text-sm font-bold uppercase">{isRealData ? "Leitura da Importação" : "Insights de Receita"}</h4>
             </div>
             <ul className="space-y-3">
               <li className="flex gap-3 items-start">
                 <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
-                <p className="text-sm text-on-surface-variant">A arrecadação própria atingiu 41%, demonstrando robustez fiscal municipal.</p>
+                <p className="text-sm text-on-surface-variant">{isRealData ? `${percent.format(totalVal ? operatingVal / totalVal : 0)} do valor importado corresponde a despesas correntes.` : "A arrecadação própria atingiu 41%, demonstrando robustez fiscal municipal."}</p>
               </li>
               <li className="flex gap-3 items-start">
                 <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
-                <p className="text-sm text-on-surface-variant">Os grupos funcionais mais relevantes concentram a maior parcela dos recursos.</p>
+                <p className="text-sm text-on-surface-variant">{isRealData ? `${integer.format(data.quality.warningRecords)} registros foram mantidos nos totais com sinalização cadastral.` : "Os grupos funcionais mais relevantes concentram a maior parcela dos recursos."}</p>
               </li>
             </ul>
           </section>
@@ -420,11 +562,11 @@ export function AnalyticDashboardLayout({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
               <div className="p-3 bg-surface rounded border border-outline-variant/30">
                 <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Amortização Dívida</p>
-                <p className="text-md font-bold text-on-surface">{formatCompactMoney(totalVal * 0.026)}</p>
+                <p className="text-md font-bold text-on-surface">{formatCompactMoney(amortizationValue)}</p>
               </div>
               <div className="p-3 bg-surface rounded border border-outline-variant/30">
                 <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Reserva Contingência</p>
-                <p className="text-md font-bold text-on-surface">{formatCompactMoney(totalVal * 0.009)}</p>
+                <p className="text-md font-bold text-on-surface">{formatCompactMoney(contingencyValue)}</p>
               </div>
             </div>
           </section>
@@ -470,7 +612,7 @@ export function AnalyticDashboardLayout({
                 Investimentos representam {expenseTotal ? `${Math.round((investmentVal / expenseTotal) * 100)}%` : "0%"} do orçamento, com maior peso nos projetos de expansão.
               </div>
               <div className="p-3 bg-surface-container rounded text-sm text-on-surface-variant">
-                Identificadas {data.counts.actions} ações vinculadas al plano, indicando boa granularidade de execução.
+                Identificadas {data.counts.actions} ações vinculadas ao plano, indicando boa granularidade de execução.
               </div>
             </div>
           </section>
@@ -499,11 +641,11 @@ export function AnalyticDashboardLayout({
       <section className="glass-card p-8">
         <div className="text-center mb-8">
           <h4 className="text-lg font-headline font-bold text-on-surface">Fluxo de Aplicação de Recursos</h4>
-          <p className="text-sm text-on-surface-variant">Como a receita de {formatCompactMoney(totalVal)} é distribuída entre as principais naturezas de despesa.</p>
+          <p className="text-sm text-on-surface-variant">Como {isRealData ? "o valor importado" : "a receita"} de {formatCompactMoney(totalVal)} é distribuído entre as principais naturezas de despesa.</p>
         </div>
         <div className="relative flex flex-col md:flex-row items-center justify-between gap-8 max-w-4xl mx-auto">
           <div className="w-full md:w-48 p-6 bg-tertiary text-on-tertiary rounded-xl text-center shadow-lg z-10">
-            <p className="text-[10px] uppercase font-bold opacity-80 mb-1">Receita Total</p>
+            <p className="text-[10px] uppercase font-bold opacity-80 mb-1">{isRealData ? "Valor Importado" : "Receita Total"}</p>
             <p className="text-2xl font-extrabold">{formatCompactMoney(totalVal)}</p>
           </div>
           <div className="hidden md:block absolute left-48 right-48 top-1/2 -translate-y-1/2 h-40 opacity-20 pointer-events-none">
@@ -516,15 +658,15 @@ export function AnalyticDashboardLayout({
           <div className="flex flex-col gap-4 w-full md:w-48">
             <div className="p-3 bg-surface border border-orange-200 rounded-lg shadow-sm text-center">
               <p className="text-[10px] font-bold text-on-surface-variant uppercase">Pessoal</p>
-              <p className="font-bold text-on-surface">{formatCompactMoney(expenseTotal * 0.36)}</p>
+              <p className="font-bold text-on-surface">{formatCompactMoney(expenseBlocks[0]?.value ?? 0)}</p>
             </div>
             <div className="p-3 bg-surface border border-orange-200 rounded-lg shadow-sm text-center">
               <p className="text-[10px] font-bold text-on-surface-variant uppercase">Custeio</p>
-              <p className="font-bold text-on-surface">{formatCompactMoney(expenseTotal * 0.43)}</p>
+              <p className="font-bold text-on-surface">{formatCompactMoney(expenseBlocks[1]?.value ?? 0)}</p>
             </div>
             <div className="p-3 bg-orange-100 border border-orange-300 rounded-lg shadow-sm text-center">
               <p className="text-[10px] font-bold text-orange-800 uppercase">Investimentos</p>
-              <p className="font-bold text-orange-800">{formatCompactMoney(expenseTotal * 0.17)}</p>
+              <p className="font-bold text-orange-800">{formatCompactMoney(expenseBlocks[2]?.value ?? 0)}</p>
             </div>
           </div>
         </div>
@@ -568,7 +710,7 @@ export function AnalyticDashboardLayout({
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <article className="glass-card bg-surface p-5">
-          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Receita Corrente</p>
+          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Receita Corrente"}</p>
           <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(currentRevenue)}</h4>
           <p className="text-xs text-on-surface-variant mt-2">{topHealthFunction?.label || "Maior função"}</p>
         </article>

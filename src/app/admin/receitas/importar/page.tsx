@@ -2,11 +2,12 @@
 
 import React, { useState } from 'react';
 import { UploadCloud, FileText, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import type { ResultadoImportacao } from '@/lib/services/importacaoReceitas';
 
 export default function ImportacaoReceitasPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [resultado, setResultado] = useState<any>(null);
+  const [resultado, setResultado] = useState<ResultadoImportacao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -28,20 +29,30 @@ export default function ImportacaoReceitasPage() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/receitas-historicas/importar', {
+      const response = await fetch('/api/receitas/arrecadada/importar', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        if (response.status === 413 || text.includes("Too Large")) {
+          throw new Error("O arquivo enviado é muito grande para o servidor processar (limite de tamanho excedido).");
+        }
+        throw new Error(text || `Erro de rede ou servidor (${response.status})`);
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Erro na importação');
       }
 
       setResultado(data);
-    } catch (err: any) {
-      setErro(err.message);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -49,7 +60,7 @@ export default function ImportacaoReceitasPage() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">Importar Receitas Históricas</h1>
+      <h1 className="text-3xl font-bold mb-2">Receita Arrecadada</h1>
       <p className="text-gray-600 mb-8">
         Faça o upload de planilhas (XLSX, CSV) contendo os dados históricos de arrecadação do município.
       </p>

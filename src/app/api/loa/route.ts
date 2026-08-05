@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { FIELDS, type FieldKey, type GroupTotal } from "@/types/loa";
+import { cleanImportFileName, inferImportExercise } from "@/lib/import-metadata";
+import {
+  classificationLabel,
+  extractExpenseCode,
+  resolveExpenseSubelementCode,
+  validateExpenseNature,
+  validateExpenseSubelement,
+} from "@/lib/expense-classification";
 
 const SORTABLE = new Set([...FIELDS, "value"]);
 
@@ -18,11 +26,6 @@ function buildWhere(params: URLSearchParams): Prisma.BudgetRecordWhereInput {
   const search = params.get("search")?.trim();
   if (search) AND.push({ OR: FIELDS.map((field) => ({ [field]: { contains: search, mode: "insensitive" as const } })) });
   return AND.length ? { AND } : {};
-}
-
-function buildSecretariatWhere(params: URLSearchParams): Prisma.BudgetRecordWhereInput {
-  const organs = params.getAll("organ").filter(Boolean);
-  return organs.length ? { organ: { in: organs } } : {};
 }
 
 function withExpensePrefix(where: Prisma.BudgetRecordWhereInput, prefix: string): Prisma.BudgetRecordWhereInput {
@@ -48,6 +51,7 @@ async function groupBy(field: FieldKey, where: Prisma.BudgetRecordWhereInput) {
     case "subelement": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["subelement"], ...args }), field);
     case "administrativeProcess": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["administrativeProcess"], ...args }), field);
   }
+  return [];
 }
 
 async function distinctCount(field: FieldKey, where: Prisma.BudgetRecordWhereInput) {
@@ -61,6 +65,119 @@ async function distinctCount(field: FieldKey, where: Prisma.BudgetRecordWhereInp
     default: return 0;
   }
 }
+
+type QualityRow = {
+  expenseNature: string;
+  subelement: string;
+  _sum: { value: { toNumber(): number } | null };
+  _count: { _all: number };
+};
+
+function buildClassificationGroups(rows: QualityRow[]) {
+  const buckets = {
+    category: new Map<string, GroupTotal>(),
+    expenseGroup: new Map<string, GroupTotal>(),
+    modality: new Map<string, GroupTotal>(),
+    economic: new Map<string, GroupTotal>(),
+    subelement: new Map<string, GroupTotal>(),
+  };
+
+  const add = (bucket: Map<string, GroupTotal>, label: string, value: number, count: number) => {
+    const current = bucket.get(label) ?? { label, value: 0, count: 0 };
+    current.value += value;
+    current.count += count;
+    bucket.set(label, current);
+  };
+
+  for (const row of rows) {
+    const code = extractExpenseCode(row.expenseNature);
+    if (!code) continue;
+    const [category, expenseGroup, modality] = code.split(".");
+    const value = row._sum.value?.toNumber() ?? 0;
+    const count = row._count._all;
+    add(buckets.category, `${category} — ${classificationLabel("category", category)}`, value, count);
+    add(buckets.expenseGroup, `${expenseGroup} — ${classificationLabel("group", expenseGroup)}`, value, count);
+    add(buckets.modality, `${modality} — ${classificationLabel("modality", modality)}`, value, count);
+    add(buckets.economic, row.expenseNature, value, count);
+    const subelementCode = resolveExpenseSubelementCode(row.expenseNature, row.subelement);
+    const subelementLabel = subelementCode
+      ? `${subelementCode} — ${row.subelement}`
+      : row.subelement || "Subelemento não informado";
+    add(buckets.subelement, subelementLabel, value, count);
+  }
+
+  const sorted = (bucket: Map<string, GroupTotal>) => [...bucket.values()].sort((left, right) => right.value - left.value);
+  return {
+    category: sorted(buckets.category),
+    expenseGroup: sorted(buckets.expenseGroup),
+    modality: sorted(buckets.modality),
+    economic: sorted(buckets.economic),
+    subelement: sorted(buckets.subelement),
+  };
+}
+
+function buildQualitySummary(rows: QualityRow[]) {
+  const issueMap = new Map<string, { type: "missing-nature" | "invalid-nature" | "unmatched-subelement"; expenseCode: string; subelementDescription: string; count: number; value: number }>();
+  let totalRecords = 0;
+  let validRecords = 0;
+  let warningRecords = 0;
+  let validValue = 0;
+  let warningValue = 0;
+  let unmatchedSubelements = 0;
+
+  const addIssue = (
+    type: "missing-nature" | "invalid-nature" | "unmatched-subelement",
+    expenseCode: string,
+    subelementDescription: string,
+    count: number,
+    value: number,
+  ) => {
+    const key = `${type}:${expenseCode}:${subelementDescription}`;
+    const current = issueMap.get(key) ?? { type, expenseCode, subelementDescription, count: 0, value: 0 };
+    current.count += count;
+    current.value += value;
+    issueMap.set(key, current);
+  };
+
+  for (const row of rows) {
+    const count = row._count._all;
+    const value = row._sum.value?.toNumber() ?? 0;
+    const nature = validateExpenseNature(row.expenseNature);
+    const subelement = validateExpenseSubelement(row.expenseNature, row.subelement);
+    const expenseCode = extractExpenseCode(row.expenseNature) ?? "Não informado";
+    const subelementDescription = row.subelement.trim() || "Não informado";
+    const hasWarning = !nature.valid || !subelement.valid;
+    totalRecords += count;
+
+    if (hasWarning) {
+      warningRecords += count;
+      warningValue += value;
+    } else {
+      validRecords += count;
+      validValue += value;
+    }
+
+    if (!nature.valid) {
+      addIssue(nature.reason === "missing" ? "missing-nature" : "invalid-nature", expenseCode, subelementDescription, count, value);
+    } else if (!subelement.valid) {
+      unmatchedSubelements += count;
+      addIssue("unmatched-subelement", expenseCode, subelementDescription, count, value);
+    }
+  }
+
+  return {
+    available: totalRecords > 0,
+    totalRecords,
+    validRecords,
+    warningRecords,
+    validValue,
+    warningValue,
+    coverage: totalRecords ? validRecords / totalRecords : 0,
+    unmatchedSubelements,
+    issues: [...issueMap.values()].sort((left, right) => right.value - left.value).slice(0, 8),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
@@ -69,14 +186,26 @@ export async function GET(request: Request) {
     const pageSize = isAll ? 10000 : Math.min(100, Math.max(10, Number(params.get("pageSize")) || 20));
     const sort = SORTABLE.has(params.get("sort") ?? "") ? params.get("sort")! : "value";
     const direction = params.get("direction") === "asc" ? "asc" : "desc";
-    const where = buildWhere(params);
-    const secretariatWhere = buildSecretariatWhere(params);
+    const importRows = await db.loaImport.findMany({ orderBy: { createdAt: "desc" } });
+    const imports = importRows.map((item) => ({
+      id: item.id,
+      fileName: cleanImportFileName(item.fileName),
+      recordCount: item.recordCount,
+      totalValue: item.totalValue.toNumber(),
+      createdAt: item.createdAt.toISOString(),
+      exercise: inferImportExercise(item.fileName, item.createdAt.getFullYear()),
+    }));
+    const requestedImportId = params.get("importId");
+    const selectedImport = imports.find((item) => item.id === requestedImportId) ?? imports[0] ?? null;
+    const baseWhere: Prisma.BudgetRecordWhereInput = { importId: selectedImport?.id ?? "__no_import__" };
+    const where: Prisma.BudgetRecordWhereInput = { AND: [baseWhere, buildWhere(params)] };
+    const secretariatWhere = where;
     const select = Object.fromEntries(FIELDS.map((field) => [field, true])) as Record<FieldKey, true>;
 
-    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRows, groups, secretariatCeilings, organs, units, functions, programs, actions, processes, newProjects] = await Promise.all([
+    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRows, groups, secretariatCeilings, organs, units, functions, programs, actions, processes, newProjects, qualityRows] = await Promise.all([
       db.budgetRecord.count({ where }),
       db.budgetRecord.aggregate({ where, _sum: { value: true } }),
-      db.budgetRecord.aggregate({ _sum: { value: true } }),
+      db.budgetRecord.aggregate({ where: baseWhere, _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: withExpensePrefix(where, "3"), _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: withExpensePrefix(where, "4"), _sum: { value: true } }),
       db.budgetRecord.findMany({ where, select: { id: true, ...select, value: true }, orderBy: { [sort]: direction }, skip: (page - 1) * pageSize, take: pageSize }),
@@ -90,11 +219,16 @@ export async function GET(request: Request) {
       distinctCount("action", where),
       distinctCount("administrativeProcess", where),
       distinctCount("action", { AND: [where, { action: { contains: "projeto", mode: "insensitive" } }] }),
+      db.budgetRecord.groupBy({ by: ["expenseNature", "subelement"], where, _sum: { value: true }, _count: { _all: true } }),
     ]);
 
     const filterOptions = Object.fromEntries(FIELDS.map((field) => [field, [...new Set(optionRows.map((row) => row[field]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"))]));
+    const typedQualityRows = qualityRows as QualityRow[];
+    const classificationGroups = buildClassificationGroups(typedQualityRows);
     return NextResponse.json({
-      hasData: (await db.loaImport.count()) > 0,
+      hasData: totalRecords > 0,
+      imports,
+      selection: { importId: selectedImport?.id ?? null, exercise: selectedImport?.exercise ?? null },
       records: records.map((record) => ({ ...record, id: record.id.toString(), value: record.value.toNumber() })),
       pagination: { page, pageSize, total: totalRecords, pages: Math.max(1, Math.ceil(totalRecords / pageSize)) },
       totals: { loa: loaValue._sum.value?.toNumber() ?? 0, filtered: filteredValue._sum.value?.toNumber() ?? 0 },
@@ -103,6 +237,8 @@ export async function GET(request: Request) {
       counts: { organs, units, functions, programs, actions, processes, newProjects },
       groups: Object.fromEntries(FIELDS.map((field, index) => [field, groups[index]])),
       filterOptions,
+      classifications: classificationGroups,
+      quality: buildQualitySummary(typedQualityRows),
     });
   } catch (error) {
     console.error(error);

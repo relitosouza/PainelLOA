@@ -2,7 +2,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export async function obterResumo(filtros: any) {
+export async function obterResumo(filtros: Record<string, unknown>) {
   const where = construirFiltros(filtros);
 
   const [
@@ -18,18 +18,17 @@ export async function obterResumo(filtros: any) {
     agregacaoFUNDEB,
     anosBrutos
   ] = await Promise.all([
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where,
       _sum: { valor: true },
       _count: { id: true }
     }),
-    prisma.receitaHistorica.findMany({
+    prisma.receitaArrecadada.findMany({
       where: { ...where, codigoFundo: { not: null, notIn: [''] } },
       select: { codigoFundo: true },
       distinct: ['codigoFundo']
     }),
-    // Receita Própria (Impostos, Taxas, Contribuições - IPTU, ISS, ITBI, etc)
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: {
         ...where,
         OR: [
@@ -47,8 +46,7 @@ export async function obterResumo(filtros: any) {
       },
       _sum: { valor: true }
     }),
-    // Transferências (FPM, ICMS, FUNDEB, SUS, etc)
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: {
         ...where,
         OR: [
@@ -68,8 +66,7 @@ export async function obterResumo(filtros: any) {
       },
       _sum: { valor: true }
     }),
-    // Receita de Capital
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: {
         ...where,
         OR: [
@@ -84,30 +81,29 @@ export async function obterResumo(filtros: any) {
       },
       _sum: { valor: true }
     }),
-    // Específicos para a tabela
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: { ...where, OR: [{ receita: { contains: 'IPTU', mode: 'insensitive' } }, { descricaoReceita: { contains: 'IPTU', mode: 'insensitive' } }] },
       _sum: { valor: true }
     }),
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: { ...where, OR: [{ receita: { contains: 'ISS', mode: 'insensitive' } }, { descricaoReceita: { contains: 'ISS', mode: 'insensitive' } }] },
       _sum: { valor: true }
     }),
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: { ...where, OR: [{ receita: { contains: 'FPM', mode: 'insensitive' } }, { descricaoReceita: { contains: 'FPM', mode: 'insensitive' } }] },
       _sum: { valor: true }
     }),
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: { ...where, OR: [{ receita: { contains: 'ICMS', mode: 'insensitive' } }, { descricaoReceita: { contains: 'ICMS', mode: 'insensitive' } }] },
       _sum: { valor: true }
     }),
-    prisma.receitaHistorica.aggregate({
+    prisma.receitaArrecadada.aggregate({
       where: { ...where, OR: [{ receita: { contains: 'FUNDEB', mode: 'insensitive' } }, { descricaoReceita: { contains: 'FUNDEB', mode: 'insensitive' } }] },
       _sum: { valor: true }
     }),
     prisma.$queryRaw<{ano: number}[]>`
       SELECT DISTINCT EXTRACT(YEAR FROM "dataMovimento")::int AS ano 
-      FROM "ReceitaHistorica" 
+      FROM "ReceitaArrecadada" 
       WHERE "dataMovimento" IS NOT NULL 
       ORDER BY ano DESC
     `
@@ -133,12 +129,12 @@ export async function obterResumo(filtros: any) {
   };
 }
 
-export async function listarReceitas(filtros: any, page: number = 1, limit: number = 50) {
+export async function listarReceitas(filtros: Record<string, unknown>, page: number = 1, limit: number = 50) {
   const where = construirFiltros(filtros);
   
   const [total, dados] = await Promise.all([
-    prisma.receitaHistorica.count({ where }),
-    prisma.receitaHistorica.findMany({
+    prisma.receitaArrecadada.count({ where }),
+    prisma.receitaArrecadada.findMany({
       where,
       skip: (page - 1) * limit,
       take: limit,
@@ -149,10 +145,10 @@ export async function listarReceitas(filtros: any, page: number = 1, limit: numb
   return { total, dados, page, totalPages: Math.ceil(total / limit) };
 }
 
-export async function evolucaoAnual(filtros: any) {
+export async function evolucaoAnual(filtros: Record<string, unknown>) {
   const where = construirFiltros(filtros);
   
-  const dados = await prisma.receitaHistorica.groupBy({
+  const dados = await prisma.receitaArrecadada.groupBy({
     by: ['exercicio'],
     where,
     _sum: {
@@ -169,10 +165,10 @@ export async function evolucaoAnual(filtros: any) {
   }));
 }
 
-export async function agrupamento(filtros: any, groupByField: Prisma.ReceitaHistoricaScalarFieldEnum) {
+export async function agrupamento(filtros: Record<string, unknown>, groupByField: Prisma.ReceitaArrecadadaScalarFieldEnum) {
   const where = construirFiltros(filtros);
   
-  const dados = await prisma.receitaHistorica.groupBy({
+  const dados = await prisma.receitaArrecadada.groupBy({
     by: [groupByField],
     where,
     _sum: {
@@ -191,32 +187,32 @@ export async function agrupamento(filtros: any, groupByField: Prisma.ReceitaHist
   }));
 }
 
-function construirFiltros(filtros: any): Prisma.ReceitaHistoricaWhereInput {
-  const where: Prisma.ReceitaHistoricaWhereInput = {};
+function construirFiltros(filtros: Record<string, unknown>): Prisma.ReceitaArrecadadaWhereInput {
+  const where: Prisma.ReceitaArrecadadaWhereInput = {};
 
-  if (filtros.exercicioInicial || filtros.exercicioFinal) {
+  if ((filtros.exercicioInicial as string | undefined) || (filtros.exercicioFinal as string | undefined)) {
     where.exercicio = {};
-    if (filtros.exercicioInicial) where.exercicio.gte = parseInt(filtros.exercicioInicial);
-    if (filtros.exercicioFinal) where.exercicio.lte = parseInt(filtros.exercicioFinal);
+    if (filtros.exercicioInicial) where.exercicio.gte = parseInt(filtros.exercicioInicial as string);
+    if (filtros.exercicioFinal) where.exercicio.lte = parseInt(filtros.exercicioFinal as string);
   }
 
-  if (filtros.naturezaReceita) {
-    where.naturezaReceita = { contains: filtros.naturezaReceita, mode: 'insensitive' };
+  if (filtros.naturezaReceita as string | undefined) {
+    where.naturezaReceita = { contains: filtros.naturezaReceita as string, mode: 'insensitive' };
   }
   
-  if (filtros.unidadeOrcamentaria) {
-    where.unidadeOrcamentaria = filtros.unidadeOrcamentaria;
+  if (filtros.unidadeOrcamentaria as string | undefined) {
+    where.unidadeOrcamentaria = filtros.unidadeOrcamentaria as string;
   }
   
-  if (filtros.codigoFundo) {
-    where.codigoFundo = filtros.codigoFundo;
+  if (filtros.codigoFundo as string | undefined) {
+    where.codigoFundo = filtros.codigoFundo as string;
   }
   
-  if (filtros.pesquisa) {
+  if (filtros.pesquisa as string | undefined) {
     where.OR = [
-      { descricaoReceita: { contains: filtros.pesquisa, mode: 'insensitive' } },
-      { historico: { contains: filtros.pesquisa, mode: 'insensitive' } },
-      { codigo: { contains: filtros.pesquisa } }
+      { descricaoReceita: { contains: filtros.pesquisa as string, mode: 'insensitive' } },
+      { receita: { contains: filtros.pesquisa as string } },
+      { naturezaReceita: { contains: filtros.pesquisa as string } }
     ];
   }
 
