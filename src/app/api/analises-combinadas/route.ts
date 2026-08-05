@@ -153,22 +153,44 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Iniciativas Estratégicas
+    let countIniciativas = 0;
+    let totalIniciativas = 0;
+    try {
+      countIniciativas = await db.iniciativaEstrategica.count();
+      const totalIniciativasRaw = await db.iniciativaEstrategica.aggregate({
+        _sum: { valorFinalPldo27: true },
+      });
+      totalIniciativas = Number(totalIniciativasRaw._sum?.valorFinalPldo27 || 0);
+    } catch (iniciativaErr: any) {
+      console.error("Erro ao consultar IniciativaEstrategica:", iniciativaErr?.message || iniciativaErr);
+    }
+
     return NextResponse.json({
-      statusBases,
+      statusBases: {
+        ...statusBases,
+        iniciativasEstrategicas: {
+          existe: countIniciativas > 0,
+          count: countIniciativas,
+          status: countIniciativas > 0 ? ("DISPONIVEL" as const) : ("INDISPONIVEL" as const),
+        },
+      },
       totais: {
         totalDespesaLoa,
         totalReceitaLdo,
         totalLoaReceitas: 0, // Inexistente ou parcial
         totalReceitaArrecadada: arrecadadaTotal,
         qtdAnosArrecadacao,
+        totalIniciativas,
+        countIniciativas,
       },
       tabelas: {
         botao1: tabelaBotao1,
         botao4: tabelaBotao4,
       },
     });
-  } catch (error) {
-    console.error("Erro na API de Análises Combinadas:", error);
-    return NextResponse.json({ error: "Erro interno ao processar Análises Combinadas" }, { status: 500 });
+  } catch (error: any) {
+    console.error("Erro na API de Análises Combinadas:", error?.message || error);
+    return NextResponse.json({ error: "Erro interno ao processar Análises Combinadas", details: String(error) }, { status: 500 });
   }
 }
