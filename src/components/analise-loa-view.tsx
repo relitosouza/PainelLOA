@@ -1503,10 +1503,15 @@ export function AnaliseLoaView() {
               .sort((a, b) => b.diff - a.diff)
               .slice(0, 5)
               .map((item) => (
-                <div key={item.id} className="flex justify-between items-center text-xs p-2 bg-emerald-50/50 rounded-lg border border-emerald-100">
+                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-emerald-50/50 rounded-lg border border-emerald-100">
                   <div className="min-w-0 pr-2">
-                    <p className="font-bold text-on-surface truncate">{item.acao}</p>
-                    <p className="text-[10px] text-on-surface-variant truncate">{item.subelemento || item.natureza}</p>
+                    <p className="text-[10px] font-bold text-emerald-900 truncate mb-0.5" title={item.secretaria}>
+                      {item.secretaria}
+                    </p>
+                    <p className="font-bold text-on-surface truncate" title={item.acao}>{item.acao}</p>
+                    <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5" title={item.natureza}>
+                      Despesa: {item.natureza} {item.subelemento ? `• ${item.subelemento}` : ""}
+                    </p>
                   </div>
                   <span className="font-mono font-bold text-emerald-700 shrink-0">+{currency.format(item.diff)}</span>
                 </div>
@@ -1522,14 +1527,20 @@ export function AnaliseLoaView() {
           </div>
           <div className="space-y-2">
             {filteredItems
+              .filter((i) => i.valLoa > 0 && i.valLoa < i.valLdo)
               .map((i) => ({ ...i, diff: i.valLoa - i.valLdo }))
               .sort((a, b) => a.diff - b.diff)
               .slice(0, 5)
               .map((item) => (
-                <div key={item.id} className="flex justify-between items-center text-xs p-2 bg-rose-50/50 rounded-lg border border-rose-100">
+                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-rose-50/50 rounded-lg border border-rose-100">
                   <div className="min-w-0 pr-2">
-                    <p className="font-bold text-on-surface truncate">{item.acao}</p>
-                    <p className="text-[10px] text-on-surface-variant truncate">{item.subelemento || item.natureza}</p>
+                    <p className="text-[10px] font-bold text-rose-900 truncate mb-0.5" title={item.secretaria}>
+                      {item.secretaria}
+                    </p>
+                    <p className="font-bold text-on-surface truncate" title={item.acao}>{item.acao}</p>
+                    <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5" title={item.natureza}>
+                      Despesa: {item.natureza} {item.subelemento ? `• ${item.subelemento}` : ""}
+                    </p>
                   </div>
                   <span className="font-mono font-bold text-rose-700 shrink-0">{currency.format(item.diff)}</span>
                 </div>
