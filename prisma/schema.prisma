@@ -165,3 +165,44 @@ model LdoReceita {
   @@index([statusDistribuicao])
 }
 
+model IniciativaEstrategica {
+  id              BigInt   @id @default(autoincrement())
+  secretaria      String   @db.VarChar(255)
+  unidade         String?  @db.VarChar(100)
+  funcao          String?  @db.VarChar(100)
+  subfuncao       String?  @db.VarChar(100)
+  programa        String?  @db.VarChar(100)
+  acao            String   @db.VarChar(100)
+  despesa         String?  @db.VarChar(100)
+  programaticaLdo String   @db.VarChar(255)
+  dsIniciativa    String   @db.Text
+  vinculo         String   @db.VarChar(100)
+  valorFinalPldo27 Decimal  @db.Decimal(18, 2)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  @@index([secretaria])
+  @@index([unidade])
+  @@index([funcao])
+  @@index([subfuncao])
+  @@index([programa])
+  @@index([acao])
+  @@index([despesa])
+  @@index([programaticaLdo])
+  @@index([dsIniciativa])
+  @@index([vinculo])
+}
+
+model NomenclaturaDespesa {
+  id              Int      @id @default(autoincrement())
+  codigo          String   @unique @db.VarChar(50)
+  codigoFormatado String   @db.VarChar(50)
+  descricao       String   @db.VarChar(255)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  @@index([codigo])
+  @@index([codigoFormatado])
+}
+
+

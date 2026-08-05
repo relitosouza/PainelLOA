@@ -65,7 +65,14 @@ interface TreeNode {
   valLdo: number;
   valLoa: number;
   diff: number;
+  isSpecialBottom?: boolean;
   children?: TreeNode[];
+  parentContext?: {
+    secretaria?: string;
+    programa?: string;
+    acao?: string;
+    natureza?: string;
+  };
 }
 
 export function AnaliseLoaView() {
@@ -74,12 +81,73 @@ export function AnaliseLoaView() {
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(0);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
-  // Estados da Tree View e Tabela
+  // Estados da Tree View, Tabela e Alterações
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [tableSearch, setTableSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("todos");
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedItemForInsights, setSelectedItemForInsights] = useState<string | null>(null);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
+  // Estados adicionais para os cards de Sub-elementos e Iniciativas Estratégicas
+  const [iniciativas, setIniciativas] = useState<any[]>([]);
+  const [loadingIniciativas, setLoadingIniciativas] = useState(false);
+
+  // Buscar Iniciativas Estratégicas sempre que qualquer filtro mudar
+  useEffect(() => {
+    async function loadIniciativas() {
+      try {
+        setLoadingIniciativas(true);
+        const params = new URLSearchParams();
+
+        if (filters.secretaria.length > 0) {
+          const sec = filters.secretaria[0].replace(/^\.+/, "").trim();
+          params.append("secretaria", sec);
+        }
+        if (filters.programa.length > 0) {
+          params.append("programa", filters.programa[0].trim());
+        }
+        if (filters.acao.length > 0) {
+          params.append("acao", filters.acao[0].trim());
+        }
+        if (filters.natureza.length > 0) {
+          const rawNat = filters.natureza[0].trim();
+          const codeMatch = rawNat.match(/\d+(\.\d+)*/);
+          params.append("despesa", codeMatch ? codeMatch[0] : rawNat);
+        }
+        if (filters.fonteVinculo.length > 0) {
+          params.append("vinculo", filters.fonteVinculo[0].trim());
+        }
+        if (filters.search) {
+          params.append("search", filters.search);
+        }
+
+        const res = await fetch(`/api/iniciativas?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setIniciativas(data.iniciativas || []);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar iniciativas:", err);
+      } finally {
+        setLoadingIniciativas(false);
+      }
+    }
+
+    loadIniciativas();
+  }, [
+    filters.secretaria,
+    filters.orgao,
+    filters.unidade,
+    filters.programa,
+    filters.acao,
+    filters.natureza,
+    filters.fonteVinculo,
+    filters.elemento,
+    filters.subelemento,
+    filters.search,
+  ]);
 
   // Estado para controlar a célula em foco de edição (id + campo: 'valLdo' | 'valLoa')
   const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" } | null>(null);
@@ -109,6 +177,18 @@ export function AnaliseLoaView() {
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
 
+        // Carregar nomenclaturas de despesa do banco de dados
+        let nomMap: Record<string, string> = {};
+        try {
+          const nomRes = await fetch("/api/nomenclaturas-despesa");
+          if (nomRes.ok) {
+            const nomData = await nomRes.json();
+            nomMap = nomData.mapa || {};
+          }
+        } catch (nomErr) {
+          console.warn("Não foi possível carregar nomenclaturas de despesa via API:", nomErr);
+        }
+
         const loaMap = new Map<string, RawBudgetItem>();
 
         for (let i = 1; i < rows.length; i++) {
@@ -123,14 +203,26 @@ export function AnaliseLoaView() {
           const subfuncStr = String(r[11] || "").trim().replace(/^\.+/, "");
           const programStr = String(r[12] || "").trim().replace(/^\.+/, "");
           const actionStr = String(r[13] || "").trim().replace(/^\.+/, "");
-          const natureStr = String(r[14] || "").trim().replace(/^\.+/, "");
+          let natureStr = String(r[14] || "").trim().replace(/^\.+/, "").replace(/\.\./g, ".");
+          // Correção de códigos de despesa truncados
+          natureStr = natureStr
+            .replace(/^3\.50\.39/, "3.3.50.39")
+            .replace(/^3\.90\.35/, "3.3.90.35")
+            .replace(/^4\.90\.52/, "4.4.90.52");
           const subelemStr = String(r[15] || "").trim().replace(/^\.+/, "");
           const processStr = String(r[16] || "").trim().replace(/^\.+/, "");
           const valor = Number(r[17]) || 0;
 
+          // Enriquecer natureza com a descrição oficial da NomenclaturaDespesa se disponível
+          const natCodeClean = natureStr.split("-")[0].trim();
+          const natCodeRaw = natCodeClean.replace(/\D/g, "");
+          const officialDesc = nomMap[natCodeClean] || nomMap[natCodeRaw];
+          if (officialDesc) {
+            natureStr = `${natCodeClean} - ${officialDesc}`;
+          }
+
           // Extração de Categoria, Grupo e Elemento a partir do código de Natureza (ex: 3.3.90.39.00)
-          const natClean = natureStr.split("-")[0].trim();
-          const parts = natClean.split(".");
+          const parts = natCodeClean.split(".");
           const catEcon = parts[0] ? `${parts[0]} — Despesa` : "Outras";
           const grpNat = parts[1] ? `${parts[0]}.${parts[1]} — Grupo` : "Outros";
           const elem = parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
@@ -165,7 +257,24 @@ export function AnaliseLoaView() {
           else if (peca === "LOA") item.valLoa += valor;
         }
 
-        setRawItems([...loaMap.values()]);
+        // Carregar alterações de LOA salvas no localStorage (se existirem)
+        let itemsArray = [...loaMap.values()];
+        try {
+          const savedCustomLoa = localStorage.getItem("painel_loa_custom_edits_v1");
+          if (savedCustomLoa) {
+            const customMap: Record<string, number> = JSON.parse(savedCustomLoa);
+            itemsArray = itemsArray.map((item) => {
+              if (customMap[item.id] !== undefined) {
+                return { ...item, valLoa: customMap[item.id] };
+              }
+              return item;
+            });
+          }
+        } catch (e) {
+          console.warn("Erro ao carregar edições salvas do localStorage:", e);
+        }
+
+        setRawItems(itemsArray);
 
         // Carregar Receita LDO real do banco de dados (tabela LdoReceita)
         try {
@@ -188,6 +297,32 @@ export function AnaliseLoaView() {
 
     loadTechnicalData();
   }, []);
+
+  // Salvar alterações de LOA persistentemente no localStorage
+  const handleSaveEdits = () => {
+    try {
+      setSavingState("saving");
+      const customMap: Record<string, number> = {};
+      rawItems.forEach((item) => {
+        customMap[item.id] = item.valLoa;
+      });
+      localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
+      setHasChanges(false);
+      setSavingState("saved");
+      setTimeout(() => setSavingState("idle"), 3000);
+    } catch (err) {
+      console.error("Erro ao salvar alterações:", err);
+      setSavingState("idle");
+    }
+  };
+
+  // Restaurar valores padrão da planilha original
+  const handleResetEdits = () => {
+    if (confirm("Deseja desfazer todas as edições manuais e restaurar os valores originais?")) {
+      localStorage.removeItem("painel_loa_custom_edits_v1");
+      window.location.reload();
+    }
+  };
 
   // Extrair opções únicas cascading para os Chips de Filtro (dependente dos filtros atuais)
   const filterOptions = useMemo(() => {
@@ -290,6 +425,36 @@ export function AnaliseLoaView() {
     };
   }, [filteredItems]);
 
+  // Agrupamento dos Sub-elementos dos itens filtrados
+  const subelementosBreakdown = useMemo(() => {
+    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; ldo: number; loa: number; diff: number; count: number }>();
+
+    filteredItems.forEach((item) => {
+      const name = item.subelemento && item.subelemento.trim() !== "" ? item.subelemento : item.natureza || "Outros / Sem Subelemento";
+      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${name}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          subelemento: name,
+          acao: item.acao || "",
+          secretaria: item.secretaria || "",
+          natureza: item.natureza || "",
+          ldo: 0,
+          loa: 0,
+          diff: 0,
+          count: 0,
+        });
+      }
+      const entry = map.get(key)!;
+      entry.ldo += item.valLdo;
+      entry.loa += item.valLoa;
+      entry.diff = entry.loa - entry.ldo;
+      entry.count += 1;
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.loa - a.loa);
+  }, [filteredItems]);
+
   // Métricas para Painel Lateral de Insights Inteligentes
   const insights = useMemo(() => {
     let maiorAumento = { item: "", val: 0 };
@@ -374,6 +539,7 @@ export function AnaliseLoaView() {
           valLdo: 0,
           valLoa: 0,
           diff: 0,
+          parentContext: { secretaria: item.secretaria },
           children: [],
         };
         secNode.children!.push(progNode);
@@ -392,6 +558,7 @@ export function AnaliseLoaView() {
           valLdo: 0,
           valLoa: 0,
           diff: 0,
+          parentContext: { secretaria: item.secretaria, programa: item.programa },
           children: [],
         };
         progNode.children!.push(acaoNode);
@@ -410,6 +577,7 @@ export function AnaliseLoaView() {
           valLdo: 0,
           valLoa: 0,
           diff: 0,
+          parentContext: { secretaria: item.secretaria, programa: item.programa, acao: item.acao },
         };
         acaoNode.children!.push(natNode);
       }
@@ -418,7 +586,36 @@ export function AnaliseLoaView() {
       natNode.diff = natNode.valLoa - natNode.valLdo;
     });
 
-    return rootNodes.sort((a, b) => b.valLoa - a.valLoa);
+    // Função para extrair o código numérico inicial da secretaria (ex: "08" -> 8, "01- CMO" -> 1)
+    const getSecCode = (name: string): number => {
+      const match = name.trim().match(/^\d+/);
+      return match ? parseInt(match[0], 10) : 999;
+    };
+
+    // Secretarias especiais que devem ir separadas para a parte de baixo (01 - CMO, 21 - IPMO, 22 - FITO)
+    const isSpecialBottom = (name: string): boolean => {
+      const clean = name.trim().toUpperCase();
+      const code = getSecCode(clean);
+      return (
+        clean.includes("CMO") ||
+        clean.includes("IPMO") ||
+        clean.includes("FITO") ||
+        code === 1 ||
+        code === 21 ||
+        code === 22
+      );
+    };
+
+    const regularNodes = rootNodes
+      .filter((n) => !isSpecialBottom(n.name))
+      .sort((a, b) => getSecCode(a.name) - getSecCode(b.name));
+
+    const bottomNodes = rootNodes
+      .filter((n) => isSpecialBottom(n.name))
+      .sort((a, b) => getSecCode(a.name) - getSecCode(b.name))
+      .map((n) => ({ ...n, isSpecialBottom: true }));
+
+    return [...regularNodes, ...bottomNodes];
   }, [filteredItems]);
 
   // Função para determinar o status e badge de cada linha
@@ -497,19 +694,72 @@ export function AnaliseLoaView() {
 
   const collapseAllNodes = () => setExpandedNodes(new Set());
 
+  // Filtrar automaticamente ao clicar em um nó da árvore hierárquica
+  const handleNodeSelect = (node: TreeNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // Se tiver filhos, expande/recolhe a árvore
+    if (node.children && node.children.length > 0) {
+      toggleNode(node.id);
+    }
+
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (node.level === "secretaria") {
+        next.secretaria = [node.name];
+        next.programa = [];
+        next.acao = [];
+        next.natureza = [];
+      } else if (node.level === "programa") {
+        if (node.parentContext?.secretaria) next.secretaria = [node.parentContext.secretaria];
+        next.programa = [node.name];
+        next.acao = [];
+        next.natureza = [];
+      } else if (node.level === "acao") {
+        if (node.parentContext?.secretaria) next.secretaria = [node.parentContext.secretaria];
+        if (node.parentContext?.programa) next.programa = [node.parentContext.programa];
+        next.acao = [node.name];
+        next.natureza = [];
+      } else if (node.level === "natureza") {
+        if (node.parentContext?.secretaria) next.secretaria = [node.parentContext.secretaria];
+        if (node.parentContext?.programa) next.programa = [node.parentContext.programa];
+        if (node.parentContext?.acao) next.acao = [node.parentContext.acao];
+        next.natureza = [node.name];
+      }
+      return next;
+    });
+  };
+
   // Renderização da Tree View Recursiva
   const renderTreeNodes = (nodes: TreeNode[]) => {
-    return nodes.map((node) => {
+    return nodes.map((node, index) => {
       const isExpanded = expandedNodes.has(node.id);
       const hasChildren = node.children && node.children.length > 0;
       const diffTone = node.diff > 0 ? "text-emerald-600" : node.diff < 0 ? "text-rose-600" : "text-gray-400";
+      const isFirstSpecial = node.isSpecialBottom && (index === 0 || !nodes[index - 1].isSpecialBottom);
+
+      // Verificar se este nó está selecionado nos filtros atuais
+      const isSelected =
+        (node.level === "secretaria" && filters.secretaria.includes(node.name)) ||
+        (node.level === "programa" && filters.programa.includes(node.name)) ||
+        (node.level === "acao" && filters.acao.includes(node.name)) ||
+        (node.level === "natureza" && filters.natureza.includes(node.name));
 
       return (
         <div key={node.id} className="text-xs">
+          {isFirstSpecial && (
+            <div className="my-2 border-t border-dashed border-outline-variant/60 pt-1 text-[10px] font-extrabold uppercase text-on-surface-variant/70 tracking-wider">
+              Entidades e Fundos Especiais
+            </div>
+          )}
           <div
-            onClick={() => hasChildren && toggleNode(node.id)}
-            className={`flex items-center justify-between p-2 rounded-lg hover:bg-surface-container/60 cursor-pointer transition-colors ${
-              isExpanded ? "bg-surface-container/40 font-bold" : ""
+            onClick={(e) => handleNodeSelect(node, e)}
+            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all ${
+              isSelected
+                ? "bg-primary/15 font-bold text-primary border border-primary/30 shadow-sm"
+                : isExpanded
+                ? "bg-surface-container/60 font-semibold"
+                : "hover:bg-surface-container/50"
             }`}
           >
             <div className="flex items-center gap-2 min-w-0 pr-2">
@@ -739,11 +989,12 @@ export function AnaliseLoaView() {
 
         {/* Grade de Select Chips */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>).map((key) => {
-            const labels: Record<string, string> = {
-              secretaria: "Secretaria",
-              orgao: "Órgão",
-              unidade: "Unidade",
+          {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
+            .filter((key) => key !== "orgao")
+            .map((key) => {
+              const labels: Record<string, string> = {
+                secretaria: "Secretaria",
+                unidade: "Unidade",
               programa: "Programa",
               acao: "Ação",
               natureza: "Natureza",
@@ -757,12 +1008,22 @@ export function AnaliseLoaView() {
             };
 
             const selectedCount = (filters[key] || []).length;
+            const isDisabled = key === "fonteVinculo";
 
             return (
               <div key={key} className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-on-surface-variant">{labels[key] || key}</label>
+                <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
+                  <span>{labels[key] || key}</span>
+                  {isDisabled && (
+                    <span className="text-[9px] font-extrabold text-amber-600 uppercase tracking-tighter bg-amber-50 px-1.5 rounded border border-amber-200">
+                      Em breve
+                    </span>
+                  )}
+                </label>
                 <select
+                  disabled={isDisabled}
                   onChange={(e) => {
+                    if (isDisabled) return;
                     const val = e.target.value;
                     if (!val) return;
                     setFilters((prev) => {
@@ -773,17 +1034,23 @@ export function AnaliseLoaView() {
                       };
                     });
                   }}
-                  className={`text-xs px-2 py-1.5 rounded-lg border bg-surface transition-colors cursor-pointer ${
-                    selectedCount ? "border-primary font-bold text-primary bg-primary/5" : "border-outline-variant text-on-surface-variant"
+                  className={`text-xs px-2 py-1.5 rounded-lg border transition-colors ${
+                    isDisabled
+                      ? "bg-surface-container/40 border-outline-variant/40 text-gray-400 cursor-not-allowed opacity-75"
+                      : selectedCount
+                      ? "bg-primary/5 border-primary font-bold text-primary cursor-pointer"
+                      : "bg-surface border-outline-variant text-on-surface-variant cursor-pointer hover:bg-surface-container/50"
                   }`}
                   value=""
+                  title={isDisabled ? "Aguardando importação da planilha de Fonte / Vínculo" : undefined}
                 >
-                  <option value="">{selectedCount ? `${selectedCount} sel.` : "Todos"}</option>
-                  {(filterOptions[key] || []).slice(0, 100).map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
+                  <option value="">{isDisabled ? "Aguardando importação" : selectedCount ? `${selectedCount} sel.` : "Todos"}</option>
+                  {!isDisabled &&
+                    (filterOptions[key] || []).slice(0, 100).map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
                 </select>
               </div>
             );
@@ -852,21 +1119,122 @@ export function AnaliseLoaView() {
                 onChange={(e) => setTableSearch(e.target.value)}
                 className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-56"
               />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-2.5 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface font-semibold"
-              >
-                <option value="todos">Todos os Status</option>
-                <option value="Suplementada">Suplementada</option>
-                <option value="Reduzida">Reduzida</option>
-                <option value="Nova Dotação">Nova Dotação</option>
-                <option value="Removida">Removida</option>
-                <option value="Sem alteração">Sem alteração</option>
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                  className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${
+                    statusFilters.length > 0
+                      ? "border-primary text-primary bg-primary/5 font-bold"
+                      : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">filter_alt</span>
+                  <span>
+                    {statusFilters.length === 0
+                      ? "Todos os Status"
+                      : statusFilters.length === 1
+                      ? statusFilters[0]
+                      : `${statusFilters.length} status sel.`}
+                  </span>
+                  <span className="material-symbols-outlined text-xs">
+                    {statusDropdownOpen ? "expand_less" : "expand_more"}
+                  </span>
+                </button>
+
+                {statusDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setStatusDropdownOpen(false)}
+                    />
+                    <div className="absolute left-0 mt-1.5 w-52 bg-surface rounded-xl shadow-xl border border-outline-variant p-2 z-30 space-y-1 animate-in fade-in zoom-in-95">
+                      <div className="flex items-center justify-between px-2 py-1 border-b border-outline-variant/60 mb-1">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por Status</span>
+                        {statusFilters.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setStatusFilters([])}
+                            className="text-[10px] font-bold text-rose-600 hover:underline"
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                      {[
+                        { label: "Suplementada", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+                        { label: "Reduzida", badge: "bg-rose-100 text-rose-800 border-rose-300" },
+                        { label: "Nova Dotação", badge: "bg-blue-100 text-blue-800 border-blue-300" },
+                        { label: "Removida", badge: "bg-amber-100 text-amber-800 border-amber-300" },
+                        { label: "Sem alteração", badge: "bg-gray-100 text-gray-700 border-gray-300" },
+                      ].map((st) => {
+                        const checked = statusFilters.includes(st.label);
+                        return (
+                          <label
+                            key={st.label}
+                            className={`flex items-center justify-between p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                              checked ? "bg-primary/10 font-bold text-primary" : "hover:bg-surface-container text-on-surface"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setStatusFilters((prev) =>
+                                    prev.includes(st.label)
+                                      ? prev.filter((s) => s !== st.label)
+                                      : [...prev, st.label]
+                                  );
+                                }}
+                                className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
+                              />
+                              <span>{st.label}</span>
+                            </div>
+                            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded-full border ${st.badge}`}>
+                              •
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {hasChanges && (
+                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 animate-pulse">
+                  Alterações não salvas
+                </span>
+              )}
+              <button
+                onClick={handleSaveEdits}
+                disabled={savingState === "saving"}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${
+                  hasChanges
+                    ? "bg-primary text-on-primary ring-2 ring-primary/40 hover:bg-primary/90"
+                    : savingState === "saved"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high"
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {savingState === "saving" ? "sync" : savingState === "saved" ? "check_circle" : "save"}
+                </span>
+                <span>
+                  {savingState === "saving" ? "Salvando..." : savingState === "saved" ? "Salvo com sucesso!" : "Salvar Alterações"}
+                </span>
+              </button>
+              <button
+                onClick={handleResetEdits}
+                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-surface text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors flex items-center gap-1"
+                title="Restaurar valores originais da planilha"
+              >
+                <span className="material-symbols-outlined text-sm">restart_alt</span>
+                Restaurar
+              </button>
               <button
                 onClick={exportToExcel}
                 className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
@@ -907,7 +1275,7 @@ export function AnaliseLoaView() {
               <tbody className="divide-y divide-outline-variant/40 font-mono">
                 {filteredItems
                   .filter((item) => {
-                    if (statusFilter !== "todos" && getStatusInfo(item.valLdo, item.valLoa).label !== statusFilter) return false;
+                    if (statusFilters.length > 0 && !statusFilters.includes(getStatusInfo(item.valLdo, item.valLoa).label)) return false;
                     if (tableSearch) {
                       const q = tableSearch.toLowerCase();
                       return (
@@ -957,6 +1325,7 @@ export function AnaliseLoaView() {
                               setRawItems((prev) =>
                                 prev.map((r) => (r.id === item.id ? { ...r, valLoa: newLoa } : r))
                               );
+                              setHasChanges(true);
                             }}
                             onBlur={() => setEditingCell(null)}
                             className="w-32 text-right px-1.5 py-0.5 rounded border border-outline-variant/60 bg-surface font-mono font-bold text-primary focus:ring-2 focus:ring-primary focus:outline-none"
@@ -996,6 +1365,128 @@ export function AnaliseLoaView() {
             </table>
           </div>
         </div>
+
+        {/* 4.1. Cards Dinâmicos: Sub-elementos (Esquerda) e Iniciativas Estratégicas (Direita) */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Card Esquerdo: Detalhamento por Sub-elementos */}
+          <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[380px]">
+            <div className="flex items-center justify-between border-b border-outline-variant pb-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">account_tree</span>
+                <div>
+                  <h3 className="text-sm font-headline font-bold text-on-surface">Sub-elementos de Despesa</h3>
+                  <p className="text-[10px] text-on-surface-variant">Filtrados pela seleção atual ({subelementosBreakdown.length} sub-elementos)</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                Subelementos
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-auto space-y-2 pr-1">
+              {subelementosBreakdown.length === 0 ? (
+                <p className="text-xs text-on-surface-variant p-4 text-center">Nenhum sub-elemento encontrado para os filtros selecionados.</p>
+              ) : (
+                subelementosBreakdown.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                        {item.acao && (
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200">
+                            Ação {item.acao}
+                          </span>
+                        )}
+                        {item.natureza && (
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200">
+                            Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-mono text-on-surface-variant truncate">
+                          {item.secretaria}
+                        </span>
+                      </div>
+                      <p className="font-bold text-on-surface truncate" title={item.subelemento}>
+                        {item.subelemento}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5">
+                        {item.count} dotação(ões) • LDO: {formatBr(item.ldo)}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 font-mono">
+                      <p className="font-extrabold text-primary">{formatBr(item.loa)}</p>
+                      <p className={`text-[10px] font-bold ${item.diff > 0 ? "text-emerald-600" : item.diff < 0 ? "text-rose-600" : "text-gray-400"}`}>
+                        {item.diff > 0 ? `+${formatBr(item.diff)}` : formatBr(item.diff)}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Card Direito: Iniciativas Estratégicas Vinculadas */}
+          <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[380px]">
+            <div className="flex items-center justify-between border-b border-outline-variant pb-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-600">stars</span>
+                <div>
+                  <h3 className="text-sm font-headline font-bold text-on-surface">Iniciativas Estratégicas</h3>
+                  <p className="text-[10px] text-on-surface-variant">Projetos & Ações Estratégicas ({iniciativas.length} iniciativas)</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                PLDO 2027
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-auto space-y-2 pr-1">
+              {loadingIniciativas ? (
+                <div className="p-8 text-center space-y-2">
+                  <span className="material-symbols-outlined animate-spin text-amber-600">sync</span>
+                  <p className="text-xs text-on-surface-variant">Buscando iniciativas correspondentes...</p>
+                </div>
+              ) : iniciativas.length === 0 ? (
+                <p className="text-xs text-on-surface-variant p-4 text-center">Nenhuma iniciativa estratégica encontrada para esta seleção.</p>
+              ) : (
+                iniciativas.map((ini) => (
+                  <div
+                    key={ini.id}
+                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200">
+                          Ação {ini.acao}
+                        </span>
+                        {ini.despesa && (
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-blue-50 text-blue-800 border border-blue-200">
+                            Despesa {ini.despesa}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-mono text-on-surface-variant truncate">
+                          {ini.secretaria}
+                        </span>
+                      </div>
+                      <p className="font-bold text-on-surface truncate" title={ini.dsIniciativa}>
+                        {ini.dsIniciativa}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5">
+                        {ini.programaticaLdo} • Vinculo: {ini.vinculo} {ini.despesa ? `• Despesa: ${ini.despesa}` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 font-mono">
+                      <span className="text-[10px] text-on-surface-variant uppercase block">Valor PLDO</span>
+                      <span className="font-extrabold text-amber-700">{currency.format(ini.valorFinalPldo27)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
       </div>
 
       {/* 5. Dashboards Analíticos Inferiores */}
