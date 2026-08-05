@@ -2,14 +2,24 @@
 
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
-import { useDataSource } from "./data-source-toggle";
+import { useSearchParams } from "next/navigation";
 import type { DashboardData } from "@/types/loa";
 
 export function ExpenseDetailView() {
-  const [dataSource] = useDataSource();
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams?.get("tab") as "loa" | "execucao") || "loa";
+  const [activeTab, setActiveTab] = useState<"loa" | "execucao">(initialTab);
+
+  useEffect(() => {
+    const tabFromUrl = searchParams?.get("tab") as "loa" | "execucao";
+    if (tabFromUrl) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams]);
+
   const [dbData, setDbData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState<2024 | 2023 | 2022>(2024);
+  const exerciseYear = 2027;
 
   useEffect(() => {
     setLoading(true);
@@ -23,24 +33,14 @@ export function ExpenseDetailView() {
         console.error(err);
         setLoading(false);
       });
-  }, [dataSource]);
+  }, []);
 
-  // Year scaling multiplier
-  const yearScale = selectedYear === 2024 ? 1.0 : selectedYear === 2023 ? 0.88 : 0.76;
+  const totalLoa = dbData?.totals.loa ?? 0;
+  const operatingVal = dbData?.spending.operating ?? 0;
+  const investmentVal = dbData?.spending.investment ?? 0;
+  const unclassifiedVal = Math.max(0, totalLoa - operatingVal - investmentVal);
 
-  // Dynamic calculations based on LOA data or fallbacks
-  const totalLoa = (dbData?.totals.loa ?? 1240000000) * yearScale;
-  const rawOperating = dbData?.spending.operating ?? 840200000;
-  const rawInvestment = dbData?.spending.investment ?? 400300000;
-  
-  const operatingVal = rawOperating * yearScale;
-  const investmentVal = rawInvestment * yearScale;
-
-  const pctInvestimento = totalLoa > 0 ? Math.round((investmentVal / totalLoa) * 100) : 17;
-  const limitLRF = 54; // LRF ceiling for personnel, standard is ~54%
-
-  const custeioMensal = (operatingVal * 0.40) / 12;
-  const folhaMensal = (operatingVal * 0.60) / 12;
+  const pctInvestimento = totalLoa > 0 ? (investmentVal / totalLoa) * 100 : 0;
 
   const formatBillion = (val: number) => {
     if (val >= 1e9) {
@@ -60,122 +60,134 @@ export function ExpenseDetailView() {
   // Top Secretariats allocation
   const organStats = useMemo(() => {
     if (!dbData?.groups.organ || dbData.groups.organ.length === 0) {
-      return [
-        { label: "Secretaria de Saúde", value: totalLoa * 0.38, pct: 38, sub: ["Atenção Básica", "Hospitais & Insumos", "Administração"], barColors: ["bg-purple-700", "bg-purple-500", "bg-purple-300"] },
-        { label: "Secretaria de Educação", value: totalLoa * 0.32, pct: 32, sub: ["Infantil", "Folha Docente", "Alimentação"], barColors: ["bg-orange-600", "bg-orange-500", "bg-orange-300"] },
-        { label: "Secretaria de Obras", value: totalLoa * 0.14, pct: 14, sub: ["Infraestrutura", "Manutenção"], barColors: ["bg-[#005da7]", "bg-blue-400"] },
-      ];
+      return [];
     }
     
     const sumAll = dbData.groups.organ.reduce((acc, o) => acc + o.value, 0);
-    const colors = [
-      ["bg-purple-700", "bg-purple-500", "bg-purple-300"],
-      ["bg-orange-600", "bg-orange-500", "bg-orange-300"],
-      ["bg-[#005da7]", "bg-blue-400"],
-    ];
 
-    return dbData.groups.organ.slice(0, 3).map((org, index) => {
+    return dbData.groups.organ.slice(0, 5).map((org) => {
       const pct = sumAll > 0 ? (org.value / sumAll) * 100 : 0;
       return {
         label: org.label.replace(/^\d+\s*-\s*/, ""),
-        value: org.value * yearScale,
-        pct: Math.round(pct),
-        sub: ["Pessoal", "Manutenção", "Projetos"],
-        barColors: colors[index % colors.length],
+        value: org.value,
+        pct,
       };
     });
-  }, [dbData, totalLoa, yearScale]);
+  }, [dbData, exerciseYear]);
 
   // Top Contracts/Processes
   const topProcesses = useMemo(() => {
     if (!dbData?.records || dbData.records.length === 0) {
-      return [
-        { id: "#2024.0042.8", object: "Manutenção de Vias Urbanas - Regional Sul", dept: "Secretaria de Obras", fav: "ConstruCity Engenharia Ltda.", val: 14280000, pct: 45, status: "Ativo" },
-        { id: "#2024.0115.2", object: "Aquisição de Medicamentos de Alta Complexidade", dept: "Secretaria de Saúde", fav: "MedSul Distribuidora S/A", val: 8420500, pct: 82, status: "Ativo" },
-        { id: "#2023.0899.1", object: "Reforma da Escola Municipal Dom Bosco", dept: "Secretaria de Educação", fav: "Alfa Obras e Serviços Eireli", val: 3120000, pct: 100, status: "Encerrado" },
-      ];
+      return [];
     }
     return [...dbData.records]
       .sort((a, b) => b.value - a.value)
       .slice(0, 4)
       .map((rec, idx) => {
-        const pct = [45, 82, 100, 60][idx % 4];
-        const status = pct === 100 ? "Encerrado" : "Ativo";
         return {
-          id: `#${selectedYear}.${String(rec.id).slice(-4)}.${idx}`,
+          id: `#${exerciseYear}.${String(rec.id).slice(-4)}.${idx}`,
           object: rec.program || "Despesa Administrativa LOA",
           dept: rec.organ || "Secretaria Municipal",
-          fav: rec.budgetUnit || "Prestador Geral de Serviços",
-          val: rec.value * yearScale,
-          pct,
-          status,
+          fav: rec.budgetUnit || "Unidade orçamentária não informada",
+          val: rec.value,
+          status: "Previsto",
         };
       });
-  }, [dbData, selectedYear, yearScale]);
+  }, [dbData, exerciseYear]);
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-outline-variant pb-6">
+    <div className="space-y-6 animate-fade-in">
+      {/* Cabeçalho do Painel de Despesas Municipais */}
+      <header className="border-b border-outline-variant/30 pb-4">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-on-surface-variant mb-2">
-            <span>Relatórios</span>
-            <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span className="font-semibold text-[#005da7]">Análise de Despesas</span>
-          </nav>
-          <h2 className="font-headline text-3xl font-black text-on-surface tracking-tight">
-            Análise Detalhada de Despesas
-          </h2>
-          <p className="text-on-surface-variant">Monitoramento em tempo real da execução orçamentária municipal.</p>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">
+            DESPESAS MUNICIPAIS
+          </span>
+          <h1 className="text-3xl font-bold tracking-tight text-on-surface">Painel de Despesas Municipais</h1>
+          <p className="text-sm text-on-surface-variant mt-1">
+            Acompanhe as despesas previstas na LOA e a análise da execução financeira municipal.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="bg-surface-container rounded-lg p-1 flex">
-            {( [2024, 2023, 2022] as const ).map((yr) => (
-              <button
-                key={yr}
-                onClick={() => setSelectedYear(yr)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer ${
-                  selectedYear === yr
-                    ? "bg-white shadow-sm text-tertiary"
-                    : "text-on-surface-variant hover:bg-white/50"
-                }`}
-              >
-                {yr}
-              </button>
-            ))}
-          </div>
-          <Link href="/" className="flex items-center gap-2 px-4 py-2 bg-white border border-outline-variant rounded-lg text-sm font-medium hover:bg-surface-container transition-all">
-            <span className="material-symbols-outlined text-sm">filter_alt</span>
-            Filtros Avançados
-          </Link>
-        </div>
-      </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="spinner mx-auto mb-4 border-4 border-[#005da7] border-t-transparent rounded-full w-8 h-8 animate-spin" />
-            <p className="text-on-surface-variant font-medium">Carregando dados da LOA...</p>
+        {/* Abas Principais de Despesas */}
+        <div className="flex gap-2 mt-6 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab("loa")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${
+              activeTab === "loa"
+                ? "border-primary text-primary bg-surface-container font-bold"
+                : "border-transparent text-on-surface-variant hover:bg-surface-container-low"
+            }`}
+          >
+            <span className="material-symbols-outlined text-lg">subtitles</span>
+            <span>Despesas LOA</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("execucao")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${
+              activeTab === "execucao"
+                ? "border-primary text-primary bg-surface-container font-bold"
+                : "border-transparent text-on-surface-variant hover:bg-surface-container-low"
+            }`}
+          >
+            <span className="material-symbols-outlined text-lg">payments</span>
+            <span>Análise de Despesa Executada</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Conteúdo da Aba Ativa */}
+      {activeTab === "execucao" ? (
+        <div className="bg-surface border border-outline-variant rounded-xl p-8 text-center space-y-3">
+          <span className="material-symbols-outlined text-4xl text-primary">analytics</span>
+          <h3 className="text-lg font-bold text-on-surface">Análise de Despesa Executada</h3>
+          <p className="text-xs text-on-surface-variant max-w-md mx-auto">
+            Acompanhamento da execução orçamentária e financeira de empenhos, liquidações e pagamentos efetivados no município.
+          </p>
+          <div className="flex justify-center gap-2 pt-2">
+            <span className="px-3 py-1 bg-surface-container rounded-full text-[11px] font-semibold text-on-surface-variant">Empenhado</span>
+            <span className="px-3 py-1 bg-surface-container rounded-full text-[11px] font-semibold text-on-surface-variant">Liquidado</span>
+            <span className="px-3 py-1 bg-surface-container rounded-full text-[11px] font-semibold text-on-surface-variant">Pago</span>
           </div>
         </div>
       ) : (
-        <>
+        <div className="space-y-6">
+          <div className="flex justify-between items-center bg-surface border border-outline-variant p-4 rounded-xl">
+            <div className="rounded-lg border border-outline-variant bg-surface px-4 py-2 text-sm font-bold text-tertiary">
+              Exercício {exerciseYear}
+            </div>
+            <Link href="/" className="flex items-center gap-2 px-4 py-2 bg-white border border-outline-variant rounded-lg text-sm font-medium hover:bg-surface-container transition-all">
+              <span className="material-symbols-outlined text-sm">filter_alt</span>
+              Filtros Avançados
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="spinner mx-auto mb-4 border-4 border-[#005da7] border-t-transparent rounded-full w-8 h-8 animate-spin" />
+                <p className="text-on-surface-variant font-medium">Carregando dados da LOA...</p>
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Summary Cards & Strategic Indicators */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Main Total */}
-            <div className="bg-gradient-to-br from-[#6B21A8] to-[#EA580C] p-6 rounded-xl text-white shadow-lg flex flex-col justify-between transition-all hover:scale-[1.01]">
+            <div className="bg-[#4c1d95] p-6 rounded-xl text-white flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-start">
                   <span className="text-sm font-medium opacity-80 uppercase tracking-wider">Despesa Total</span>
                   <span className="material-symbols-outlined opacity-80">account_balance_wallet</span>
                 </div>
                 <h3 className="text-3xl font-black mt-2">{formatBillion(totalLoa)}</h3>
-                <p className="text-xs mt-1 opacity-80">Executado: 64% do previsto</p>
+                <p className="text-xs mt-1 opacity-80">Valor previsto na importação selecionada</p>
               </div>
               <div className="mt-4 pt-4 border-t border-white/20">
                 <div className="flex items-center gap-2 text-sm font-bold">
-                  <span className="material-symbols-outlined text-sm">trending_up</span>
-                  <span>+4.2% vs 2023</span>
+                  <span className="material-symbols-outlined text-sm">calendar_today</span>
+                  <span>Exercício {exerciseYear} · dados reais</span>
                 </div>
               </div>
             </div>
@@ -184,27 +196,23 @@ export function ExpenseDetailView() {
             <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="bg-surface-container-high p-6 rounded-xl border border-outline-variant flex flex-col justify-between shadow-sm transition-all hover:scale-[1.01] hover:border-tertiary">
                 <div>
-                  <span className="text-sm font-bold text-tertiary">Índice de Investimento</span>
+                  <span className="text-sm font-bold text-tertiary">Participação de Capital</span>
                   <div className="flex items-end gap-2 mt-2">
-                    <h4 className="text-2xl font-black">{pctInvestimento}%</h4>
-                    <span className="text-xs text-on-surface-variant pb-1">Meta: 20%</span>
+                    <h4 className="text-2xl font-black">{pctInvestimento.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</h4>
+                    <span className="text-xs text-on-surface-variant pb-1">{formatBillion(investmentVal)}</span>
                   </div>
                 </div>
                 <div className="w-full bg-surface-variant rounded-full h-2 mt-4 overflow-hidden">
-                  <div className="bg-tertiary h-full" style={{ width: `${pctInvestimento}%` }} />
+                  <div className="bg-tertiary h-full" style={{ width: `${Math.min(100, pctInvestimento)}%` }} />
                 </div>
               </div>
-              <div className="bg-surface-container-high p-6 rounded-xl border border-outline-variant flex flex-col justify-between shadow-sm transition-all hover:scale-[1.01] hover:border-error">
+              <div className="bg-surface-container-high p-6 rounded-xl border border-outline-variant flex flex-col justify-between">
                 <div>
-                  <span className="text-sm font-bold text-error">Limite LRF (Pessoal)</span>
-                  <div className="flex items-end gap-2 mt-2">
-                    <h4 className="text-2xl font-black">{limitLRF}%</h4>
-                    <span className="text-xs text-on-surface-variant pb-1">Teto: 60%</span>
-                  </div>
+                  <span className="text-sm font-bold text-on-surface">LRF — Despesa com Pessoal</span>
+                  <h4 className="mt-2 text-xl font-black text-on-surface">Não calculado</h4>
+                  <p className="mt-1 text-xs text-on-surface-variant">Os dados de despesa com pessoal ainda não foram importados.</p>
                 </div>
-                <div className="w-full bg-surface-variant rounded-full h-2 mt-4 overflow-hidden">
-                  <div className="bg-error h-full w-[90%]" />
-                </div>
+                <span className="mt-4 w-fit rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">Aguardando base da LRF</span>
               </div>
             </div>
 
@@ -215,8 +223,8 @@ export function ExpenseDetailView() {
                   <span className="material-symbols-outlined">payments</span>
                 </div>
                 <div>
-                  <p className="text-xs text-on-surface-variant font-medium">Custeio Mensal</p>
-                  <p className="font-bold">{formatBillion(custeioMensal)}</p>
+                  <p className="text-xs text-on-surface-variant font-medium">Despesas Correntes</p>
+                  <p className="font-bold">{formatBillion(operatingVal)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -224,10 +232,21 @@ export function ExpenseDetailView() {
                   <span className="material-symbols-outlined">group</span>
                 </div>
                 <div>
-                  <p className="text-xs text-on-surface-variant font-medium">Folha Mensal</p>
-                  <p className="font-bold">{formatBillion(folhaMensal)}</p>
+                  <p className="text-xs text-on-surface-variant font-medium">Despesas de Capital</p>
+                  <p className="font-bold">{formatBillion(investmentVal)}</p>
                 </div>
               </div>
+              {unclassifiedVal > 0 && (
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-100 text-amber-800 rounded-lg">
+                    <span className="material-symbols-outlined">warning</span>
+                  </div>
+                  <div>
+                    <p className="text-xs text-on-surface-variant font-medium">Sem natureza classificada</p>
+                    <p className="font-bold">{formatBillion(unclassifiedVal)}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -250,26 +269,19 @@ export function ExpenseDetailView() {
                 </div>
               </div>
               <div className="space-y-6">
-                {organStats.map((item) => (
+                {organStats.map((item, index) => (
                   <div key={item.label} className="space-y-2">
                     <div className="flex justify-between items-end">
                       <span className="font-semibold text-sm text-on-surface">{item.label}</span>
                       <span className="text-sm font-bold text-on-surface">
-                        {formatBillion(item.value)} <span className="text-xs font-normal opacity-60">({item.pct}%)</span>
+                        {formatBillion(item.value)} <span className="text-xs font-normal opacity-60">({item.pct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)</span>
                       </span>
                     </div>
-                    <div className="h-10 w-full bg-surface-container rounded-lg overflow-hidden flex">
-                      <div className={`${item.barColors[0]} w-[38%] h-full flex items-center px-3 text-[10px] text-white font-bold whitespace-nowrap`}>
-                        {item.sub[0]}
-                      </div>
-                      <div className={`${item.barColors[1]} w-[20%] h-full flex items-center px-2 text-[10px] text-white/90 whitespace-nowrap`}>
-                        {item.sub[1]}
-                      </div>
-                      {item.barColors[2] && (
-                        <div className={`${item.barColors[2]} w-[42%] h-full flex items-center px-2 text-[10px] text-on-surface whitespace-nowrap`}>
-                          {item.sub[2]}
-                        </div>
-                      )}
+                    <div className="h-3 w-full bg-surface-container rounded-full overflow-hidden" aria-label={`${item.pct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do total`}>
+                      <div
+                        className={`h-full ${["bg-purple-700", "bg-orange-600", "bg-[#005da7]", "bg-teal-600", "bg-slate-600"][index]}`}
+                        style={{ width: `${Math.min(100, item.pct)}%` }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -284,18 +296,17 @@ export function ExpenseDetailView() {
               <div>
                 <div className="flex items-center gap-2 mb-6">
                   <span className="material-symbols-outlined text-tertiary-fixed">auto_awesome</span>
-                  <h4 className="font-headline font-bold text-lg text-white">Insights de IA</h4>
+                  <h4 className="font-headline font-bold text-lg text-white">Leituras da Base 2027</h4>
                 </div>
                 <div className="space-y-6 relative z-10">
                   <div className="bg-white/5 border-l-4 border-orange-500 p-4 rounded-r-lg">
                     <p className="text-sm italic leading-relaxed text-white/90">
-                      &quot;Observou-se uma concentração de {organStats[0] && organStats[1] ? `${organStats[0].pct + organStats[1].pct}%` : "70%"} das despesas em apenas duas pastas. Isso indica uma alta priorização de serviços essenciais, porém reduz a margem para investimentos em infraestrutura.&quot;
+                      &quot;As duas maiores secretarias concentram {organStats[0] && organStats[1] ? `${(organStats[0].pct + organStats[1].pct).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "0%"} do valor previsto na importação de 2027.&quot;
                     </p>
                   </div>
                   <div className="bg-white/5 border-l-4 border-purple-500 p-4 rounded-r-lg">
                     <p className="text-sm italic leading-relaxed text-white/90">
-                      &quot;O índice de eficiência de gasto com pessoal está em nível de alerta. Recomenda-se
-                      monitorar as contratações temporárias previstas para o segundo semestre de {selectedYear}.&quot;
+                      &quot;O indicador da LRF não pode ser calculado porque a base importada ainda não contém os dados completos de despesa com pessoal. O painel será atualizado após essa importação.&quot;
                     </p>
                   </div>
                 </div>
@@ -303,7 +314,7 @@ export function ExpenseDetailView() {
               <div className="pt-4 mt-6">
                 <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
                   <span className="material-symbols-outlined text-[#a4c9ff]">info</span>
-                  <p className="text-xs font-medium text-[#a4c9ff]">Projeção: Superávit de 2.1% no encerramento do exercício.</p>
+                  <p className="text-xs font-medium text-[#a4c9ff]">Os valores apresentados correspondem à previsão orçamentária importada para 2027, não à execução ou liquidação da despesa.</p>
                 </div>
               </div>
             </div>
@@ -312,7 +323,7 @@ export function ExpenseDetailView() {
           {/* Detailed Table Section */}
           <div className="bg-white rounded-xl border border-outline-variant shadow-sm overflow-hidden">
             <div className="p-6 flex flex-col md:flex-row justify-between items-center gap-4">
-              <h4 className="font-headline text-lg font-bold text-on-surface">Maiores Processos e Contratos</h4>
+              <h4 className="font-headline text-lg font-bold text-on-surface">Maiores Dotações e Processos</h4>
               <div className="flex gap-2 w-full md:w-auto">
                 <div className="relative flex-1 md:w-64">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-sm">
@@ -337,8 +348,7 @@ export function ExpenseDetailView() {
                     <th className="px-6 py-4">Objeto / Contrato</th>
                     <th className="px-6 py-4">Favorecido</th>
                     <th className="px-6 py-4 text-right">Valor Total</th>
-                    <th className="px-6 py-4">Execução</th>
-                    <th className="px-6 py-4 text-center">Status</th>
+                    <th className="px-6 py-4 text-center">Situação</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm divide-y divide-outline-variant">
@@ -351,23 +361,8 @@ export function ExpenseDetailView() {
                       </td>
                       <td className="px-6 py-4 text-on-surface-variant">{proc.fav}</td>
                       <td className="px-6 py-4 text-right font-bold text-on-surface">{formatMoney(proc.val)}</td>
-                      <td className="px-6 py-4">
-                        <div className="w-24 bg-surface-variant rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full ${proc.status === "Ativo" ? "bg-orange-500" : "bg-tertiary"}`}
-                            style={{ width: `${proc.pct}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-on-surface-variant">{proc.pct}% Liquidado</span>
-                      </td>
                       <td className="px-6 py-4 text-center">
-                        <span
-                          className={`px-2 py-1 text-[10px] font-bold rounded uppercase ${
-                            proc.status === "Ativo"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-surface-container-highest text-on-surface-variant"
-                          }`}
-                        >
+                        <span className="rounded bg-blue-100 px-2 py-1 text-[10px] font-bold uppercase text-blue-800">
                           {proc.status}
                         </span>
                       </td>
@@ -389,6 +384,8 @@ export function ExpenseDetailView() {
             </div>
           </div>
         </>
+      )}
+        </div>
       )}
     </div>
   );

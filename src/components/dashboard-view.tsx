@@ -13,11 +13,13 @@ import { FIELDS, type DashboardData, type FieldKey } from "@/types/loa";
 import { useDataSource, DataSourceToggle } from "./data-source-toggle";
 
 const EMPTY_DATA: DashboardData = {
-  hasData: false, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 }, spending: { operating: 0, investment: 0 },
+  hasData: false, imports: [], selection: { importId: null, exercise: null }, records: [], pagination: { page: 1, pageSize: 20, total: 0, pages: 1 }, totals: { loa: 0, filtered: 0 }, spending: { operating: 0, investment: 0 },
   secretariatCeiling: null,
   counts: { organs: 0, units: 0, functions: 0, programs: 0, actions: 0, processes: 0, newProjects: 0 },
   groups: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["groups"],
   filterOptions: Object.fromEntries(FIELDS.map((field) => [field, []])) as unknown as DashboardData["filterOptions"],
+  classifications: { category: [], expenseGroup: [], modality: [], economic: [], subelement: [] },
+  quality: { available: false, totalRecords: 0, validRecords: 0, warningRecords: 0, validValue: 0, warningValue: 0, coverage: 0, unmatchedSubelements: 0, issues: [] },
 };
 
 const VIEW_TITLES: Record<string, [string, string]> = {
@@ -33,8 +35,9 @@ const VIEW_TITLES: Record<string, [string, string]> = {
   relatorios: ["Relatórios da LOA", "Consulte, filtre e exporte informações orçamentárias"],
 };
 
-function buildQuery(filters: FilterState, page: number, sort: string, direction: string) {
+function buildQuery(filters: FilterState, page: number, sort: string, direction: string, importId: string) {
   const params = new URLSearchParams({ page: String(page), pageSize: "20", sort, direction });
+  if (importId) params.set("importId", importId);
   for (const field of FIELDS) filters[field].forEach((value) => params.append(field, value));
   if (filters.min) params.set("min", filters.min.replace(/\./g, "").replace(",", "."));
   if (filters.max) params.set("max", filters.max.replace(/\./g, "").replace(",", "."));
@@ -61,12 +64,13 @@ export function DashboardView({
 }) {
   const [dataSource] = useDataSource();
   const [data, setData] = useState(EMPTY_DATA);
+  const [selectedImportId, setSelectedImportId] = useState("");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("value");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const query = useMemo(() => buildQuery(filters, page, sort, direction).toString(), [filters, page, sort, direction]);
+  const query = useMemo(() => buildQuery(filters, page, sort, direction, selectedImportId).toString(), [filters, page, sort, direction, selectedImportId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,18 +88,18 @@ export function DashboardView({
         const result = await response.json();
         if (!response.ok) throw new Error(result.message);
         setData(result);
+        if (!selectedImportId && result.selection.importId) setSelectedImportId(result.selection.importId);
         setOptions((current) => Object.fromEntries(FIELDS.map((field) => [field, [...new Set([...filters[field], ...result.filterOptions[field], ...(!filters[field].length ? [] : current[field])])].sort((a, b) => a.localeCompare(b, "pt-BR"))])) as unknown as DashboardData["filterOptions"]);
       } catch (reason) {
         if (!(reason instanceof DOMException && reason.name === "AbortError")) {
-          const demoData = buildDemoDashboardData(filters, page, sort as FieldKey | "value", direction);
           setError(reason instanceof Error ? reason.message : "Falha ao carregar o painel.");
-          setData(demoData);
-          setOptions(demoData.filterOptions);
+          setData(EMPTY_DATA);
+          setOptions(EMPTY_DATA.filterOptions);
         }
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query, filters, dataSource, page, sort, direction, setOptions]);
+  }, [query, filters, dataSource, page, sort, direction, selectedImportId, setOptions]);
 
   function updateFilters(next: FilterState) { setFilters(next); setPage(1); }
   function updateSort(field: FieldKey | "value") { if (sort === field) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(field); setDirection("asc"); } setPage(1); }
@@ -133,6 +137,9 @@ export function DashboardView({
             data={data}
             filters={filters}
             onChange={updateFilters}
+            dataSource={dataSource}
+            selectedImportId={selectedImportId}
+            onSelectImport={(importId) => { setSelectedImportId(importId); setPage(1); }}
           />
         )}
       </>

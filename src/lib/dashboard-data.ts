@@ -93,6 +93,18 @@ function buildGroups(rows: DashboardRow[], field: FieldKey) {
     .sort((a, b) => b.value - a.value);
 }
 
+function buildMappedGroups(rows: DashboardRow[], labelFor: (row: DashboardRow) => string) {
+  const grouped = new Map<string, { value: number; count: number }>();
+  for (const row of rows) {
+    const label = labelFor(row);
+    const current = grouped.get(label) ?? { value: 0, count: 0 };
+    current.value += row.value;
+    current.count += 1;
+    grouped.set(label, current);
+  }
+  return [...grouped.entries()].map(([label, item]) => ({ label, ...item })).sort((left, right) => right.value - left.value);
+}
+
 function distinctCount(rows: DashboardRow[], field: FieldKey) {
   return new Set(rows.map((row) => row[field])).size;
 }
@@ -121,6 +133,8 @@ export function buildDemoDashboardData(
 
   return {
     hasData: true,
+    imports: [],
+    selection: { importId: null, exercise: 2027 },
     records: pagedRecords,
     pagination: { page: currentPage, pageSize, total: sortedRecords.length, pages: pageCount },
     totals: {
@@ -158,5 +172,28 @@ export function buildDemoDashboardData(
         [...new Set(records.map((row) => row[field]))].sort((a, b) => a.localeCompare(b, "pt-BR")),
       ])
     ) as DashboardData["filterOptions"],
+    classifications: {
+      category: buildMappedGroups(filteredRecords, (row) => row.subelement === "51" ? "4 — Despesas de Capital" : "3 — Despesas Correntes"),
+      expenseGroup: buildMappedGroups(filteredRecords, (row) => {
+        if (normalizeText(row.expenseNature).includes("pessoal")) return "1 — Pessoal e Encargos Sociais";
+        if (normalizeText(row.expenseNature).includes("investimento")) return "4 — Investimentos";
+        if (normalizeText(row.expenseNature).includes("amortizacao")) return "6 — Amortização da Dívida";
+        return "3 — Outras Despesas Correntes";
+      }),
+      modality: buildMappedGroups(filteredRecords, () => "90 — Aplicações Diretas"),
+      economic: buildGroups(filteredRecords, "expenseNature"),
+      subelement: buildGroups(filteredRecords, "subelement"),
+    },
+    quality: {
+      available: false,
+      totalRecords: filteredRecords.length,
+      validRecords: filteredRecords.length,
+      warningRecords: 0,
+      validValue: filteredRecords.reduce((sum, row) => sum + row.value, 0),
+      warningValue: 0,
+      coverage: 1,
+      unmatchedSubelements: 0,
+      issues: [],
+    },
   };
 }

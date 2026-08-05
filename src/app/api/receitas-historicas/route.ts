@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const resultado = await listarReceitas(filtros, page, limit);
 
     return NextResponse.json(resultado, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erro ao listar receitas:', error);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
   }

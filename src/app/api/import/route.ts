@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { parseWorkbook } from "@/lib/parser";
+import { fileNameWithExercise, inferImportExercise } from "@/lib/import-metadata";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,8 +12,12 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get("file");
     const replace = form.get("replace") === "true";
+    const exercise = Number(form.get("exercise"));
     if (!(file instanceof File)) return NextResponse.json({ message: "Selecione uma planilha válida." }, { status: 400 });
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return NextResponse.json({ message: "Formato inválido. Use XLSX, XLS ou CSV." }, { status: 400 });
+    if (!Number.isInteger(exercise) || exercise < 2000 || exercise > 2100) {
+      return NextResponse.json({ message: "Informe um exercício válido entre 2000 e 2100." }, { status: 400 });
+    }
 
     const parsed = parseWorkbook(await file.arrayBuffer());
     if (!parsed.hasRequiredFields || parsed.missingOrgan) {
@@ -26,7 +31,7 @@ export async function POST(request: Request) {
     const totalValue = parsed.records.reduce((sum, row) => sum + row.value, 0);
     const imported = await db.$transaction(async (tx) => {
       if (replace) await tx.loaImport.deleteMany();
-      const batch = await tx.loaImport.create({ data: { fileName: file.name, recordCount: parsed.records.length, totalValue: new Prisma.Decimal(totalValue) } });
+      const batch = await tx.loaImport.create({ data: { fileName: fileNameWithExercise(file.name, exercise), recordCount: parsed.records.length, totalValue: new Prisma.Decimal(totalValue) } });
       for (let start = 0; start < parsed.records.length; start += 1000) {
         await tx.budgetRecord.createMany({
           data: parsed.records.slice(start, start + 1000).map((row) => ({ ...row, importId: batch.id, value: new Prisma.Decimal(row.value) })),
@@ -39,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       message: "Importação concluída com sucesso.",
       importId: imported.id,
-      summary: { rows: parsed.records.length, totalValue, organs: unique("organ"), units: unique("budgetUnit"), programs: unique("program"), actions: unique("action"), processes: unique("administrativeProcess") },
+      summary: { exercise: inferImportExercise(imported.fileName), rows: parsed.records.length, totalValue, organs: unique("organ"), units: unique("budgetUnit"), programs: unique("program"), actions: unique("action"), processes: unique("administrativeProcess") },
     });
   } catch (error) {
     console.error(error);
@@ -55,4 +60,3 @@ export async function DELETE() {
     return NextResponse.json({ message: "Não foi possível remover os dados." }, { status: 500 });
   }
 }
-
