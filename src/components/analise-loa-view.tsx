@@ -327,7 +327,7 @@ export function AnaliseLoaView() {
         // Atualizar o Valor LDO principal com o Custo Financeiro do Ano 2 (2027)
         // da importação de ações LDO, preservando a distribuição por natureza.
         try {
-          const actionsRes = await fetch("/api/elaboracao-loa/acoes?exercise=2026");
+          const actionsRes = await fetch("/api/elaboracao-loa/acoes?exercise=2026", { cache: "no-store" });
           if (actionsRes.ok) {
             const actionsData = await actionsRes.json() as { actions?: Array<{ secretaria: string; acaoCodigo: string; custoFinanceiro: number }> };
             const normalizeActionCode = (value: string) => value.trim().split(".").map((part) => String(Number(part))).join(".");
@@ -345,12 +345,16 @@ export function AnaliseLoaView() {
               const key = `${secretariaCode}|${actionCode}`;
               itemsByAction.set(key, [...(itemsByAction.get(key) ?? []), item]);
             });
+            const importedTotalsByAction = new Map([...itemsByAction.entries()].map(([key, items]) => [key, items.reduce((sum, item) => sum + item.valLdo, 0)]));
+            const importedValuesById = new Map([...loaMap.values()].map((item) => [item.id, item.valLdo]));
+            // Remove os resíduos da LDO antiga antes de aplicar a nova importação.
+            loaMap.forEach((item) => { item.valLdo = 0; });
             itemsByAction.forEach((items, key) => {
               const cost = costByAction.get(key);
               if (cost === undefined) return;
-              const importedTotal = items.reduce((sum, item) => sum + item.valLdo, 0);
+              const importedTotal = importedTotalsByAction.get(key) ?? 0;
               if (importedTotal > 0) {
-                items.forEach((item) => { item.valLdo = (item.valLdo / importedTotal) * cost; });
+                items.forEach((item) => { item.valLdo = ((importedValuesById.get(item.id) ?? 0) / importedTotal) * cost; });
               } else {
                 items.forEach((item, index) => { item.valLdo = index === 0 ? cost : 0; });
               }
