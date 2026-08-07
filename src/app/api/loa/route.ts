@@ -202,14 +202,14 @@ export async function GET(request: Request) {
     const secretariatWhere = where;
     const select = Object.fromEntries(FIELDS.map((field) => [field, true])) as Record<FieldKey, true>;
 
-    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRows, groups, secretariatCeilings, organs, units, functions, programs, actions, processes, newProjects, qualityRows] = await Promise.all([
+    const [totalRecords, filteredValue, loaValue, operatingValue, investmentValue, records, optionRowsByField, groups, secretariatCeilings, organs, units, functions, programs, actions, processes, newProjects, qualityRows] = await Promise.all([
       db.budgetRecord.count({ where }),
       db.budgetRecord.aggregate({ where, _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: baseWhere, _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: withExpensePrefix(where, "3"), _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: withExpensePrefix(where, "4"), _sum: { value: true } }),
       db.budgetRecord.findMany({ where, select: { id: true, ...select, value: true }, orderBy: { [sort]: direction }, skip: (page - 1) * pageSize, take: pageSize }),
-      db.budgetRecord.findMany({ where, select, distinct: [...FIELDS], take: 5000 }),
+      Promise.all(FIELDS.map((field) => db.budgetRecord.groupBy({ by: [field], where: baseWhere }))),
       Promise.all(FIELDS.map((field) => groupBy(field, where))),
       groupBy("organ", secretariatWhere),
       distinctCount("organ", where),
@@ -222,7 +222,15 @@ export async function GET(request: Request) {
       db.budgetRecord.groupBy({ by: ["expenseNature", "subelement"], where, _sum: { value: true }, _count: { _all: true } }),
     ]);
 
-    const filterOptions = Object.fromEntries(FIELDS.map((field) => [field, [...new Set(optionRows.map((row) => row[field]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"))]));
+    const filterOptions = Object.fromEntries(
+      FIELDS.map((field, index) => [
+        field,
+        (optionRowsByField[index] as Array<Record<string, unknown>>)
+          .map((row) => String(row[field] || ""))
+          .filter((val) => Boolean(val && val.trim()))
+          .sort((a, b) => a.localeCompare(b, "pt-BR")),
+      ])
+    ) as Record<FieldKey, string[]>;
     const typedQualityRows = qualityRows as QualityRow[];
     const classificationGroups = buildClassificationGroups(typedQualityRows);
     return NextResponse.json({

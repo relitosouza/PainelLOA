@@ -3,9 +3,16 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { currency, percent } from "@/lib/format";
-import { getPresentationRecords, groupPresentation, PRESENTATION_SECRETARIATS, type PresentationRecord } from "@/lib/presentation-data";
+import { getPresentationRecords, groupPresentation, type PresentationRecord } from "@/lib/presentation-data";
 import { useDataSource } from "./data-source-toggle";
 import type { DashboardData, BudgetRow } from "@/types/loa";
+
+type AiObservation = {
+  title: string;
+  text: string;
+  icon: string;
+  tone: "info" | "positive" | "warning" | "critical";
+};
 
 function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -24,15 +31,27 @@ function cleanBudgetLabel(label: string) {
     .trim();
 }
 
+function formatActionLabel(action?: string, program?: string) {
+  const act = (action || "").trim();
+  const prog = cleanBudgetLabel(program || "");
+  if (!act) return prog || "Ação de Investimento";
+  if (/^\d{3,5}$/.test(act) && prog) {
+    return `${act} — ${prog}`;
+  }
+  return cleanBudgetLabel(act);
+}
+
 function share(value: number, total: number) {
   return total ? percent.format(value / total) : "0%";
 }
 
 function Treemap({
   items,
+  selectedSecretariat,
   onSelectSecretariat,
 }: {
   items: { label: string; value: number }[];
+  selectedSecretariat?: string;
   onSelectSecretariat: (name: string) => void;
 }) {
   const sorted = useMemo(() => {
@@ -47,12 +66,18 @@ function Treemap({
   const othersValue = sorted.slice(5).reduce((sum, item) => sum + item.value, 0);
   const othersCount = Math.max(0, sorted.length - 5);
 
+  const getActiveRing = (label?: string) =>
+    label && selectedSecretariat === label
+      ? "ring-4 ring-amber-400 scale-[1.02] z-10 font-black shadow-lg"
+      : "";
+
   return (
     <div className="grid grid-cols-10 grid-rows-2 h-[320px] gap-3">
       {top1 && (
         <div
-          onClick={() => onSelectSecretariat(top1.label)}
-          className="col-span-4 row-span-2 bg-gradient-to-br from-tertiary to-[#004883] text-white p-6 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-transform cursor-pointer shadow-md group relative overflow-hidden"
+          onClick={() => onSelectSecretariat(selectedSecretariat === top1.label ? "" : top1.label)}
+          className={`col-span-4 row-span-2 bg-gradient-to-br from-tertiary to-[#004883] text-white p-6 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-all cursor-pointer shadow-md group relative overflow-hidden ${getActiveRing(top1.label)}`}
+          title={selectedSecretariat === top1.label ? "Clique para desmarcar e voltar a todas" : `Filtrar por ${cleanBudgetLabel(top1.label)}`}
         >
           <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <p className="text-[11px] font-bold uppercase tracking-wider text-tertiary-fixed/80 mb-1">Maior Secretaria</p>
@@ -62,8 +87,9 @@ function Treemap({
       )}
       {top2 && (
         <div
-          onClick={() => onSelectSecretariat(top2.label)}
-          className="col-span-3 row-span-1 bg-[#2b88d8] text-white p-5 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-transform cursor-pointer shadow-sm relative overflow-hidden group"
+          onClick={() => onSelectSecretariat(selectedSecretariat === top2.label ? "" : top2.label)}
+          className={`col-span-3 row-span-1 bg-[#2b88d8] text-white p-5 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-all cursor-pointer shadow-sm relative overflow-hidden group ${getActiveRing(top2.label)}`}
+          title={selectedSecretariat === top2.label ? "Clique para desmarcar e voltar a todas" : `Filtrar por ${cleanBudgetLabel(top2.label)}`}
         >
           <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <h4 className="font-black text-xl leading-tight mb-1">{cleanBudgetLabel(top2.label)}</h4>
@@ -72,8 +98,9 @@ function Treemap({
       )}
       {top3 && (
         <div
-          onClick={() => onSelectSecretariat(top3.label)}
-          className="col-span-3 row-span-1 bg-[#56a5eb] text-white p-5 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-transform cursor-pointer shadow-sm relative overflow-hidden group"
+          onClick={() => onSelectSecretariat(selectedSecretariat === top3.label ? "" : top3.label)}
+          className={`col-span-3 row-span-1 bg-[#56a5eb] text-white p-5 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-all cursor-pointer shadow-sm relative overflow-hidden group ${getActiveRing(top3.label)}`}
+          title={selectedSecretariat === top3.label ? "Clique para desmarcar e voltar a todas" : `Filtrar por ${cleanBudgetLabel(top3.label)}`}
         >
           <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <h4 className="font-black text-lg leading-tight mb-1">{cleanBudgetLabel(top3.label)}</h4>
@@ -82,8 +109,9 @@ function Treemap({
       )}
       {top4 && (
         <div
-          onClick={() => onSelectSecretariat(top4.label)}
-          className="col-span-2 row-span-1 bg-[#90c6f4] text-[#00386b] p-4 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-transform cursor-pointer shadow-sm relative overflow-hidden group"
+          onClick={() => onSelectSecretariat(selectedSecretariat === top4.label ? "" : top4.label)}
+          className={`col-span-2 row-span-1 bg-[#90c6f4] text-[#00386b] p-4 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-all cursor-pointer shadow-sm relative overflow-hidden group ${getActiveRing(top4.label)}`}
+          title={selectedSecretariat === top4.label ? "Clique para desmarcar e voltar a todas" : `Filtrar por ${cleanBudgetLabel(top4.label)}`}
         >
           <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <h4 className="font-bold text-base leading-tight mb-1">{cleanBudgetLabel(top4.label)}</h4>
@@ -92,8 +120,9 @@ function Treemap({
       )}
       {top5 && (
         <div
-          onClick={() => onSelectSecretariat(top5.label)}
-          className="col-span-2 row-span-1 bg-[#b9dbf8] text-[#00386b] p-4 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-transform cursor-pointer shadow-sm relative overflow-hidden group"
+          onClick={() => onSelectSecretariat(selectedSecretariat === top5.label ? "" : top5.label)}
+          className={`col-span-2 row-span-1 bg-[#b9dbf8] text-[#00386b] p-4 rounded-xl flex flex-col justify-end hover:scale-[1.01] transition-all cursor-pointer shadow-sm relative overflow-hidden group ${getActiveRing(top5.label)}`}
+          title={selectedSecretariat === top5.label ? "Clique para desmarcar e voltar a todas" : `Filtrar por ${cleanBudgetLabel(top5.label)}`}
         >
           <div className="absolute inset-0 bg-white/30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <h4 className="font-bold text-sm leading-tight mb-1">{cleanBudgetLabel(top5.label)}</h4>
@@ -104,6 +133,7 @@ function Treemap({
         <div
           onClick={() => onSelectSecretariat("")}
           className="col-span-2 row-span-1 bg-surface-container-low text-on-surface-variant p-4 rounded-xl flex flex-col justify-center items-center border-2 border-dashed border-outline-variant/50 hover:bg-surface-container hover:border-outline-variant transition-colors cursor-pointer"
+          title="Ver todas as secretarias"
         >
           <p className="text-xs font-bold uppercase tracking-wider mb-1">Outras {othersCount}</p>
           <p className="text-sm font-black">{compactCurrency(othersValue)}</p>
@@ -119,6 +149,8 @@ export function PresentationDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [dataSource, setDataSource] = useDataSource();
   const [dbData, setDbData] = useState<DashboardData | null>(null);
+  const [isLoadingRealData, setIsLoadingRealData] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   // Pergunte ao Orçamento Interactivity State
   const [questionText, setQuestionText] = useState("");
@@ -126,12 +158,36 @@ export function PresentationDashboard() {
   const [isTyping, setIsTyping] = useState(false);
 
   useEffect(() => {
-    if (dataSource === "real" && !dbData) {
-      fetch("/api/loa?all=true")
-        .then((res) => res.json())
-        .then((res) => setDbData(res))
-        .catch(console.error);
-    }
+    if (dataSource !== "real" || dbData) return;
+
+    let cancelled = false;
+    setIsLoadingRealData(true);
+    setDataError(null);
+
+    fetch("/api/loa?all=true")
+      .then((res) => {
+        if (!res.ok) throw new Error(`Falha ao carregar dados: ${res.status}`);
+        return res.json() as Promise<DashboardData>;
+      })
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.hasData || !res.records?.length) {
+          throw new Error("Nenhuma importação de orçamento foi encontrada.");
+        }
+        setDbData(res);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        console.error(error);
+        setDataError(error instanceof Error ? error.message : "Não foi possível carregar os dados importados.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingRealData(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [dataSource, dbData]);
 
   const realRecords = useMemo((): PresentationRecord[] => {
@@ -150,6 +206,8 @@ export function PresentationDashboard() {
         unit: record.budgetUnit,
         functionName: record.functionName,
         program: record.program,
+        action: record.action,
+        expenseNature: record.expenseNature,
         process: record.administrativeProcess,
         category: isOperating ? "operating" : "investment",
         nature,
@@ -202,6 +260,12 @@ export function PresentationDashboard() {
     };
   }, [secretariat, year, getCurrentRecords]);
 
+  const availableSecretariats = useMemo(() => {
+    return groupPresentation(getCurrentRecords(year), "secretariat")
+      .map((item) => item.label)
+      .sort((left, right) => cleanBudgetLabel(left).localeCompare(cleanBudgetLabel(right), "pt-BR"));
+  }, [getCurrentRecords, year]);
+
   const previousTotal = useMemo(() => {
     return getCurrentRecords(2026)
       .filter((record) => !secretariat || record.secretariat === secretariat)
@@ -216,9 +280,69 @@ export function PresentationDashboard() {
   const investmentShare = summary.total ? summary.investment / summary.total : 0;
   const perCapita = summary.total / 723500;
 
-  const topProgram = summary.programs[0];
-  const topProcess = summary.processes[0];
-  const topInvestment = summary.programs.find((program) => program.label.toLowerCase().includes("obra")) ?? summary.programs[1] ?? summary.programs[0];
+  const topProgram = useMemo(() => {
+    const records = getCurrentRecords(year).filter(
+      (record) => !secretariat || record.secretariat === secretariat
+    );
+    // Desconsiderar despesas 3.1 (Pessoal e Encargos Sociais)
+    const nonPersonnelRecords = records.filter(
+      (r) => !(r.expenseNature ? r.expenseNature.startsWith("3.1") : r.nature === "Pessoal")
+    );
+    const map = new Map<string, number>();
+    for (const r of nonPersonnelRecords) {
+      if (!r.program) continue;
+      map.set(r.program, (map.get(r.program) || 0) + r.value);
+    }
+    const sorted = [...map.entries()]
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+
+    return sorted[0] || summary.programs[0];
+  }, [year, secretariat, getCurrentRecords, summary.programs]);
+
+  const topProcess = useMemo(() => {
+    const records = getCurrentRecords(year).filter(
+      (record) => !secretariat || record.secretariat === secretariat
+    );
+    // Filtrar processos administrativos não vazios
+    const validProcessRecords = records.filter(
+      (r) => r.process && r.process.trim().length > 0 && r.process.trim() !== "-"
+    );
+    const map = new Map<string, number>();
+    for (const r of validProcessRecords) {
+      const proc = r.process.trim();
+      map.set(proc, (map.get(proc) || 0) + r.value);
+    }
+    const sorted = [...map.entries()]
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+
+    if (sorted.length > 0) return sorted[0];
+    return summary.processes.find((p) => p.label && p.label.trim().length > 0) || summary.processes[0];
+  }, [year, secretariat, getCurrentRecords, summary.processes]);
+
+  const topInvestmentAction = useMemo(() => {
+    const records = getCurrentRecords(year).filter(
+      (record) => !secretariat || record.secretariat === secretariat
+    );
+    // Filtrar despesas que começam com "4.4" (Investimentos Diretos)
+    const capitalRecords = records.filter((r) =>
+      r.expenseNature ? r.expenseNature.startsWith("4.4") : r.nature === "Investimentos"
+    );
+    const map = new Map<string, { label: string; value: number }>();
+    for (const r of capitalRecords) {
+      const fullLabel = formatActionLabel(r.action, r.program);
+      const existing = map.get(fullLabel);
+      if (existing) {
+        existing.value += r.value;
+      } else {
+        map.set(fullLabel, { label: fullLabel, value: r.value });
+      }
+    }
+    const sorted = [...map.values()].sort((a, b) => b.value - a.value);
+
+    return sorted[0] || { label: "Ação de Investimento em Infraestrutura", value: summary.investment };
+  }, [year, secretariat, getCurrentRecords, summary.investment]);
 
   const getPriorityValue = (keywords: string[], fallbackPct: number) => {
     const organMatch = summary.organs.find((item) =>
@@ -246,7 +370,32 @@ export function PresentationDashboard() {
     { label: "Obras", value: priorityObras, color: "bg-amber-500" },
     { label: "Mobilidade", value: priorityMobilidade, color: "bg-blue-500" },
     { label: "Assistência", value: priorityAssistencia, color: "bg-emerald-500" },
-  ];
+  ].sort((left, right) => right.value - left.value);
+
+  const personnelShare = summary.total ? summary.natureTotals.Pessoal / summary.total : 0;
+  const budgetPressure = useMemo(
+    () =>
+      personnelShare >= topFiveShare && personnelShare >= 0.45
+        ? {
+            label: "Despesas com pessoal",
+            detail: `${share(summary.natureTotals.Pessoal, summary.total)} da LOA está alocada em pessoal e encargos.`,
+          }
+        : topFiveShare >= 0.75
+          ? {
+              label: "Concentração nas maiores secretarias",
+              detail: `As cinco maiores secretarias concentram ${percent.format(topFiveShare)} do orçamento.`,
+            }
+          : investmentShare < 0.15
+            ? {
+                label: "Baixa margem para investimentos",
+                detail: `Investimentos representam apenas ${percent.format(investmentShare)} da LOA.`,
+              }
+            : {
+                label: "Concentração orçamentária",
+                detail: `As cinco maiores secretarias concentram ${percent.format(topFiveShare)} do orçamento.`,
+              },
+    [investmentShare, personnelShare, summary.natureTotals.Pessoal, summary.total, topFiveShare]
+  );
 
   // Pergunte ao Orçamento Interactivity Handler
   const askQuestion = (question: string) => {
@@ -280,6 +429,13 @@ export function PresentationDashboard() {
         answer = `Para a Educação está previsto o valor de **${compactCurrency(
           priorityEducacao
         )}**, equivalente a **${share(priorityEducacao, summary.total)}** do total LOA ${year}.`;
+      } else if (lower.includes("investimentos e novos projetos") || lower.includes("disponível para investimentos")) {
+        answer = `Estão previstos **${compactCurrency(summary.investment)}** para investimentos e novos projetos, o equivalente a **${share(
+          summary.investment,
+          summary.total
+        )}** da LOA ${year}.`;
+      } else if (lower.includes("risco") || lower.includes("pressão") || lower.includes("pressao")) {
+        answer = `O principal ponto de atenção identificado é **${budgetPressure.label}**: ${budgetPressure.detail}`;
       } else {
         answer = `No orçamento LOA ${year}, o total estimado é de **${compactCurrency(
           summary.total
@@ -356,6 +512,100 @@ export function PresentationDashboard() {
 
     doc.save(`LOA-${year}-Relatorio-Executivo.pdf`);
   };
+
+  const suggestedQuestions = [
+    "Quanto será investido em Saúde?",
+    "Qual secretaria recebe mais recursos?",
+    "Quanto será investido em obras?",
+    "Quanto vai para Educação?",
+    "Quanto está disponível para investimentos e novos projetos?",
+    "Onde está o maior risco orçamentário neste exercício?",
+  ];
+
+  const renderAnswerDisplay = () => {
+    if (!isTyping && !answerText) return null;
+
+    return (
+      <div
+        className="rounded-xl border border-tertiary/25 bg-tertiary/[0.04] p-4 shadow-sm ring-1 ring-tertiary/10 transition-all duration-300"
+        aria-live="polite"
+      >
+        <div className="mb-3 flex items-center gap-2 text-tertiary">
+          <span className="material-symbols-outlined text-[18px]">lightbulb</span>
+          <span className="text-[11px] font-black uppercase tracking-wider">Insight executivo</span>
+        </div>
+        {isTyping ? (
+          <div className="flex items-center gap-2 text-sm text-on-surface-variant font-medium">
+            <span className="animate-pulse">Analisando dotações da LOA...</span>
+          </div>
+        ) : (
+          <p
+            className="text-sm text-on-surface-variant font-medium leading-relaxed"
+            dangerouslySetInnerHTML={{
+              __html: answerText
+                ? answerText.replace(/\*\*(.*?)\*\*/g, '<strong class="text-on-surface font-extrabold">$1</strong>')
+                : "",
+            }}
+          ></p>
+        )}
+      </div>
+    );
+  };
+
+  const aiObservations = useMemo<AiObservation[]>(() => {
+    if (!summary.total) {
+      return [{
+        title: "Dados insuficientes",
+        text: "Não há valores orçamentários disponíveis para gerar observações nesta seleção.",
+        icon: "database",
+        tone: "critical",
+      }];
+    }
+
+    const composition = [
+      { label: "Pessoal e encargos", value: summary.natureTotals.Pessoal },
+      { label: "Custeio", value: summary.natureTotals.Custeio },
+      { label: "Investimentos diretos", value: summary.natureTotals.Investimentos },
+      { label: "Amortização", value: summary.natureTotals.Amortização },
+    ].sort((left, right) => right.value - left.value);
+    const dominantComposition = composition[0];
+    const topOrgan = summary.organs[0];
+    const directInvestmentShare = summary.natureTotals.Investimentos / summary.total;
+    const observations: AiObservation[] = [
+      {
+        title: "Concentração administrativa",
+        text: `${cleanBudgetLabel(topOrgan?.label ?? "Não informado")} é o maior bloco administrativo, com ${compactCurrency(topOrgan?.value ?? 0)} (${share(topOrgan?.value ?? 0, summary.total)} da LOA). As cinco maiores secretarias concentram ${percent.format(topFiveShare)} do orçamento.`,
+        icon: "account_balance",
+        tone: topFiveShare >= 0.75 ? "warning" : "info",
+      },
+      {
+        title: "Composição da despesa",
+        text: `${dominantComposition.label} é a principal categoria, somando ${compactCurrency(dominantComposition.value)} (${share(dominantComposition.value, summary.total)} do total). Essa composição indica onde está concentrada a maior parte da capacidade de execução orçamentária.`,
+        icon: "pie_chart",
+        tone: dominantComposition.label === "Pessoal e encargos" ? "warning" : "info",
+      },
+      {
+        title: "Capacidade de investimento",
+        text: `Os investimentos diretos somam ${compactCurrency(summary.natureTotals.Investimentos)}, equivalentes a ${percent.format(directInvestmentShare)} da LOA. A ação de maior valor é ${cleanBudgetLabel(topInvestmentAction?.label ?? "não informada")}, com ${compactCurrency(topInvestmentAction?.value ?? 0)}.`,
+        icon: "trending_up",
+        tone: directInvestmentShare >= 0.2 ? "positive" : "warning",
+      },
+      {
+        title: "Prioridade financeira",
+        text: `O maior programa identificado é ${cleanBudgetLabel(topProgram?.label ?? "não informado")}, com ${compactCurrency(topProgram?.value ?? 0)}. O processo administrativo de maior valor é ${cleanBudgetLabel(topProcess?.label ?? "não informado")}, com ${compactCurrency(topProcess?.value ?? 0)}.`,
+        icon: "track_changes",
+        tone: "info",
+      },
+      {
+        title: "Ponto de atenção",
+        text: `${budgetPressure.label}: ${budgetPressure.detail} Recomenda-se acompanhar esse indicador durante a execução da LOA.`,
+        icon: "warning",
+        tone: "critical",
+      },
+    ];
+
+    return observations;
+  }, [budgetPressure, summary, topFiveShare, topInvestmentAction, topProcess, topProgram]);
 
   return (
     <div className="relative min-h-screen bg-background font-body text-on-surface antialiased">
@@ -516,6 +766,19 @@ export function PresentationDashboard() {
           </div>
         </div>
 
+        {dataSource === "real" && isLoadingRealData && (
+          <div className="mb-8 flex items-center gap-3 rounded-xl border border-tertiary/20 bg-tertiary/[0.04] px-4 py-3 text-sm font-medium text-tertiary" role="status">
+            <span className="material-symbols-outlined animate-spin text-lg">progress_activity</span>
+            Carregando os dados da importação selecionada...
+          </div>
+        )}
+        {dataSource === "real" && dataError && (
+          <div className="mb-8 flex items-start gap-3 rounded-xl border border-error/25 bg-error/[0.04] px-4 py-3 text-sm font-medium text-error" role="alert">
+            <span className="material-symbols-outlined text-lg">error</span>
+            <span>{dataError} Verifique a importação e tente novamente.</span>
+          </div>
+        )}
+
         {/* 1. Panorama Geral (Header Row) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="p-7 rounded-2xl bg-gradient-to-br from-tertiary to-[#00386b] text-white shadow-xl shadow-tertiary/20 relative overflow-hidden group border border-tertiary/20">
@@ -580,17 +843,11 @@ export function PresentationDashboard() {
                 aria-label="Filtrar por secretaria"
               >
                 <option value="">Todas as Secretarias</option>
-                {PRESENTATION_SECRETARIATS.map((item) => (
+                {availableSecretariats.map((item) => (
                   <option key={item} value={item}>{cleanBudgetLabel(item)}</option>
                 ))}
               </select>
               <span className="material-symbols-outlined text-sm absolute right-3 pointer-events-none">expand_more</span>
-            </div>
-
-            {/* Read-Only Un. Orçamentárias Info */}
-            <div className="relative group px-5 py-2.5 bg-surface border border-outline-variant/60 rounded-xl flex items-center gap-2 text-sm font-semibold shadow-sm">
-              <span className="material-symbols-outlined text-[18px]">account_balance</span>
-              <span>{summary.unitCount} Un. Orçamentárias</span>
             </div>
 
             {/* Year Toggle Button */}
@@ -871,21 +1128,59 @@ export function PresentationDashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-12">
           <div className="md:col-span-8 bg-surface border border-outline-variant/40 rounded-2xl p-8 shadow-sm">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="font-bold text-lg text-on-surface">Alocação por Secretaria (Mapa de Valor)</h3>
-              <div className="flex gap-2 p-1 bg-surface-container-low rounded-lg border border-outline-variant/30">
-                <button className="w-9 h-9 rounded-md bg-white shadow-sm flex items-center justify-center text-tertiary cursor-pointer">
-                  <span className="material-symbols-outlined text-sm">grid_view</span>
-                </button>
+            <div className="flex justify-between items-center mb-8 flex-wrap gap-3">
+              <div>
+                <h3 className="font-bold text-lg text-on-surface">Alocação por Secretaria (Mapa de Valor)</h3>
+                {secretariat && (
+                  <p className="text-xs font-semibold text-tertiary mt-0.5 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    Filtrando por: <strong>{cleanBudgetLabel(secretariat)}</strong>
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {secretariat && (
+                  <button
+                    onClick={() => setSecretariat("")}
+                    className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Voltar à visão inicial (mostrar todas as secretarias)"
+                  >
+                    <span className="material-symbols-outlined text-sm">arrow_back</span>
+                    <span>Voltar para todas</span>
+                  </button>
+                )}
+                <div className="flex gap-2 p-1 bg-surface-container-low rounded-lg border border-outline-variant/30">
+                  <button className="w-9 h-9 rounded-md bg-white shadow-sm flex items-center justify-center text-tertiary cursor-pointer">
+                    <span className="material-symbols-outlined text-sm">grid_view</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <Treemap items={summary.organs} onSelectSecretariat={setSecretariat} />
+            <Treemap items={summary.organs} selectedSecretariat={secretariat} onSelectSecretariat={setSecretariat} />
 
-            <div className="mt-6 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl text-sm font-medium text-on-surface-variant flex items-start gap-3 shadow-sm">
-              <span className="material-symbols-outlined text-tertiary mt-0.5">info</span>
-              Nota: As 5 maiores Secretarias representam {percent.format(topFiveShare)} de toda a LOA, indicando forte concentração em áreas sociais e infraestrutura. Clique nas caixas acima para filtrar por secretaria específica.
-            </div>
+            {secretariat ? (
+              <div className="mt-6 p-4 bg-tertiary/10 border border-tertiary/20 rounded-xl text-sm font-medium text-tertiary flex items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-tertiary">filter_alt</span>
+                  <span>
+                    Exibindo apenas dados da secretaria: <strong>{cleanBudgetLabel(secretariat)}</strong>
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSecretariat("")}
+                  className="px-3 py-1.5 text-xs font-bold bg-tertiary text-white rounded-lg hover:bg-tertiary/90 transition-colors flex items-center gap-1 cursor-pointer shadow-sm shrink-0"
+                >
+                  <span className="material-symbols-outlined text-xs">restart_alt</span>
+                  Voltar à Visão Inicial
+                </button>
+              </div>
+            ) : (
+              <div className="mt-6 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl text-sm font-medium text-on-surface-variant flex items-start gap-3 shadow-sm">
+                <span className="material-symbols-outlined text-tertiary mt-0.5">info</span>
+                Nota: As 5 maiores Secretarias representam {percent.format(topFiveShare)} de toda a LOA, indicando forte concentração em áreas sociais e infraestrutura. Clique nas caixas acima para filtrar por secretaria específica.
+              </div>
+            )}
           </div>
 
           <div className="md:col-span-4 space-y-6">
@@ -898,37 +1193,46 @@ export function PresentationDashboard() {
               </h3>
               <div className="space-y-5">
                 <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors">
+                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors shrink-0">
                     1
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Maior Programa</p>
-                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors">
+                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors truncate" title={topProgram?.label}>
                       {cleanBudgetLabel(topProgram?.label ?? "Não informado")}
                     </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors">
-                    2
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Maior Processo Administrativo</p>
-                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors">
-                      {cleanBudgetLabel(topProcess?.label ?? "Não informado")}
+                    <p className="text-xs font-extrabold text-tertiary mt-0.5">
+                      {currency.format(topProgram?.value || 0)}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors">
+                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors shrink-0">
+                    2
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Maior Processo Administrativo</p>
+                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors leading-snug break-words" title={topProcess?.label}>
+                      {topProcess?.label ? (cleanBudgetLabel(topProcess.label) || topProcess.label) : "Não informado"}
+                    </p>
+                    <p className="text-xs font-extrabold text-tertiary mt-1">
+                      {currency.format(topProcess?.value || 0)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4 group">
+                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors shrink-0">
                     3
                   </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Maior Investimento</p>
-                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors">
-                      {cleanBudgetLabel(topInvestment?.label ?? "Não informado")}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Ação com Maior Investimento (Despesas 4.4)</p>
+                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors leading-snug break-words" title={topInvestmentAction?.label}>
+                      {topInvestmentAction?.label || "Não informado"}
+                    </p>
+                    <p className="text-xs font-extrabold text-tertiary mt-1">
+                      {currency.format(topInvestmentAction?.value || 0)}
                     </p>
                   </div>
                 </div>
@@ -1003,38 +1307,42 @@ export function PresentationDashboard() {
               <h2 className="text-2xl font-headline font-black text-on-surface">O que merece atenção (Análise IA)</h2>
             </div>
             <div className="space-y-4">
-              <div className="flex gap-5 items-start p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/40 hover:border-tertiary/30 transition-colors shadow-sm">
-                <div className="mt-1 w-3 h-3 rounded-full bg-tertiary shrink-0 shadow-[0_0_8px_rgba(0,93,167,0.4)]"></div>
-                <p className="text-sm font-medium leading-relaxed text-on-surface-variant">
-                  {cleanBudgetLabel(summary.organs[0]?.label ?? "Saúde")} concentra{" "}
-                  <span className="font-bold text-on-surface bg-tertiary/10 px-1.5 py-0.5 rounded">
-                    {share(summary.organs[0]?.value ?? 0, summary.total)} do orçamento
-                  </span>
-                  , sendo o maior bloco administrativo do município neste exercício.
-                </p>
-              </div>
+              {aiObservations.map((observation) => {
+                const styles = {
+                  info: {
+                    container: "bg-surface-container-lowest border-outline-variant/40 hover:border-tertiary/30",
+                    icon: "bg-tertiary",
+                    text: "text-on-surface-variant",
+                  },
+                  positive: {
+                    container: "bg-[#e8f5e9] border-[#c8e6c9] hover:border-[#a5d6a7]",
+                    icon: "bg-[#43a047]",
+                    text: "text-[#1b5e20]",
+                  },
+                  warning: {
+                    container: "bg-[#fff8e1] border-[#ffecb3] hover:border-[#ffd54f]",
+                    icon: "bg-[#fbc02d]",
+                    text: "text-[#795548]",
+                  },
+                  critical: {
+                    container: "bg-[#ffebee] border-[#ffcdd2] hover:border-[#ef9a9a]",
+                    icon: "bg-[#e53935]",
+                    text: "text-[#b71c1c]",
+                  },
+                }[observation.tone];
 
-              <div className="flex gap-5 items-start p-5 bg-[#fff8e1] rounded-xl border border-[#ffecb3] hover:border-[#ffd54f] transition-colors shadow-sm">
-                <div className="mt-1 w-3 h-3 rounded-full bg-[#fbc02d] shrink-0 shadow-[0_0_8px_rgba(251,192,45,0.4)]"></div>
-                <p className="text-sm font-medium leading-relaxed text-[#795548]">
-                  O maior programa geral é o <span className="font-bold text-[#3e2723] bg-[#ffecb3] px-1.5 py-0.5 rounded">{cleanBudgetLabel(topProgram?.label ?? "não informado")}</span>, com alocação total de {compactCurrency(topProgram?.value ?? 0)}.
-                </p>
-              </div>
-
-              <div className="flex gap-5 items-start p-5 bg-[#e8f5e9] rounded-xl border border-[#c8e6c9] hover:border-[#a5d6a7] transition-colors shadow-sm">
-                <div className="mt-1 w-3 h-3 rounded-full bg-[#43a047] shrink-0 shadow-[0_0_8px_rgba(67,160,71,0.4)]"></div>
-                <p className="text-sm font-medium leading-relaxed text-[#1b5e20]">
-                  Investimentos somam <span className="font-bold text-[#1b5e20] bg-[#c8e6c9] px-1.5 py-0.5 rounded">{compactCurrency(summary.investment)}</span>, o equivalente a {share(summary.investment, summary.total)} da LOA total.
-                </p>
-              </div>
-
-              <div className="flex gap-5 items-start p-5 bg-[#ffebee] rounded-xl border border-[#ffcdd2] hover:border-[#ef9a9a] transition-colors shadow-sm">
-                <div className="mt-1 w-3 h-3 rounded-full bg-[#e53935] shrink-0 shadow-[0_0_8px_rgba(229,57,53,0.4)]"></div>
-                <p className="text-sm font-medium leading-relaxed text-[#b71c1c]">
-                  <span className="font-black uppercase tracking-wider text-xs bg-[#ffcdd2] px-2 py-1 rounded mr-1">Atenção Crítica</span>
-                  Recomendado acompanhar a dotação de {cleanBudgetLabel(summary.functions[0]?.label ?? "Previdência")} por representar o maior bloco funcional de custos.
-                </p>
-              </div>
+                return (
+                  <div key={observation.title} className={`flex gap-4 items-start p-5 rounded-xl border transition-colors shadow-sm ${styles.container}`}>
+                    <div className={`mt-0.5 w-9 h-9 rounded-lg ${styles.icon} text-white flex items-center justify-center shrink-0`}>
+                      <span className="material-symbols-outlined text-lg">{observation.icon}</span>
+                    </div>
+                    <div className={`text-sm font-medium leading-relaxed ${styles.text}`}>
+                      <p className="font-black mb-1">{observation.title}</p>
+                      <p>{observation.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1049,45 +1357,23 @@ export function PresentationDashboard() {
             <p className="text-sm text-on-surface-variant mb-6 font-medium">Acesso rápido aos dados consolidados para tomadas de decisão imediatas.</p>
 
             <div className="space-y-3 flex-1">
-              {[
-                "Quanto será investido em Saúde?",
-                "Qual secretaria recebe mais recursos?",
-                "Quanto será investido em obras?",
-                "Quanto vai para Educação?",
-              ].map((q) => (
-                <button
-                  key={q}
-                  onClick={() => askQuestion(q)}
-                  className="w-full text-left p-4 bg-white border border-outline-variant/30 hover:border-tertiary hover:shadow-md transition-all rounded-xl text-sm font-bold flex justify-between items-center group text-on-surface cursor-pointer"
-                >
-                  {q}
-                  <span className="material-symbols-outlined text-tertiary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">
-                    arrow_forward
-                  </span>
-                </button>
+              {suggestedQuestions.map((q) => (
+                <div key={q} className="space-y-2">
+                  <button
+                    onClick={() => askQuestion(q)}
+                    className={`w-full text-left p-4 bg-white border transition-all rounded-xl text-sm font-bold flex justify-between items-center group text-on-surface cursor-pointer ${
+                      questionText === q ? "border-tertiary shadow-sm" : "border-outline-variant/30 hover:border-tertiary hover:shadow-md"
+                    }`}
+                  >
+                    {q}
+                    <span className="material-symbols-outlined text-tertiary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">
+                      arrow_forward
+                    </span>
+                  </button>
+                  {questionText === q && renderAnswerDisplay()}
+                </div>
               ))}
             </div>
-
-            {/* Answer Display */}
-            {(isTyping || answerText) && (
-              <div className="mt-6 p-4 rounded-xl bg-white border border-outline-variant/30 shadow-sm transition-all duration-300">
-                {isTyping ? (
-                  <div className="flex items-center gap-2 text-sm text-on-surface-variant font-medium">
-                    <span className="animate-pulse">Analisando dotações da LOA...</span>
-                  </div>
-                ) : (
-                  <p
-                    className="text-sm text-on-surface-variant font-medium leading-relaxed"
-                    dangerouslySetInnerHTML={{
-                      __html: answerText
-                        ? answerText
-                            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-on-surface font-extrabold">$1</strong>')
-                        : "",
-                    }}
-                  ></p>
-                )}
-              </div>
-            )}
 
             <div className="mt-6 pt-6 border-t border-outline-variant/40">
               <form
@@ -1114,6 +1400,7 @@ export function PresentationDashboard() {
                 </button>
               </form>
             </div>
+            {questionText && !suggestedQuestions.includes(questionText) && <div className="mt-4">{renderAnswerDisplay()}</div>}
           </div>
         </div>
 

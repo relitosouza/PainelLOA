@@ -5,7 +5,7 @@ import { FIELDS, type FieldKey } from "@/types/loa";
 import { EMPTY_DASHBOARD_FILTERS, type DashboardFilterState } from "@/lib/dashboard-data";
 
 export const FIELD_LABELS: Record<FieldKey, string> = {
-  organ: "Órgão",
+  organ: "Secretaria",
   budgetUnit: "Unidade Orçamentária",
   functionName: "Função",
   subfunction: "Subfunção",
@@ -19,104 +19,231 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
 export type FilterState = DashboardFilterState;
 export const EMPTY_FILTERS: FilterState = EMPTY_DASHBOARD_FILTERS;
 
-function MultiSelect({ field, options, selected, onChange }: { field: FieldKey; options: string[]; selected: string[]; onChange(values: string[]): void }) {
-  const [search, setSearch] = useState("");
-  const fieldId = `filter-${field}`;
-  const visible = search ? options.filter((option) => option.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR"))) : options;
-  const toggle = (value: string) => {
-    const alreadySelected = selected.includes(value);
-    onChange(alreadySelected ? selected.filter((item) => item !== value) : [...selected, value]);
-    if (!alreadySelected) setSearch("");
+export function Filters({
+  filters,
+  options,
+  total,
+  onChange,
+  onClear,
+}: {
+  filters: FilterState;
+  options: Record<FieldKey, string[]>;
+  total: number;
+  onChange(filters: FilterState): void;
+  onClear(): void;
+}) {
+  const [showRange, setShowRange] = useState(false);
+
+  const activeCount =
+    FIELDS.reduce((sum, field) => sum + (filters[field]?.length || 0), 0) +
+    Number(Boolean(filters.min)) +
+    Number(Boolean(filters.max)) +
+    Number(Boolean(filters.search));
+
+  const removeFilterItem = (field: FieldKey, value: string) => {
+    onChange({
+      ...filters,
+      [field]: (filters[field] || []).filter((item) => item !== value),
+    });
   };
-  const visibleSelected = selected.slice(0, 2);
-  const hiddenSelectedCount = Math.max(0, selected.length - visibleSelected.length);
-  const removeSelected = (value: string) => onChange(selected.filter((item) => item !== value));
+
   return (
-    <div className="filter-field">
-      <span className="filter-label" id={`${fieldId}-label`}>{FIELD_LABELS[field]}</span>
-      <details className="filter-select" data-testid={`${fieldId}-select`}>
-        <summary aria-labelledby={`${fieldId}-label`} aria-describedby={selected.length ? `${fieldId}-selected-summary` : undefined} data-testid={`${fieldId}-summary`}>
-          <span>{selected.length ? `${selected.length} selecionado${selected.length > 1 ? "s" : ""}` : "Todos"}</span><span aria-hidden="true">⌄</span>
-        </summary>
-        <div className="select-menu">
-          {selected.length > 0 && (
-            <div className="selected-preview" id={`${fieldId}-selected-summary`} data-testid={`${fieldId}-selected-preview`}>
-              {visibleSelected.map((item, index) => (
+    <section className="glass-card p-5 bg-surface border border-outline-variant space-y-4 rounded-xl shadow-sm" data-testid="filters-panel">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-primary">tune</span>
+          <div>
+            <h3 className="text-sm font-headline font-bold text-on-surface" id="filters-title" data-testid="filters-title">
+              Filtros Avançados Orçamentários
+            </h3>
+            <p className="text-[11px] text-on-surface-variant">
+              As seleções atualizam o painel dinamicamente
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search Input */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar por código, ação, palavra-chave..."
+              value={filters.search || ""}
+              onChange={(e) => onChange({ ...filters, search: e.target.value })}
+              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-60"
+              data-testid="filters-search"
+            />
+            {filters.search && (
+              <button
+                type="button"
+                onClick={() => onChange({ ...filters, search: "" })}
+                className="absolute right-2 top-1.5 text-xs text-on-surface-variant hover:text-rose-600 font-bold"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* Faixa de Valor Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowRange((prev) => !prev)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+              showRange || filters.min || filters.max
+                ? "bg-primary/10 border-primary text-primary font-bold"
+                : "border-outline-variant text-on-surface-variant hover:bg-surface-container/50"
+            }`}
+            data-testid="filters-advanced-toggle"
+          >
+            {showRange ? "Ocultar Valores" : "Faixa de Valor"}
+          </button>
+
+          {/* Total Counter Badge */}
+          <div className="text-xs text-on-surface-variant bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/60" data-testid="filters-status">
+            <strong data-testid="filters-total">{total.toLocaleString("pt-BR")}</strong> registros
+            {activeCount > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-[10px] bg-primary text-on-primary font-bold rounded-full" data-testid="filters-active-count">
+                {activeCount}
+              </span>
+            )}
+          </div>
+
+          {/* Limpar Filtros Button */}
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={!activeCount}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+              activeCount
+                ? "text-rose-600 hover:bg-rose-50 border-rose-200 cursor-pointer"
+                : "text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
+            }`}
+            data-testid="filters-clear"
+          >
+            Limpar Filtros
+          </button>
+        </div>
+      </div>
+
+      {/* Faixa de valor (se ativada) */}
+      {showRange && (
+        <div className="flex items-center gap-3 pt-1 pb-2 border-t border-outline-variant/40">
+          <span className="text-xs font-bold text-on-surface-variant">Valores (R$):</span>
+          <input
+            className="px-3 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-36"
+            id="filters-min"
+            name="min"
+            inputMode="decimal"
+            placeholder="Mínimo"
+            value={filters.min || ""}
+            onChange={(e) => onChange({ ...filters, min: e.target.value })}
+            data-testid="filters-min"
+          />
+          <span className="text-xs text-on-surface-variant">até</span>
+          <input
+            className="px-3 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-36"
+            id="filters-max"
+            name="max"
+            inputMode="decimal"
+            placeholder="Máximo"
+            value={filters.max || ""}
+            onChange={(e) => onChange({ ...filters, max: e.target.value })}
+            data-testid="filters-max"
+          />
+        </div>
+      )}
+
+      {/* Grade de Select Chips (idêntico à página Analise LOA) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {FIELDS.map((field) => {
+          const selected = filters[field] || [];
+          const selectedCount = selected.length;
+          const rawOptions = options[field] || [];
+          // Filtrar números de 4 dígitos ou formato XX.YY das opções de Natureza/Subelemento se houver
+          const filteredOpts = rawOptions
+            .filter((opt) => {
+              const trimmed = opt.trim();
+              return !/^\d{4}$/.test(trimmed) && !/^\d{2}\.\d{2}$/.test(trimmed);
+            })
+            .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+
+          return (
+            <div key={field} className="flex flex-col gap-1" data-testid={`filter-${field}-select`}>
+              <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
+                <span>{FIELD_LABELS[field]}</span>
+              </label>
+              <select
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  const alreadySelected = selected.includes(val);
+                  const nextValues = alreadySelected
+                    ? selected.filter((v) => v !== val)
+                    : [...selected, val];
+                  onChange({ ...filters, [field]: nextValues });
+                }}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+                  selectedCount
+                    ? "bg-primary/5 border-primary font-bold text-primary cursor-pointer"
+                    : "bg-surface border-outline-variant text-on-surface-variant cursor-pointer hover:bg-surface-container/50"
+                }`}
+                value=""
+                data-testid={`filter-${field}-summary`}
+              >
+                <option value="">{selectedCount ? `${selectedCount} sel.` : "Todos"}</option>
+                {filteredOpts.slice(0, 150).map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Badges dos Filtros Ativos para fácil remoção rápida */}
+      {activeCount > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/40">
+          <span className="text-[11px] font-bold text-on-surface-variant mr-1">Filtros ativos:</span>
+          {FIELDS.flatMap((field) =>
+            (filters[field] || []).map((val) => (
+              <span
+                key={`${field}-${val}`}
+                className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20"
+              >
+                <strong>{FIELD_LABELS[field]}:</strong> {val}
                 <button
                   type="button"
-                  className="selected-chip"
-                  key={item}
-                  title={`Remover ${item}`}
-                  onClick={() => removeSelected(item)}
-                  data-testid={`${fieldId}-selected-chip-${index}`}
+                  onClick={() => removeFilterItem(field, val)}
+                  className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
                 >
-                  <span className="selected-chip-label">{item}</span>
-                  <span aria-hidden="true" className="selected-chip-remove">×</span>
+                  ×
                 </button>
-              ))}
-              {hiddenSelectedCount > 0 && <span className="selected-chip selected-chip-more">+{hiddenSelectedCount}</span>}
-            </div>
+              </span>
+            ))
           )}
-          <input
-            className="select-search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={`Buscar ${FIELD_LABELS[field].toLowerCase()}…`}
-            aria-label={`Buscar ${FIELD_LABELS[field]}`}
-            aria-controls={`${fieldId}-options`}
-            autoComplete="off"
-            name={`${field}-search`}
-            data-testid={`${fieldId}-search`}
-          />
-          <div className="select-options" id={`${fieldId}-options`} data-testid={`${fieldId}-options`}>
-            {visible.length ? visible.map((option, index) => (
-              <label className="select-option" key={option} data-testid={`${fieldId}-option-${index}`}>
-                <input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)} />
-                <span>{option}</span>
-              </label>
-            )) : <div className="select-option" role="status">Nenhuma opção encontrada</div>}
-          </div>
+          {filters.min && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
+              <strong>Mínimo:</strong> R$ {filters.min}
+              <button type="button" onClick={() => onChange({ ...filters, min: "" })} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs">×</button>
+            </span>
+          )}
+          {filters.max && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
+              <strong>Máximo:</strong> R$ {filters.max}
+              <button type="button" onClick={() => onChange({ ...filters, max: "" })} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs">×</button>
+            </span>
+          )}
+          {filters.search && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
+              <strong>Busca:</strong> "{filters.search}"
+              <button type="button" onClick={() => onChange({ ...filters, search: "" })} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs">×</button>
+            </span>
+          )}
         </div>
-      </details>
-    </div>
-  );
-}
-
-export function Filters({ filters, options, total, onChange, onClear }: { filters: FilterState; options: Record<FieldKey, string[]>; total: number; onChange(filters: FilterState): void; onClear(): void }) {
-  const [advanced, setAdvanced] = useState(false);
-  const activeCount = FIELDS.reduce((sum, field) => sum + filters[field].length, 0) + Number(Boolean(filters.min)) + Number(Boolean(filters.max));
-  const fields = advanced ? FIELDS : FIELDS.slice(0, 4);
-  return (
-    <section className="panel filters-panel" aria-labelledby="filters-title" data-testid="filters-panel">
-      <div className="panel-header">
-        <div>
-          <h2 className="panel-title" id="filters-title">Filtros da análise</h2>
-          <p className="panel-caption">As seleções atualizam todo o painel automaticamente</p>
-        </div>
-        <button className="button ghost" type="button" onClick={() => setAdvanced((value) => !value)} aria-expanded={advanced} data-testid="filters-advanced-toggle">
-          {advanced ? "Menos filtros" : "Mais filtros"}
-        </button>
-      </div>
-      <div className="filter-grid">
-        {fields.map((field) => <MultiSelect key={field} field={field} options={options[field] ?? []} selected={filters[field]} onChange={(values) => onChange({ ...filters, [field]: values })} />)}
-        {advanced && (
-          <div className="filter-field">
-            <label htmlFor="filters-min">Faixa de valor</label>
-            <div className="range">
-              <input className="input" id="filters-min" name="min" inputMode="decimal" aria-label="Valor mínimo" placeholder="Mínimo" value={filters.min} onChange={(event) => onChange({ ...filters, min: event.target.value })} data-testid="filters-min" />
-              <input className="input" id="filters-max" name="max" inputMode="decimal" aria-label="Valor máximo" placeholder="Máximo" value={filters.max} onChange={(event) => onChange({ ...filters, max: event.target.value })} data-testid="filters-max" />
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="filter-footer">
-        <div className="active-filters" role="status" aria-live="polite" data-testid="filters-status">
-          <strong data-testid="filters-total">{total.toLocaleString("pt-BR")}</strong> registros encontrados {activeCount > 0 && <span className="tag" data-testid="filters-active-count">{activeCount} filtro{activeCount > 1 ? "s" : ""} ativo{activeCount > 1 ? "s" : ""}</span>}
-        </div>
-        <button className="button secondary" type="button" onClick={onClear} disabled={!activeCount} data-testid="filters-clear">
-          Limpar filtros
-        </button>
-      </div>
+      )}
     </section>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getPrimaryPageLinks } from "@/lib/page-navigation";
+import { getNavigationLinks, getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
 import type { FilterState } from "./filters";
 
 export function Sidebar({
@@ -32,8 +32,23 @@ export function Sidebar({
 
   const [receitasExpanded, setReceitasExpanded] = useState(true);
   const [despesasExpanded, setDespesasExpanded] = useState(true);
+  const [navigationSections, setNavigationSections] = useState<NavigationSection[]>(getNavigationSections());
 
-  const primaryLinks = getPrimaryPageLinks(view);
+  useEffect(() => {
+    const loadNavigation = () => {
+      try {
+        const saved = localStorage.getItem(NAVIGATION_SETTINGS_STORAGE_KEY);
+        if (saved) setNavigationSections(JSON.parse(saved) as NavigationSection[]);
+      } catch {
+        setNavigationSections(getNavigationSections());
+      }
+    };
+    loadNavigation();
+    window.addEventListener("painel-loa-navigation-change", loadNavigation);
+    return () => window.removeEventListener("painel-loa-navigation-change", loadNavigation);
+  }, []);
+
+  const linksBySection = navigationSections.map((section) => ({ section, links: getNavigationLinks([section]) }));
   const isVisible = isDesktop ? !collapsed : mobileOpen;
 
   return (
@@ -80,30 +95,10 @@ export function Sidebar({
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
         <div className="space-y-1">
-          {primaryLinks.map((link) => {
+          {linksBySection.map(({ section, links }) => <div key={section.key} className="space-y-1 pt-1"><span className={`px-4 text-[10px] font-bold tracking-wider text-white/40 uppercase block mb-1 ${collapsed ? "md:hidden" : ""}`}>{section.label}</span>{links.map((link) => {
             const isActive = !["importacao", "relatorios", "configuracoes"].includes(view) && view === link.key;
-            return (
-              <Link
-                key={link.key}
-                href={link.href}
-                onClick={() => setMobileOpen(false)}
-                aria-current={isActive ? "page" : undefined}
-                className={`flex items-center gap-3 py-3 px-4 font-medium transition-all ${
-                  isActive
-                    ? "bg-white/12 text-white rounded-xl ring-1 ring-inset ring-white/15 shadow-sm"
-                    : "text-white/70 hover:bg-white/5 hover:text-white rounded-xl"
-                }`}
-              >
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontVariationSettings: isActive ? "'FILL' 1" : undefined }}
-                >
-                  {link.icon}
-                </span>
-                <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span>
-              </Link>
-            );
-          })}
+            return <Link key={link.key} href={link.href} onClick={() => setMobileOpen(false)} aria-current={isActive ? "page" : undefined} className={`flex items-center gap-3 py-3 px-4 font-medium transition-all ${isActive ? "bg-white/12 text-white rounded-xl ring-1 ring-inset ring-white/15 shadow-sm" : "text-white/70 hover:bg-white/5 hover:text-white rounded-xl"}`}><span className="material-symbols-outlined" style={{ fontVariationSettings: isActive ? "'FILL' 1" : undefined }}>{link.icon}</span><span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span></Link>;
+          })}</div>)}
           <div className="pt-2">
             <span className={`px-4 text-[10px] font-bold tracking-wider text-white/40 uppercase block mb-1 ${collapsed ? "md:hidden" : ""}`}>
               PAINEL DE RECEITAS MUNICIPAIS
