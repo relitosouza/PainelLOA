@@ -50,7 +50,7 @@ function clean(value: unknown) {
 }
 
 function getHeaderMap(row: unknown[]) {
-  const map = new Map<FieldKey | "value", number>();
+  const map = new Map<FieldKey | "value" | "budgetPiece", number>();
   row.forEach((cell, index) => {
     const field = HEADER_ALIASES[normalizeHeader(cell)];
     if (field) map.set(field, index);
@@ -58,7 +58,7 @@ function getHeaderMap(row: unknown[]) {
   return map;
 }
 
-function isValidHeader(map: Map<FieldKey | "value", number>) {
+function isValidHeader(map: Map<FieldKey | "value" | "budgetPiece", number>) {
   return REQUIRED.every((field) => map.has(field));
 }
 
@@ -73,7 +73,7 @@ export function parseRows(rows: unknown[][]) {
   const records: BudgetRow[] = [];
   const invalidValues: number[] = [];
   let currentOrgan = "";
-  let headerMap = new Map<FieldKey | "value", number>();
+  let headerMap = new Map<FieldKey | "value" | "budgetPiece", number>();
 
   rows.forEach((row, rowIndex) => {
     if (!row.some((cell) => clean(cell))) return;
@@ -125,4 +125,3 @@ export function parseRows(rows: unknown[][]) {
   const missingOrgan = records.some((record) => !record.organ);
   return { records, invalidValues, missingOrgan, hasRequiredFields: isValidHeader(headerMap) };
 }
-

@@ -205,4 +205,107 @@ model NomenclaturaDespesa {
   @@index([codigoFormatado])
 }
 
+enum StatusEnquadramentoLdo {
+  PENDENTE
+  PARCIAL
+  CONCLUIDO
+}
 
+model LdoAcaoImportacao {
+  id             String    @id @default(cuid())
+  nomeArquivo    String
+  exercicio      Int
+  quantidade     Int
+  valorTotal     Decimal   @db.Decimal(18, 2)
+  ativo          Boolean   @default(true)
+  criadoEm       DateTime  @default(now())
+  acoes          LdoAcao[]
+
+  @@index([exercicio, ativo])
+}
+
+model LdoAcao {
+  id              String                 @id @default(cuid())
+  importacaoId    String
+  importacao      LdoAcaoImportacao      @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
+  exercicio       Int
+  secretaria      String                 @db.VarChar(255)
+  programaCodigo  String?                @db.VarChar(50)
+  programaNome    String                 @db.VarChar(255)
+  funcaoCodigo    String?                @db.VarChar(50)
+  funcaoNome      String?                @db.VarChar(255)
+  subfuncaoCodigo String?                @db.VarChar(50)
+  subfuncaoNome   String?                @db.VarChar(255)
+  acaoCodigo      String                 @db.VarChar(50)
+  acaoNome        String?                @db.VarChar(255)
+  produto         String                 @db.Text
+  metaFisica      Decimal?               @db.Decimal(18, 2)
+  custoFinanceiro Decimal                @db.Decimal(18, 2)
+  linhaOrigem     Int?
+  criadoEm        DateTime               @default(now())
+  enquadramentos  EnquadramentoLdoLoa[]
+
+  @@index([exercicio, secretaria])
+  @@index([acaoCodigo])
+  @@index([importacaoId])
+}
+
+model CodigoAuxiliarImportacao {
+  id          String           @id @default(cuid())
+  nomeArquivo String
+  exercicio   Int
+  versao      String?          @db.VarChar(50)
+  quantidade  Int
+  ativo       Boolean          @default(true)
+  criadoEm    DateTime         @default(now())
+  codigos     CodigoAuxiliar[]
+
+  @@index([exercicio, ativo])
+}
+
+model CodigoAuxiliar {
+  id             String                    @id @default(cuid())
+  importacaoId   String
+  importacao     CodigoAuxiliarImportacao  @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
+  exercicio      Int
+  tipo           String                    @db.VarChar(100)
+  abaOrigem      String                    @db.VarChar(150)
+  codigo         String                    @db.VarChar(100)
+  nome           String                    @db.Text
+  especificacao  String?                   @db.Text
+  observacao     String?                   @db.Text
+  metadados      Json?
+  ativo          Boolean                   @default(true)
+  criadoEm       DateTime                  @default(now())
+  enquadramentosDespesa EnquadramentoLdoLoa[] @relation("DespesaEnquadramento")
+  enquadramentosFonte   EnquadramentoLdoLoa[] @relation("FonteEnquadramento")
+  enquadramentosAplicacao EnquadramentoLdoLoa[] @relation("AplicacaoEnquadramento")
+
+  @@unique([importacaoId, tipo, codigo])
+  @@index([exercicio, tipo, ativo])
+  @@index([codigo])
+}
+
+model EnquadramentoLdoLoa {
+  id                  String          @id @default(cuid())
+  ldoAcaoId           String
+  ldoAcao             LdoAcao         @relation(fields: [ldoAcaoId], references: [id], onDelete: Cascade)
+  despesaId           String
+  despesa             CodigoAuxiliar  @relation("DespesaEnquadramento", fields: [despesaId], references: [id])
+  fonteRecursoId       String
+  fonteRecurso         CodigoAuxiliar  @relation("FonteEnquadramento", fields: [fonteRecursoId], references: [id])
+  codigoAplicacaoId    String
+  codigoAplicacao      CodigoAuxiliar  @relation("AplicacaoEnquadramento", fields: [codigoAplicacaoId], references: [id])
+  valor               Decimal         @db.Decimal(18, 2)
+  justificativa       String?         @db.Text
+  motivoSugestao      String?         @db.Text
+  responsavel         String?         @db.VarChar(255)
+  criadoEm            DateTime        @default(now())
+  atualizadoEm        DateTime        @updatedAt
+  removidoEm          DateTime?
+
+  @@index([ldoAcaoId, removidoEm])
+  @@index([despesaId])
+  @@index([fonteRecursoId])
+  @@index([codigoAplicacaoId])
+}

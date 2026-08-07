@@ -3,6 +3,8 @@ export type PresentationRecord = {
   unit: string;
   functionName: string;
   program: string;
+  action?: string;
+  expenseNature?: string;
   process: string;
   category: "operating" | "investment";
   nature: "Pessoal" | "Custeio" | "Investimentos" | "Amortização";

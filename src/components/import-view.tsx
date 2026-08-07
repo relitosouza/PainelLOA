@@ -30,9 +30,10 @@ async function downloadTemplate() {
 }
 
 import { LdoImportForm } from "./ldo-import-form";
+import { PlanningImportForm } from "./planning-import-form";
 
 export function ImportView() {
-  const [activeTab, setActiveTab] = useState<"despesa" | "receita" | "ldo" | "loa_receita">("despesa");
+  const [activeTab, setActiveTab] = useState<"despesa" | "receita" | "ldo" | "loa_receita" | "planejamento">("despesa");
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -97,33 +98,41 @@ export function ImportView() {
         {/* Tabs de Tipos de Importação */}
         <div className="flex gap-2 mt-6 overflow-x-auto border-b border-outline-variant/20 pb-0.5">
           <button 
+            onClick={() => setActiveTab("planejamento")} 
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === "planejamento" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+          >
+            LDO Ações + Tabelas Auxiliares
+          </button>
+          <button 
             onClick={() => setActiveTab("despesa")} 
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "despesa" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === "despesa" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
           >
             Importar Despesas
           </button>
           <button 
             onClick={() => setActiveTab("ldo")} 
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "ldo" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === "ldo" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
           >
             LDO Receitas
           </button>
           <button 
             onClick={() => setActiveTab("loa_receita")} 
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "loa_receita" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === "loa_receita" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
           >
             LOA Receitas
           </button>
           <button 
             onClick={() => setActiveTab("receita")} 
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${activeTab === "receita" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${activeTab === "receita" ? "border-primary text-primary bg-surface-container font-bold" : "border-transparent text-on-surface-variant hover:bg-surface-container-low"}`}
           >
             Receita Arrecadada
           </button>
         </div>
       </header>
 
-      {activeTab === "despesa" ? (
+      {activeTab === "planejamento" ? (
+        <PlanningImportForm />
+      ) : activeTab === "despesa" ? (
         <>
           {message && (
             <div className={`p-4 rounded-xl text-sm mb-6 border ${
