@@ -1,4 +1,13 @@
-export type PrimaryPageKey = "dashboard" | "apresentacao" | "transparente" | "receitas" | "despesas" | "analise-loa" | "elaboracao-loa";
+export type PrimaryPageKey =
+  | "dashboard"
+  | "apresentacao"
+  | "transparente"
+  | "receitas"
+  | "despesas"
+  | "analise-loa"
+  | "elaboracao-loa"
+  | "importacao"
+  | "relatorios";
 
 export type PrimaryPageLink = {
   key: PrimaryPageKey;
@@ -7,7 +16,14 @@ export type PrimaryPageLink = {
   icon: string;
 };
 
-export type NavigationSectionKey = "visao-analitica" | "painel-executivo" | "loa-transparente";
+export type NavigationSectionKey =
+  | "visao-analitica"
+  | "painel-executivo"
+  | "loa-transparente"
+  | "painel-receitas"
+  | "painel-despesas"
+  | "ferramentas";
+
 export type NavigationSection = {
   key: NavigationSectionKey;
   label: string;
@@ -17,9 +33,8 @@ export type NavigationSection = {
 export const NAVIGATION_SETTINGS_STORAGE_KEY = "painel_loa_navigation_settings_v1";
 
 export const DEFAULT_NAVIGATION_SECTIONS: NavigationSection[] = [
-  { key: "visao-analitica", label: "Visão Analítica", pages: ["dashboard", "analise-loa", "elaboracao-loa"] },
-  { key: "painel-executivo", label: "Painel Executivo", pages: ["apresentacao"] },
-  { key: "loa-transparente", label: "LOA Transparente", pages: ["transparente"] },
+  { key: "visao-analitica", label: "Visão Analítica", pages: ["dashboard"] },
+  { key: "loa-transparente", label: "Orçamento Transparente", pages: ["transparente"] },
 ];
 
 export const PRIMARY_PAGE_LINKS: PrimaryPageLink[] = [
@@ -27,7 +42,11 @@ export const PRIMARY_PAGE_LINKS: PrimaryPageLink[] = [
   { key: "analise-loa", label: "Análise LOA (subelemento)", href: "/analise-loa", icon: "pivot_table_chart" },
   { key: "elaboracao-loa", label: "Elaboração da LOA", href: "/elaboracao-loa", icon: "account_tree" },
   { key: "apresentacao", label: "Painel Executivo", href: "/apresentacao", icon: "slideshow" },
-  { key: "transparente", label: "LOA Transparente", href: "/transparente", icon: "visibility" },
+  { key: "transparente", label: "Orçamento Transparente", href: "/transparente", icon: "visibility" },
+  { key: "receitas", label: "Painel de Receitas Municipais", href: "/receitas", icon: "account_balance_wallet" },
+  { key: "despesas", label: "Painel de Despesas Municipais", href: "/despesas", icon: "shopping_cart" },
+  { key: "importacao", label: "Importações", href: "/importacao", icon: "upload_file" },
+  { key: "relatorios", label: "Relatórios", href: "/relatorios", icon: "assessment" },
 ];
 
 export function getPrimaryPageLinks(_currentView?: string) {

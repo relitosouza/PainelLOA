@@ -91,12 +91,12 @@ export function AppShell({ view }: { view: string }) {
               className="h-9 w-auto object-contain"
             />
             <div className="text-lg font-headline font-bold text-primary hidden sm:block">
-              {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "LOA Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : "LOA Orçamentária"}
+              {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "Orçamento Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : "LOA Orçamentária"}
             </div>
           </div>
           <div className="hidden md:flex gap-6 font-headline text-sm font-semibold tracking-wide ml-4">
             {enabledNavigationKeys.has("apresentacao") && <Link className="text-on-surface-variant hover:text-primary transition-colors pb-1" href="/apresentacao">Painel Executivo</Link>}
-            {enabledNavigationKeys.has("transparente") && <Link className={`pb-1 transition-colors ${view === "transparente" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/transparente">LOA Transparente</Link>}
+            {enabledNavigationKeys.has("transparente") && <Link className={`pb-1 transition-colors ${view === "transparente" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/transparente">Orçamento Transparente</Link>}
           </div>
         </div>
         <div className="flex gap-4 items-center">

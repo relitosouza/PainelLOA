@@ -159,13 +159,11 @@ export default function TransparentePage() {
         {/* TopNavBar */}
         <header className="bg-surface-container-lowest sticky top-0 z-50 shadow-sm">
           <nav className="flex justify-between items-center w-full px-margin-desktop max-w-container-max mx-auto h-20">
-            <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">LOA Transparente</Link>
+            <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">Orçamento Transparente</Link>
             <div className="hidden md:flex items-center space-x-8 font-body-md text-body-md">
-              {primaryLinks.map((link) => (
-                <Link key={link.key} href={link.href} className="text-on-surface-variant hover:text-primary transition-colors">
-                  {link.label}
-                </Link>
-              ))}
+              <Link href="/" className="text-on-surface-variant hover:text-primary transition-colors">
+                Visão Analítica
+              </Link>
             </div>
             <div className="flex items-center gap-4">
               <div className="transparent-nav-toggle">
@@ -190,7 +188,7 @@ export default function TransparentePage() {
             </div>
             <div className="relative z-10 w-full px-margin-desktop max-w-container-max mx-auto py-20">
               <div className="max-w-2xl">
-                <h1 className="font-display-lg text-display-lg text-primary mb-6">LOA Transparente: O Orçamento de Osasco na palma da sua mão</h1>
+                <h1 className="font-display-lg text-display-lg text-primary mb-6">Orçamento Transparente: O Orçamento de Osasco na palma da sua mão</h1>
                 <p className="font-body-lg text-body-lg text-on-surface-variant mb-10">Consulte cada real investido na sua cidade, acompanhe metas fiscais e participe ativamente da construção do futuro de Osasco.</p>
                 {/* Search & Quick Buttons */}
                 <div className="bg-surface-container-lowest p-2 rounded-xl shadow-lg border border-outline-variant flex flex-col md:flex-row gap-2 mb-6">
@@ -668,8 +666,8 @@ export default function TransparentePage() {
         <footer className="bg-surface-container-highest">
           <div className="w-full py-12 px-margin-desktop flex flex-col md:flex-row justify-between items-center max-w-container-max mx-auto gap-8">
             <div className="flex flex-col items-center md:items-start">
-              <div className="font-headline-md text-headline-md text-primary font-bold mb-2">LOA Transparente</div>
-              <p className="font-label-md text-label-md text-on-surface-variant">© 2024 LOA Transparente - Portal de Transparência Orçamentária.</p>
+              <div className="font-headline-md text-headline-md text-primary font-bold mb-2">Orçamento Transparente</div>
+              <p className="font-label-md text-label-md text-on-surface-variant">© 2024 Orçamento Transparente - Portal de Transparência Orçamentária.</p>
             </div>
             <div className="flex flex-wrap justify-center gap-6 font-label-md text-label-md">
               <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Privacidade</a>

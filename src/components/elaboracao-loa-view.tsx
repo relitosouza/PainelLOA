@@ -229,7 +229,110 @@ function ClassificationPanel({ action, onSaved }: { action: LdoAction; onSaved: 
       {message && <div role="status" className={`rounded-lg border p-3 text-xs ${message.type === "success" ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>{message.text}</div>}
       <button type="button" onClick={() => void save()} disabled={!expenseId || validation.some((item) => item.severity === "error") || saving} className="w-full min-h-11 bg-primary text-on-primary font-bold text-sm disabled:opacity-50">{saving ? "Salvando…" : "Salvar enquadramento"}</button>
       {action.enquadramentos.length > 0 && <div className="pt-4 border-t border-outline-variant"><h3 className="text-xs font-bold mb-2">Despesas já vinculadas</h3><div className="space-y-2">{action.enquadramentos.map((item) => <div key={item.id} className="border border-outline-variant p-3 text-xs"><div className="flex justify-between gap-2"><div><strong className="font-mono text-primary">{item.despesa.codigo}</strong><p className="mt-0.5">{item.despesa.nome}</p></div><button type="button" onClick={() => void remove(item.id)} aria-label={`Remover ${item.despesa.codigo}`} className="material-symbols-outlined text-red-600 text-[18px]">delete</button></div><p className="font-bold mt-2">{currency.format(item.valor)}</p>{item.justificativa && <p className="mt-2 text-on-surface-variant"><strong>Justificativa:</strong> {item.justificativa}</p>}</div>)}</div></div>}
-      {existingExpenses.length > 0 && <div className="pt-4 border-t border-outline-variant"><h3 className="text-xs font-bold mb-1">Despesas LOA já digitadas sem subelemento</h3><p className="text-[11px] text-on-surface-variant mb-2">Informações associadas da Análise LOA (subelemento).</p><div className="overflow-x-auto rounded-lg border border-blue-200"><table className="w-full min-w-[760px] text-left text-xs"><caption className="sr-only">Despesas já digitadas sem subelemento para a ação selecionada</caption><thead className="bg-blue-50 text-[10px] uppercase tracking-wide text-on-surface-variant"><tr><th scope="col" className="px-3 py-2 font-bold">Despesa</th><th scope="col" className="px-3 py-2 font-bold">Elemento</th><th scope="col" className="px-3 py-2 font-bold">Vínculo</th><th scope="col" className="px-3 py-2 font-bold">Processo</th><th scope="col" className="px-3 py-2 text-right font-bold">Valor LOA</th><th scope="col" className="px-3 py-2 font-bold">Justificativa</th></tr></thead><tbody className="divide-y divide-blue-100">{existingExpenses.map((item) => <tr key={item.id} className="bg-blue-50/30 align-top"><td className="px-3 py-2 font-medium text-on-surface">{item.natureza || "—"}</td><td className="px-3 py-2 font-mono font-bold text-primary">{item.elemento || "—"}</td><td className="px-3 py-2 text-on-surface-variant">{item.vinculo || "—"}</td><td className="px-3 py-2 text-on-surface-variant">{item.processo || "—"}</td><td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-primary">{currency.format(item.valorLoa)}</td><td className="max-w-[260px] px-3 py-2 text-on-surface-variant">{item.justificativa || "—"}</td></tr>)}</tbody><tfoot className="border-t border-blue-200 bg-blue-50"><tr><td colSpan={4} className="px-3 py-2 font-bold text-on-surface">Total já digitado ({existingExpenses.length})</td><td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-primary">{currency.format(existingExpenses.reduce((total, item) => total + item.valorLoa, 0))}</td><td /></tr></tfoot></table></div></div>}
+      {existingExpenses.length > 0 && (() => {
+        const groupedExpensesMap = new Map<string, {
+          natureza: string;
+          elemento: string;
+          vinculos: Set<string>;
+          processos: Set<string>;
+          justificativas: Set<string>;
+          valorTotal: number;
+          itensCount: number;
+          itens: typeof existingExpenses;
+        }>();
+
+        existingExpenses.forEach((item) => {
+          const key = item.natureza || item.elemento || "Sem Código";
+          const existing = groupedExpensesMap.get(key);
+          if (existing) {
+            existing.valorTotal += item.valorLoa;
+            existing.itensCount += 1;
+            if (item.vinculo && item.vinculo !== "—") existing.vinculos.add(item.vinculo);
+            if (item.processo && item.processo !== "—") existing.processos.add(item.processo);
+            if (item.justificativa && item.justificativa !== "—") existing.justificativas.add(item.justificativa);
+            existing.itens.push(item);
+          } else {
+            const vinculos = new Set<string>();
+            const processos = new Set<string>();
+            const justificativas = new Set<string>();
+            if (item.vinculo && item.vinculo !== "—") vinculos.add(item.vinculo);
+            if (item.processo && item.processo !== "—") processos.add(item.processo);
+            if (item.justificativa && item.justificativa !== "—") justificativas.add(item.justificativa);
+            groupedExpensesMap.set(key, {
+              natureza: item.natureza,
+              elemento: item.elemento,
+              vinculos,
+              processos,
+              justificativas,
+              valorTotal: item.valorLoa,
+              itensCount: 1,
+              itens: [item],
+            });
+          }
+        });
+
+        const groupedExpenses = Array.from(groupedExpensesMap.values());
+
+        return (
+          <div className="pt-4 border-t border-outline-variant">
+            <h3 className="text-xs font-bold mb-1">Despesas LOA já digitadas sem subelemento (Agrupadas por Natureza)</h3>
+            <p className="text-[11px] text-on-surface-variant mb-2">Informações agregadas da Análise LOA por código de natureza de despesa.</p>
+            <div className="overflow-x-auto rounded-lg border border-blue-200">
+              <table className="w-full min-w-[760px] text-left text-xs">
+                <caption className="sr-only">Despesas já digitadas sem subelemento agrupadas por código de natureza</caption>
+                <thead className="bg-blue-50 text-[10px] uppercase tracking-wide text-on-surface-variant">
+                  <tr>
+                    <th scope="col" className="px-3 py-2 font-bold">Natureza da Despesa</th>
+                    <th scope="col" className="px-3 py-2 font-bold">Elemento</th>
+                    <th scope="col" className="px-3 py-2 font-bold">Vínculo(s)</th>
+                    <th scope="col" className="px-3 py-2 font-bold">Processo(s)</th>
+                    <th scope="col" className="px-3 py-2 text-right font-bold">Valor Total LOA</th>
+                    <th scope="col" className="px-3 py-2 font-bold">Justificativas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-blue-100">
+                  {groupedExpenses.map((group) => (
+                    <tr key={group.natureza || group.elemento} className="bg-blue-50/30 align-top">
+                      <td className="px-3 py-2 font-medium text-on-surface">
+                        <div>{group.natureza || "—"}</div>
+                        {group.itensCount > 1 && (
+                          <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-semibold">
+                            {group.itensCount} registros agrupados
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 font-mono font-bold text-primary">{group.elemento || "—"}</td>
+                      <td className="px-3 py-2 text-on-surface-variant">
+                        {group.vinculos.size > 0 ? Array.from(group.vinculos).join(", ") : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-on-surface-variant">
+                        {group.processos.size > 0 ? Array.from(group.processos).join(", ") : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-primary">
+                        {currency.format(group.valorTotal)}
+                      </td>
+                      <td className="max-w-[260px] px-3 py-2 text-on-surface-variant">
+                        {group.justificativas.size > 0 ? Array.from(group.justificativas).join(" | ") : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-blue-200 bg-blue-50">
+                  <tr>
+                    <td colSpan={4} className="px-3 py-2 font-bold text-on-surface">
+                      Total Geral ({existingExpenses.length} registros em {groupedExpenses.length} naturezas)
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-primary">
+                      {currency.format(existingExpenses.reduce((total, item) => total + item.valorLoa, 0))}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
       {suggestions.length > 0 && <fieldset className="border-t border-outline-variant pt-4"><legend className="text-xs font-bold text-on-surface mb-2">Sugestões para esta ação</legend><p className="text-[11px] text-on-surface-variant mb-2">Selecione uma sugestão para preencher a despesa do enquadramento.</p><div className="space-y-2">{suggestions.slice(0, 4).map((item) => <button key={item.id} type="button" onClick={() => { setExpenseId(item.id); setSuggestionReason(item.reason); }} className={`w-full text-left border p-3 transition-colors ${expenseId === item.id ? "border-primary bg-primary/[0.05]" : "border-outline-variant hover:border-primary/50"}`}><span className="font-mono text-xs font-bold text-primary">{item.codigo}</span><span className="block text-xs font-semibold mt-0.5">{item.nome}</span><span className="block text-[10px] text-on-surface-variant mt-1">Motivo: {item.reason}</span></button>)}</div></fieldset>}
     </div>
   </section>;
