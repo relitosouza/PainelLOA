@@ -1002,19 +1002,38 @@ export function AnaliseLoaView() {
 
   // Funções de exportação
   const exportToExcel = () => {
-    const exportData = filteredItems.map((item) => ({
-      Secretaria: item.secretaria,
-      Programa: item.programa,
-      Ação: item.acao,
-      Natureza: item.natureza,
-      "Subelemento / Descrição": item.subelemento,
-      Vínculo: item.fonteVinculo,
-      "Valor LDO (R$)": item.valLdo,
-      "Valor LOA (R$)": item.valLoa,
-      "Diferença (R$)": item.valLoa - item.valLdo,
-      "Variação (%)": item.valLdo > 0 ? ((item.valLoa - item.valLdo) / item.valLdo) * 100 : 0,
-      Status: getStatusInfo(item.valLdo, item.valLoa).label,
-    }));
+    const exportData = editableGroups.flatMap((group) => [
+      {
+        Nível: "Programa + Ação",
+        Secretaria: group.secretaria,
+        Programa: group.programa,
+        Ação: group.acao,
+        "Natureza de despesa": "TOTAL DO AGRUPAMENTO",
+        Elemento: "",
+        Subelemento: "",
+        Vínculo: "",
+        Processo: "",
+        "Valor LDO (R$)": group.valLdo,
+        "Valor LOA (R$)": group.valLoa,
+        "Diferença (R$)": group.valLoa - group.valLdo,
+        Status: getStatusInfo(group.valLdo, group.valLoa).label,
+      },
+      ...group.children.map((item) => ({
+        Nível: "Despesa",
+        Secretaria: item.secretaria,
+        Programa: item.programa,
+        Ação: item.acao,
+        "Natureza de despesa": item.natureza,
+        Elemento: item.elemento,
+        Subelemento: item.subelemento,
+        Vínculo: item.fonteVinculo,
+        Processo: item.processo,
+        "Valor LDO (R$)": "",
+        "Valor LOA (R$)": item.valLoa,
+        "Diferença (R$)": "",
+        Status: "Detalhamento LOA",
+      })),
+    ]);
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Analise_LDO_LOA");
@@ -1024,20 +1043,31 @@ export function AnaliseLoaView() {
   const exportToPDF = async () => {
     const { jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 16;
     const reportDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(new Date());
     const reportBody: Array<Array<string | { content: string; colSpan?: number; styles?: Record<string, unknown> }>> = [];
 
-    tableItems.forEach((item) => {
-      const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
-      const adjusted = Math.abs(item.valLoa - original) > 0.001;
+    editableGroups.forEach((group) => {
+      reportBody.push([
+        { content: group.secretaria, styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
+        { content: `${group.programa}\n${group.acao}`, styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
+        { content: "TOTAL DO AGRUPAMENTO", styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
+        { content: "", styles: { fillColor: [230, 238, 248] } },
+        { content: currency.format(group.valLdo), styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
+        { content: currency.format(group.valLoa), styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
+      ]);
+      group.children.forEach((item) => {
+        const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
+        const adjusted = Math.abs(item.valLoa - original) > 0.001;
       reportBody.push([
         item.secretaria,
-        item.acao.split("-")[0].trim(),
-        item.elemento || item.natureza,
-        currency.format(item.valLdo),
+        `↳ ${item.acao.split("-")[0].trim()}`,
+        item.natureza || item.elemento,
+        item.elemento || "",
+        "",
         currency.format(item.valLoa),
       ]);
 
@@ -1049,11 +1079,12 @@ export function AnaliseLoaView() {
           },
           {
             content: (justifications[item.id] || "Ajuste registrado sem justificativa detalhada.").trim(),
-            colSpan: 3,
+            colSpan: 5,
             styles: { fontStyle: "italic", textColor: [75, 75, 75] },
           },
         ]);
       }
+      });
     });
 
     doc.setFillColor(24, 28, 34);
@@ -1079,18 +1110,19 @@ export function AnaliseLoaView() {
     autoTable(doc, {
       startY: 55,
       margin: { left: margin, right: margin },
-      head: [["Secretaria", "Ação", "Despesa", "Valor LDO", "Valor LOA"]],
+      head: [["Secretaria", "Programa / Ação", "Natureza de despesa", "Elemento", "Valor LDO", "Valor LOA"]],
       body: reportBody,
       theme: "grid",
       headStyles: { fillColor: [0, 90, 180], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
       bodyStyles: { fontSize: 7.5, textColor: [35, 38, 42], cellPadding: 2.5, valign: "middle" },
       alternateRowStyles: { fillColor: [246, 248, 250] },
       columnStyles: {
-        0: { cellWidth: 54 },
-        1: { cellWidth: 22 },
-        2: { cellWidth: 42 },
-        3: { cellWidth: 25, halign: "right" },
-        4: { cellWidth: 25, halign: "right" },
+        0: { cellWidth: 48 },
+        1: { cellWidth: 62 },
+        2: { cellWidth: 60 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 27, halign: "right" },
+        5: { cellWidth: 27, halign: "right" },
       },
       didParseCell: (data) => {
         const firstCell = Array.isArray(data.row.raw) ? data.row.raw[0] as { content?: string } | undefined : undefined;
@@ -1102,7 +1134,7 @@ export function AnaliseLoaView() {
     });
 
     const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 55;
-    const signatureY = Math.min(finalY + 34, 270);
+    const signatureY = Math.min(finalY + 24, pageHeight - 25);
     doc.setDrawColor(90, 95, 102);
     doc.setLineWidth(0.3);
     doc.line(margin, signatureY, margin + 70, signatureY);
@@ -1123,7 +1155,7 @@ export function AnaliseLoaView() {
       doc.setPage(page);
       doc.setFontSize(7);
       doc.setTextColor(120, 125, 130);
-      doc.text(`Painel LOA • Página ${page} de ${pageCount}`, pageWidth - margin, 290, { align: "right" });
+      doc.text(`Painel LOA • Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 8, { align: "right" });
     }
     doc.save("analise-tecnica-ldo-loa.pdf");
   };
@@ -1782,9 +1814,6 @@ export function AnaliseLoaView() {
                         </td>
                       </tr>
                       {isExpanded && group.children.map((item) => {
-                        const childDiff = item.valLoa - item.valLdo;
-                        const childStatus = getStatusInfo(item.valLdo, item.valLoa);
-                        const childDiffColor = childDiff > 0 ? "text-emerald-600 font-bold" : childDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400";
                         const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
                         const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
 
@@ -1793,7 +1822,7 @@ export function AnaliseLoaView() {
                             <td colSpan={2} className="p-2.5 pl-12 text-on-surface-variant font-sans truncate" title={item.natureza || item.elemento}>
                               <span className="mr-2 text-primary">└</span><span className="font-mono font-semibold text-on-surface">{item.elemento || "Outros"}</span>{item.natureza && item.natureza !== item.elemento ? <span className="ml-2">{item.natureza}</span> : null}{item.subelemento ? <span className="ml-2 text-[10px]">· {item.subelemento}</span> : null}
                             </td>
-                            <td className="p-2.5 text-right font-mono text-on-surface-variant">{formatBr(item.valLdo)}</td>
+                            <td className="p-2.5 text-right font-mono text-on-surface-variant">—</td>
                             <td className="p-2 border border-outline-variant/20 bg-surface text-right">
                               <input
                                 type="text"
@@ -1813,10 +1842,8 @@ export function AnaliseLoaView() {
                                 className="w-32 text-right px-1.5 py-0.5 rounded border border-outline-variant/60 bg-surface font-mono font-bold text-primary focus:ring-2 focus:ring-primary focus:outline-none"
                               />
                             </td>
-                            <td className={`p-2.5 text-right ${childDiffColor}`}>
-                              {childDiff > 0 ? `▲ ${currency.format(childDiff)}` : childDiff < 0 ? `▼ ${currency.format(Math.abs(childDiff))}` : "—"}
-                            </td>
-                            <td className="p-2.5 text-center"><span className={`inline-block px-2 py-0.5 text-[9px] font-bold rounded-full border ${childStatus.class}`}>{childStatus.label}</span></td>
+                            <td className="p-2.5 text-right text-on-surface-variant">—</td>
+                            <td className="p-2.5 text-center"><span className="inline-block px-2 py-0.5 text-[9px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span></td>
                             <td className="p-2.5 text-center">{childAdjusted ? <span className="text-[10px] font-bold text-amber-700">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}</td>
                           </tr>
                         );

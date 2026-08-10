@@ -95,156 +95,154 @@ export function Sidebar({
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
         <div className="space-y-1">
-          {linksBySection.map(({ section, links }) => <div key={section.key} className="space-y-1 pt-1"><span className={`px-4 text-[10px] font-bold tracking-wider text-white/40 uppercase block mb-1 ${collapsed ? "md:hidden" : ""}`}>{section.label}</span>{links.map((link) => {
-            const isActive = !["importacao", "relatorios", "configuracoes"].includes(view) && view === link.key;
-            return <Link key={link.key} href={link.href} onClick={() => setMobileOpen(false)} aria-current={isActive ? "page" : undefined} className={`flex items-center gap-3 py-3 px-4 font-medium transition-all ${isActive ? "bg-white/12 text-white rounded-xl ring-1 ring-inset ring-white/15 shadow-sm" : "text-white/70 hover:bg-white/5 hover:text-white rounded-xl"}`}><span className="material-symbols-outlined" style={{ fontVariationSettings: isActive ? "'FILL' 1" : undefined }}>{link.icon}</span><span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span></Link>;
-          })}</div>)}
-          <div className="pt-2">
-            <span className={`px-4 text-[10px] font-bold tracking-wider text-white/40 uppercase block mb-1 ${collapsed ? "md:hidden" : ""}`}>
-              PAINEL DE RECEITAS MUNICIPAIS
-            </span>
-            <div className="space-y-0.5">
-              <button
-                type="button"
-                onClick={() => setReceitasExpanded(!receitasExpanded)}
-                className={`w-full flex items-center justify-between py-2.5 px-4 font-medium transition-all rounded-xl text-white/80 hover:bg-white/5 hover:text-white ${
-                  isReceitasActive ? "bg-white/10 text-white font-semibold" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-[20px]">account_balance_wallet</span>
-                  <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>Painel de Receitas Municipais</span>
-                </div>
-                <span className={`material-symbols-outlined text-sm transition-transform ${receitasExpanded ? "rotate-180" : ""} ${collapsed ? "md:hidden" : ""}`}>
-                  expand_more
+          {linksBySection.map(({ section, links }) => {
+            if (links.length === 0) return null;
+            return (
+              <div key={section.key} className="space-y-1 pt-1">
+                <span className={`px-4 text-[10px] font-bold tracking-wider text-white/40 uppercase block mb-1 ${collapsed ? "md:hidden" : ""}`}>
+                  {section.label}
                 </span>
-              </button>
+                {links.map((link) => {
+                  if (link.key === "receitas") {
+                    return (
+                      <div key={link.key} className="space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setReceitasExpanded(!receitasExpanded)}
+                          className={`w-full flex items-center justify-between py-2.5 px-4 font-medium transition-all rounded-xl text-white/80 hover:bg-white/5 hover:text-white ${
+                            isReceitasActive ? "bg-white/10 text-white font-semibold" : ""
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="material-symbols-outlined text-[20px]">{link.icon}</span>
+                            <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span>
+                          </div>
+                          <span className={`material-symbols-outlined text-sm transition-transform ${receitasExpanded ? "rotate-180" : ""} ${collapsed ? "md:hidden" : ""}`}>
+                            expand_more
+                          </span>
+                        </button>
 
-              {receitasExpanded && (
-                <div className={`pl-9 pr-2 space-y-1 py-1 ${collapsed ? "md:hidden" : ""}`}>
-                  <Link
-                    href="/receitas?tab=ldo"
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
-                      isReceitasActive && (activeSubMenu === "ldo" || !activeSubMenu)
-                        ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
-                        : "text-white/70 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
-                    <span>Receitas LDO</span>
-                  </Link>
+                        {receitasExpanded && (
+                          <div className={`pl-9 pr-2 space-y-1 py-1 ${collapsed ? "md:hidden" : ""}`}>
+                            <Link
+                              href="/receitas?tab=ldo"
+                              onClick={() => setMobileOpen(false)}
+                              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
+                                isReceitasActive && (activeSubMenu === "ldo" || !activeSubMenu)
+                                  ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
+                                  : "text-white/70 hover:text-white hover:bg-white/5"
+                              }`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+                              <span>Receitas LDO</span>
+                            </Link>
 
-                  <Link
-                    href="/receitas?tab=loa"
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
-                      isReceitasActive && activeSubMenu === "loa"
-                        ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
-                        : "text-white/70 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
-                    <span>Receitas LOA</span>
-                  </Link>
+                            <Link
+                              href="/receitas?tab=loa"
+                              onClick={() => setMobileOpen(false)}
+                              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
+                                isReceitasActive && activeSubMenu === "loa"
+                                  ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
+                                  : "text-white/70 hover:text-white hover:bg-white/5"
+                              }`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+                              <span>Receitas LOA</span>
+                            </Link>
 
-                  <Link
-                    href="/receitas?tab=arrecadada"
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
-                      isReceitasActive && activeSubMenu === "arrecadada"
-                        ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
-                        : "text-white/70 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
-                    <span>Análise de Receita Arrecadada</span>
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
+                            <Link
+                              href="/receitas?tab=arrecadada"
+                              onClick={() => setMobileOpen(false)}
+                              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
+                                isReceitasActive && activeSubMenu === "arrecadada"
+                                  ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
+                                  : "text-white/70 hover:text-white hover:bg-white/5"
+                              }`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+                              <span>Análise de Receita Arrecadada</span>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
 
-          {/* PAINEL DE DESPESAS MUNICIPAIS */}
-          <div className="pt-2">
-            <span className={`px-4 text-[10px] font-bold tracking-wider text-white/40 uppercase block mb-1 ${collapsed ? "md:hidden" : ""}`}>
-              PAINEL DE DESPESAS MUNICIPAIS
-            </span>
-            <div className="space-y-0.5">
-              <button
-                type="button"
-                onClick={() => setDespesasExpanded(!despesasExpanded)}
-                className={`w-full flex items-center justify-between py-2.5 px-4 font-medium transition-all rounded-xl text-white/80 hover:bg-white/5 hover:text-white ${
-                  isDespesasActive ? "bg-white/10 text-white font-semibold" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-[20px]">shopping_cart</span>
-                  <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>Painel de Despesas Municipais</span>
-                </div>
-                <span className={`material-symbols-outlined text-sm transition-transform ${despesasExpanded ? "rotate-180" : ""} ${collapsed ? "md:hidden" : ""}`}>
-                  expand_more
-                </span>
-              </button>
+                  if (link.key === "despesas") {
+                    return (
+                      <div key={link.key} className="space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setDespesasExpanded(!despesasExpanded)}
+                          className={`w-full flex items-center justify-between py-2.5 px-4 font-medium transition-all rounded-xl text-white/80 hover:bg-white/5 hover:text-white ${
+                            isDespesasActive ? "bg-white/10 text-white font-semibold" : ""
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="material-symbols-outlined text-[20px]">{link.icon}</span>
+                            <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span>
+                          </div>
+                          <span className={`material-symbols-outlined text-sm transition-transform ${despesasExpanded ? "rotate-180" : ""} ${collapsed ? "md:hidden" : ""}`}>
+                            expand_more
+                          </span>
+                        </button>
 
-              {despesasExpanded && (
-                <div className={`pl-9 pr-2 space-y-1 py-1 ${collapsed ? "md:hidden" : ""}`}>
-                  <Link
-                    href="/despesas?tab=loa"
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
-                      isDespesasActive && (activeSubMenu === "loa" || !activeSubMenu)
-                        ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
-                        : "text-white/70 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                    <span>Despesas LOA</span>
-                  </Link>
+                        {despesasExpanded && (
+                          <div className={`pl-9 pr-2 space-y-1 py-1 ${collapsed ? "md:hidden" : ""}`}>
+                            <Link
+                              href="/despesas?tab=loa"
+                              onClick={() => setMobileOpen(false)}
+                              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
+                                isDespesasActive && (activeSubMenu === "loa" || !activeSubMenu)
+                                  ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
+                                  : "text-white/70 hover:text-white hover:bg-white/5"
+                              }`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                              <span>Despesas LOA</span>
+                            </Link>
 
-                  <Link
-                    href="/despesas?tab=execucao"
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
-                      isDespesasActive && activeSubMenu === "execucao"
-                        ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
-                        : "text-white/70 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                    <span>Análise de Despesa Executada</span>
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
+                            <Link
+                              href="/despesas?tab=execucao"
+                              onClick={() => setMobileOpen(false)}
+                              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-xs transition-colors ${
+                                isDespesasActive && activeSubMenu === "execucao"
+                                  ? "bg-white/15 text-white font-bold ring-1 ring-inset ring-white/20"
+                                  : "text-white/70 hover:text-white hover:bg-white/5"
+                              }`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                              <span>Análise de Despesa Executada</span>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
 
-          <Link
-            href="/importacao"
-            onClick={() => setMobileOpen(false)}
-            aria-current={view === "importacao" ? "page" : undefined}
-            className={`flex items-center gap-3 py-3 px-4 font-medium transition-all ${
-              view === "importacao"
-                ? "bg-white/12 text-white rounded-xl ring-1 ring-inset ring-white/15 shadow-sm"
-                : "text-white/70 hover:bg-white/5 hover:text-white rounded-xl"
-            }`}
-          >
-            <span className="material-symbols-outlined">upload_file</span>
-            <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>Importações</span>
-          </Link>
-          <Link
-            href="/relatorios"
-            onClick={() => setMobileOpen(false)}
-            aria-current={view === "relatorios" ? "page" : undefined}
-            className={`flex items-center gap-3 py-3 px-4 font-medium transition-all ${
-              view === "relatorios"
-                ? "bg-white/12 text-white rounded-xl ring-1 ring-inset ring-white/15 shadow-sm"
-                : "text-white/70 hover:bg-white/5 hover:text-white rounded-xl"
-            }`}
-          >
-            <span className="material-symbols-outlined">assessment</span>
-            <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>Relatórios</span>
-          </Link>
+                  const isActive = view === link.key;
+                  return (
+                    <Link
+                      key={link.key}
+                      href={link.href}
+                      onClick={() => setMobileOpen(false)}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`flex items-center gap-3 py-3 px-4 font-medium transition-all ${
+                        isActive
+                          ? "bg-white/12 text-white rounded-xl ring-1 ring-inset ring-white/15 shadow-sm"
+                          : "text-white/70 hover:bg-white/5 hover:text-white rounded-xl"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontVariationSettings: isActive ? "'FILL' 1" : undefined }}>
+                        {link.icon}
+                      </span>
+                      <span className={`text-sm ${collapsed ? "md:hidden" : ""}`}>{link.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </nav>
 
