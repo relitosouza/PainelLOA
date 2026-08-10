@@ -165,6 +165,19 @@
     --background: #181c22;
     --danger: #ffdad6;
 
+    /* Tailwind CSS Design Tokens override in Dark Mode */
+    --color-surface: #2d3037;
+    --color-on-surface: #eef0fa;
+    --color-on-surface-variant: #c1c6d5;
+    --color-background: #181c22;
+    --color-on-background: #eef0fa;
+    --color-surface-container: #23262d;
+    --color-surface-container-low: #1d2026;
+    --color-surface-container-high: #383c45;
+    --color-surface-container-highest: #414753;
+    --color-surface-container-lowest: #14171c;
+    --color-outline-variant: #414753;
+
     /* Blurs & Borders in Dark Mode */
     --glass-surface: rgba(45, 48, 55, 0.85);
     --glass-border: rgba(255, 255, 255, 0.08);
