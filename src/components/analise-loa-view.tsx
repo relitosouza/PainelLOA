@@ -1774,14 +1774,14 @@ export function AnaliseLoaView() {
                             >
                               <span className="material-symbols-outlined text-sm">{isExpanded ? "remove" : "add"}</span>
                             </button>
-                            <span className="min-w-0 truncate" title={`${group.programa} · ${group.acao}`}><span className="block text-[10px] font-normal text-on-surface-variant">{group.programa || "Programa não informado"}</span><span className="block">{group.acao || "Sem Ação"}</span></span>
-                            <button type="button" onClick={() => setAddExpenseGroup(group)} aria-label={`Adicionar despesa em ${group.acao}`} title="Adicionar despesa por natureza" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><span className="material-symbols-outlined text-[16px]">playlist_add</span></button>
+                            <span className="min-w-0 truncate" title={`${group.programa} · ${group.acao}`}><span className="block text-[10px] font-medium text-on-surface-variant/80 dark:text-on-surface-variant/90">{group.programa || "Programa não informado"}</span><span className="block">{group.acao || "Sem Ação"}</span></span>
+                            <button type="button" onClick={() => setAddExpenseGroup(group)} aria-label={`Adicionar despesa em ${group.acao}`} title="Adicionar despesa por natureza" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700"><span className="material-symbols-outlined text-[16px]">playlist_add</span></button>
                           </div>
                         </td>
                         <td className="p-2.5 text-on-surface-variant font-sans max-w-[150px] truncate" title={group.elemento}>
                           {group.elemento}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-on-surface-variant select-none bg-surface-container/20">
+                        <td className="p-2.5 text-right font-mono text-on-surface-variant select-none bg-surface-container-low/60">
                           {formatBr(group.valLdo)}
                         </td>
                         <td className="p-2 border border-outline-variant/20 bg-surface text-right">
@@ -1800,7 +1800,7 @@ export function AnaliseLoaView() {
                             onKeyDown={(event) => {
                               if (event.key === "Enter") event.currentTarget.blur();
                             }}
-                            className="w-32 text-right px-1.5 py-0.5 rounded border border-primary/40 bg-surface font-mono font-bold text-primary focus:ring-2 focus:ring-primary focus:outline-none"
+                            className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
                           />
                         </td>
                         <td className={`p-2.5 text-right ${diffColor}`}>
@@ -1810,7 +1810,7 @@ export function AnaliseLoaView() {
                           <span className={`inline-block px-2 py-0.5 text-[9px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
                         </td>
                         <td className="p-2.5 text-center">
-                          {groupAdjusted ? <span className="text-[10px] font-bold text-amber-700">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}
+                          {groupAdjusted ? <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}
                         </td>
                       </tr>
                       {isExpanded && group.children.map((item) => {
@@ -1839,7 +1839,7 @@ export function AnaliseLoaView() {
                                   setHasChanges(true);
                                 }}
                                 onBlur={() => setEditingCell(null)}
-                                className="w-32 text-right px-1.5 py-0.5 rounded border border-outline-variant/60 bg-surface font-mono font-bold text-primary focus:ring-2 focus:ring-primary focus:outline-none"
+                                className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-outline-variant"
                               />
                             </td>
                             <td className="p-2.5 text-right text-on-surface-variant">—</td>
@@ -1903,7 +1903,7 @@ export function AnaliseLoaView() {
                     );
                   })}
                 </select>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0 dark:bg-primary/20 dark:text-tertiary-fixed-dim">
                   Subelementos
                 </span>
               </div>
@@ -1916,17 +1916,17 @@ export function AnaliseLoaView() {
                 subelementosBreakdown.map((item, idx) => (
                   <div
                     key={idx}
-                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs"
+                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs dark:bg-surface-container-low/70 dark:border-outline-variant/40"
                   >
                     <div className="min-w-0 pr-3">
                       <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                         {item.acao && (
-                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200">
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
                             Ação {item.acao.split("—")[0].split("-")[0].trim()}
                           </span>
                         )}
                         {item.natureza && (
-                          <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200">
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
                             Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
                           </span>
                         )}
@@ -1942,8 +1942,8 @@ export function AnaliseLoaView() {
                       </p>
                     </div>
                     <div className="text-right shrink-0 font-mono">
-                      <p className="font-extrabold text-primary">{formatBr(item.loa)}</p>
-                      <p className={`text-[10px] font-bold ${item.diff > 0 ? "text-emerald-600" : item.diff < 0 ? "text-rose-600" : "text-gray-400"}`}>
+                      <p className="font-extrabold text-primary dark:text-tertiary-fixed-dim">{formatBr(item.loa)}</p>
+                      <p className={`text-[10px] font-bold ${item.diff > 0 ? "text-emerald-600 dark:text-emerald-400" : item.diff < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-400"}`}>
                         {item.diff > 0 ? `+${formatBr(item.diff)}` : formatBr(item.diff)}
                       </p>
                     </div>
@@ -1957,7 +1957,7 @@ export function AnaliseLoaView() {
           <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[400px]">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant pb-3 mb-3 gap-2">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600">stars</span>
+                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">stars</span>
                 <div>
                   <h3 className="text-sm font-headline font-bold text-on-surface">Iniciativas Estratégicas</h3>
                   <p className="text-[10px] text-on-surface-variant">Projetos & Ações Estratégicas ({displayIniciativas.length} iniciativas)</p>
@@ -1979,7 +1979,7 @@ export function AnaliseLoaView() {
                     );
                   })}
                 </select>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
                   PLDO 2027
                 </span>
               </div>
@@ -1988,7 +1988,7 @@ export function AnaliseLoaView() {
             <div className="flex-1 overflow-auto space-y-2 pr-1">
               {loadingIniciativas ? (
                 <div className="p-8 text-center space-y-2">
-                  <span className="material-symbols-outlined animate-spin text-amber-600">sync</span>
+                  <span className="material-symbols-outlined animate-spin text-amber-600 dark:text-amber-400">sync</span>
                   <p className="text-xs text-on-surface-variant">Buscando iniciativas correspondentes...</p>
                 </div>
               ) : displayIniciativas.length === 0 ? (
@@ -1997,15 +1997,15 @@ export function AnaliseLoaView() {
                 displayIniciativas.map((ini) => (
                   <div
                     key={ini.id}
-                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs"
+                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs dark:bg-surface-container-low/70 dark:border-outline-variant/40"
                   >
                     <div className="min-w-0 pr-3">
                       <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200">
+                        <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
                           Ação {ini.acao}
                         </span>
                         {ini.despesa && (
-                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-blue-50 text-blue-800 border border-blue-200">
+                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
                             Despesa {ini.despesa}
                           </span>
                         )}
@@ -2022,7 +2022,7 @@ export function AnaliseLoaView() {
                     </div>
                     <div className="text-right shrink-0 font-mono">
                       <span className="text-[10px] text-on-surface-variant uppercase block">Valor PLDO</span>
-                      <span className="font-extrabold text-amber-700">{currency.format(ini.valorFinalPldo27)}</span>
+                      <span className="font-extrabold text-amber-700 dark:text-amber-400">{currency.format(ini.valorFinalPldo27)}</span>
                     </div>
                   </div>
                 ))
@@ -2037,7 +2037,7 @@ export function AnaliseLoaView() {
         {/* Ranking Top 5 Maiores Aumentos */}
         <div className="glass-card p-5 bg-surface border border-outline-variant space-y-3">
           <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
-            <span className="material-symbols-outlined text-emerald-600">trending_up</span>
+            <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400">trending_up</span>
             <h3 className="text-sm font-headline font-bold text-on-surface">Top 5 Maiores Aumentos (LOA &gt; LDO)</h3>
           </div>
           <div className="space-y-2">
@@ -2046,9 +2046,9 @@ export function AnaliseLoaView() {
               .sort((a, b) => b.diff - a.diff)
               .slice(0, 5)
               .map((item) => (
-                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-emerald-50/50 rounded-lg border border-emerald-100">
+                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-emerald-50/50 rounded-lg border border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800/60">
                   <div className="min-w-0 pr-2">
-                    <p className="text-[10px] font-bold text-emerald-900 truncate mb-0.5" title={item.secretaria}>
+                    <p className="text-[10px] font-bold text-emerald-900 dark:text-emerald-300 truncate mb-0.5" title={item.secretaria}>
                       {item.secretaria}
                     </p>
                     <p className="font-bold text-on-surface truncate" title={item.acao}>{item.acao}</p>
@@ -2056,7 +2056,7 @@ export function AnaliseLoaView() {
                       Despesa: {item.natureza} {item.subelemento ? `• ${item.subelemento}` : ""}
                     </p>
                   </div>
-                  <span className="font-mono font-bold text-emerald-700 shrink-0">+{currency.format(item.diff)}</span>
+                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 shrink-0">+{currency.format(item.diff)}</span>
                 </div>
               ))}
           </div>
@@ -2065,7 +2065,7 @@ export function AnaliseLoaView() {
         {/* Ranking Top 5 Maiores Reduções */}
         <div className="glass-card p-5 bg-surface border border-outline-variant space-y-3">
           <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
-            <span className="material-symbols-outlined text-rose-600">trending_down</span>
+            <span className="material-symbols-outlined text-rose-600 dark:text-rose-400">trending_down</span>
             <h3 className="text-sm font-headline font-bold text-on-surface">Top 5 Maiores Reduções (LOA &lt; LDO)</h3>
           </div>
           <div className="space-y-2">
@@ -2075,9 +2075,9 @@ export function AnaliseLoaView() {
               .sort((a, b) => a.diff - b.diff)
               .slice(0, 5)
               .map((item) => (
-                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-rose-50/50 rounded-lg border border-rose-100">
+                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-rose-50/50 rounded-lg border border-rose-100 dark:bg-rose-950/40 dark:border-rose-800/60">
                   <div className="min-w-0 pr-2">
-                    <p className="text-[10px] font-bold text-rose-900 truncate mb-0.5" title={item.secretaria}>
+                    <p className="text-[10px] font-bold text-rose-900 dark:text-rose-300 truncate mb-0.5" title={item.secretaria}>
                       {item.secretaria}
                     </p>
                     <p className="font-bold text-on-surface truncate" title={item.acao}>{item.acao}</p>
@@ -2085,7 +2085,7 @@ export function AnaliseLoaView() {
                       Despesa: {item.natureza} {item.subelemento ? `• ${item.subelemento}` : ""}
                     </p>
                   </div>
-                  <span className="font-mono font-bold text-rose-700 shrink-0">{currency.format(item.diff)}</span>
+                  <span className="font-mono font-bold text-rose-700 dark:text-rose-400 shrink-0">{currency.format(item.diff)}</span>
                 </div>
               ))}
           </div>
@@ -2113,10 +2113,10 @@ export function AnaliseLoaView() {
                 <div key={code} className="space-y-1">
                   <div className="flex justify-between text-xs font-semibold">
                     <span className="text-on-surface">{labels[code]}</span>
-                    <span className="font-mono text-primary">{currency.format(val)} ({percent.format(share / 100)})</span>
+                    <span className="font-mono text-primary dark:text-tertiary-fixed-dim">{currency.format(val)} ({percent.format(share / 100)})</span>
                   </div>
                   <div className="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, share)}%` }} />
+                    <div className="bg-primary dark:bg-tertiary-container h-full rounded-full" style={{ width: `${Math.min(100, share)}%` }} />
                   </div>
                 </div>
               );
