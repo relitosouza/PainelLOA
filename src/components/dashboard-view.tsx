@@ -625,6 +625,7 @@ export function DashboardView({
                   description="Teto e participação no orçamento consolidado"
                   data={data.groups.organ}
                   total={data.totals.loa}
+                  sortByCode={true}
                 />
               </div>
 

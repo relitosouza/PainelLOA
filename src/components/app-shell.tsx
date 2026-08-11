@@ -11,6 +11,7 @@ import { ReceitaArrecadadaView } from "./receita-arrecadada-view";
 import { ExpenseDetailView } from "./expense-detail-view";
 import { AnaliseLoaView } from "./analise-loa-view";
 import { ElaboracaoLoaView } from "./elaboracao-loa-view";
+import { AssistenteLoaPage } from "./assistente-loa-page";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 import { getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
@@ -91,12 +92,13 @@ export function AppShell({ view }: { view: string }) {
               className="h-9 w-auto object-contain"
             />
             <div className="text-lg font-headline font-bold text-primary hidden sm:block">
-              {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "Orçamento Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : "LOA Orçamentária"}
+              {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "Orçamento Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : view === "assistente-loa" ? "Assistente LOA" : "LOA Orçamentária"}
             </div>
           </div>
           <div className="hidden md:flex gap-6 font-headline text-sm font-semibold tracking-wide ml-4">
             {enabledNavigationKeys.has("apresentacao") && <Link className="text-on-surface-variant hover:text-primary transition-colors pb-1" href="/apresentacao">Painel Executivo</Link>}
             {enabledNavigationKeys.has("transparente") && <Link className={`pb-1 transition-colors ${view === "transparente" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/transparente">Orçamento Transparente</Link>}
+            {enabledNavigationKeys.has("assistente-loa") && <Link className={`pb-1 transition-colors ${view === "assistente-loa" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/assistente-loa">Assistente LOA</Link>}
           </div>
         </div>
         <div className="flex gap-4 items-center">
@@ -129,7 +131,9 @@ export function AppShell({ view }: { view: string }) {
         className={`loa-main flex-1 transition-[margin-left] duration-300 ease-out ${sidebarCollapsed ? "collapsed md:ml-0" : "md:ml-[280px]"} mt-16 h-full overflow-y-auto bg-surface-container-low p-4 md:p-8`}
       >
         <div className="content">
-          {view === "importacao" ? (
+          {view === "assistente-loa" ? (
+            <AssistenteLoaPage />
+          ) : view === "importacao" ? (
             <ImportView />
           ) : view === "configuracoes" ? (
             <SettingsView />

@@ -39,7 +39,15 @@ function normalizeGroups(rows: unknown, field: FieldKey): GroupTotal[] {
 }
 
 async function groupBy(field: FieldKey, where: Prisma.BudgetRecordWhereInput) {
-  const args = { where, _sum: { value: true as const }, _count: { _all: true as const }, orderBy: { _sum: { value: "desc" as const } }, take: 12 };
+  const args = {
+    where,
+    _sum: { value: true as const },
+    _count: { _all: true as const },
+    orderBy: { _sum: { value: "desc" as const } },
+    // O menu de secretarias precisa exibir todos os órgãos; os demais
+    // agrupamentos continuam limitados para preservar o desempenho do painel.
+    ...(field === "organ" ? {} : { take: 12 }),
+  };
   switch (field) {
     case "organ": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["organ"], ...args }), field);
     case "budgetUnit": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["budgetUnit"], ...args }), field);

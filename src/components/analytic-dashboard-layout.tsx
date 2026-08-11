@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { DataSourceToggle } from "./data-source-toggle";
 import { currency, integer, percent } from "@/lib/format";
 import type { DashboardData } from "@/types/loa";
@@ -50,6 +51,10 @@ export function AnalyticDashboardLayout({
   selectedImportId: string;
   onSelectImport: (importId: string) => void;
 }) {
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantAnswer, setAssistantAnswer] = useState<{ answer: string; details?: Array<{ label: string; value: string }>; warning?: string } | null>(null);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
   const totalVal = data.totals.filtered;
   const operatingVal = data.spending.operating;
   const investmentVal = data.spending.investment;
@@ -57,6 +62,29 @@ export function AnalyticDashboardLayout({
   const expenseTotal = isRealData ? totalVal : operatingVal + investmentVal;
   const isBalanced = totalVal >= expenseTotal;
   const population = 723500;
+
+  const askAssistant = async (question: string) => {
+    const text = question.trim();
+    if (!text || assistantLoading) return;
+    setAssistantQuestion(text);
+    setAssistantAnswer(null);
+    setAssistantError("");
+    setAssistantLoading(true);
+    try {
+      const response = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text, importId: selectedImportId || undefined }),
+      });
+      const result = (await response.json()) as { message?: string; answer?: string; details?: Array<{ label: string; value: string }>; warnings?: string[] };
+      if (!response.ok) throw new Error(result.message ?? "Não foi possível consultar o orçamento.");
+      setAssistantAnswer({ answer: result.answer ?? "Não encontrei uma resposta.", details: result.details, warning: result.warnings?.[0] });
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : "Não foi possível consultar o orçamento.");
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
 
   const handleQuestionClick = (questionId: string) => {
     switch (questionId) {
@@ -185,6 +213,55 @@ export function AnalyticDashboardLayout({
       icon: "receipt_long",
       colorClass: "bg-cyan-50 hover:bg-cyan-100 border-cyan-200 text-cyan-700 dark:bg-cyan-950/20 dark:border-cyan-900/30 dark:text-cyan-300",
       iconColorClass: "text-cyan-500",
+    },
+    {
+      id: "programas-maiores",
+      label: "Quais programas têm os maiores valores?",
+      icon: "account_tree",
+      colorClass: "bg-violet-50 hover:bg-violet-100 border-violet-200 text-violet-700 dark:bg-violet-950/20 dark:border-violet-900/30 dark:text-violet-300",
+      iconColorClass: "text-violet-500",
+    },
+    {
+      id: "funcoes-maiores",
+      label: "Quais funções concentram mais recursos?",
+      icon: "category",
+      colorClass: "bg-sky-50 hover:bg-sky-100 border-sky-200 text-sky-700 dark:bg-sky-950/20 dark:border-sky-900/30 dark:text-sky-300",
+      iconColorClass: "text-sky-500",
+    },
+    {
+      id: "composicao-despesas",
+      label: "Quanto há em despesas operacionais e investimentos?",
+      icon: "pie_chart",
+      colorClass: "bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-950/20 dark:border-orange-900/30 dark:text-orange-300",
+      iconColorClass: "text-orange-500",
+    },
+    {
+      id: "registros-importacao",
+      label: "Quantos registros existem na importação selecionada?",
+      icon: "table_rows",
+      colorClass: "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 dark:bg-slate-950/20 dark:border-slate-900/30 dark:text-slate-300",
+      iconColorClass: "text-slate-500",
+    },
+    {
+      id: "importacao-atual",
+      label: "Qual importação está sendo consultada?",
+      icon: "inventory_2",
+      colorClass: "bg-lime-50 hover:bg-lime-100 border-lime-200 text-lime-700 dark:bg-lime-950/20 dark:border-lime-900/30 dark:text-lime-300",
+      iconColorClass: "text-lime-600",
+    },
+    {
+      id: "qualidade-classificacao",
+      label: "Como está a qualidade da classificação?",
+      icon: "fact_check",
+      colorClass: "bg-fuchsia-50 hover:bg-fuchsia-100 border-fuchsia-200 text-fuchsia-700 dark:bg-fuchsia-950/20 dark:border-fuchsia-900/30 dark:text-fuchsia-300",
+      iconColorClass: "text-fuchsia-500",
+    },
+    {
+      id: "receitas-exercicio",
+      label: "Compare as receitas disponíveis no exercício selecionado.",
+      icon: "account_balance_wallet",
+      colorClass: "bg-green-50 hover:bg-green-100 border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900/30 dark:text-green-300",
+      iconColorClass: "text-green-600",
     },
   ];
 
@@ -628,13 +705,59 @@ export function AnalyticDashboardLayout({
           {questions.map((q) => (
             <button
               key={q.id}
-              onClick={() => handleQuestionClick(q.id)}
+              onClick={() => {
+                handleQuestionClick(q.id);
+                void askAssistant(q.label);
+              }}
               className={`inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] cursor-pointer ${q.colorClass}`}
             >
               <span className={`material-symbols-outlined text-[16px] ${q.iconColorClass}`}>{q.icon}</span>
               {q.label}
             </button>
           ))}
+        </div>
+        <div className="mt-5 rounded-2xl border border-outline-variant bg-surface-container-low p-4">
+          <form
+            className="flex flex-col gap-2 md:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void askAssistant(assistantQuestion);
+            }}
+          >
+            <label htmlFor="analytic-assistant-question" className="sr-only">Pergunte ao orçamento</label>
+            <input
+              id="analytic-assistant-question"
+              value={assistantQuestion}
+              onChange={(event) => setAssistantQuestion(event.target.value)}
+              placeholder="Ou escreva uma pergunta sobre os dados selecionados..."
+              maxLength={500}
+              className="min-h-11 flex-1 rounded-xl border border-outline-variant bg-surface px-4 text-sm text-on-surface outline-none focus:border-tertiary"
+            />
+            <button
+              type="submit"
+              disabled={assistantLoading || !assistantQuestion.trim()}
+              className="rounded-xl bg-tertiary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-tertiary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {assistantLoading ? "Consultando..." : "Perguntar"}
+            </button>
+          </form>
+          {assistantError && <p role="alert" className="mt-3 rounded-xl bg-error-container px-3 py-2 text-xs text-on-error-container">{assistantError}</p>}
+          {assistantAnswer && (
+            <div className="mt-4 rounded-2xl border border-tertiary/30 bg-surface p-4">
+              <p className="text-sm leading-6 text-on-surface">{assistantAnswer.answer}</p>
+              {assistantAnswer.details && assistantAnswer.details.length > 0 && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {assistantAnswer.details.map((detail) => (
+                    <div key={detail.label} className="rounded-xl bg-surface-container-low p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">{detail.label}</p>
+                      <p className="mt-1 text-sm font-bold text-tertiary">{detail.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {assistantAnswer.warning && <p className="mt-3 text-[11px] text-on-surface-variant">{assistantAnswer.warning}</p>}
+            </div>
+          )}
         </div>
       </section>
 

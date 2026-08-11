@@ -24,10 +24,10 @@ export default function TransparentePage() {
 
   // Dynamic calculations based on active data source
   const isReal = dataSource === "real" && dbData && dbData.records;
-  
+
   // Total LOA
   const totalLoa = isReal ? dbData.totals.loa : 6500000000;
-  
+
   // Investimento por Habitante
   const invPerHab = isReal ? Math.round(totalLoa / 760000) : 8552;
 
@@ -128,7 +128,7 @@ export default function TransparentePage() {
     }, { threshold: 0.1 });
 
     stats.forEach(stat => observer.observe(stat));
-    
+
     return () => {
       stats.forEach(stat => observer.unobserve(stat));
     };
@@ -137,7 +137,8 @@ export default function TransparentePage() {
   return (
     <>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
             display: inline-block;
@@ -179,10 +180,10 @@ export default function TransparentePage() {
           {/* Hero Section */}
           <section className="relative min-h-[600px] flex items-center overflow-hidden">
             <div className="absolute inset-0 z-0">
-              <img 
-                className="w-full h-full object-cover" 
-                alt="A wide panoramic photograph of Osasco, Brazil" 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCRJUoFmAKsZLZsk0IuNN37qjGMZvQJn2NxWyHh0Ljk-dfxYGbtXqtYSq8gclSqJhFTc4dMxhNedyofCfuSw_YfGwjHq1_0r0EL6pM89Pdhx1v_aVjuRjfplHBbrL8fXMHFMxa9bmi9yF6vkzULY2WnwwxoYwHdTPql3YFlZROk0YHADYtAyEGPvKYdAocajiSYMbbNiutOUu0bxtgKIEW5uIkR27ADvRNfs77siRYZODjpLgxLd5JIFTweKPE9uJ9u3Q" 
+              <img
+                className="w-full h-full object-cover"
+                alt="A wide panoramic photograph of Osasco, Brazil"
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCRJUoFmAKsZLZsk0IuNN37qjGMZvQJn2NxWyHh0Ljk-dfxYGbtXqtYSq8gclSqJhFTc4dMxhNedyofCfuSw_YfGwjHq1_0r0EL6pM89Pdhx1v_aVjuRjfplHBbrL8fXMHFMxa9bmi9yF6vkzULY2WnwwxoYwHdTPql3YFlZROk0YHADYtAyEGPvKYdAocajiSYMbbNiutOUu0bxtgKIEW5uIkR27ADvRNfs77siRYZODjpLgxLd5JIFTweKPE9uJ9u3Q"
               />
               <div className="absolute inset-0 hero-gradient"></div>
             </div>
@@ -516,7 +517,7 @@ export default function TransparentePage() {
           </section>
 
           {/* Interactive Section: Where does R$ 100 go? */}
-          <section className="py-20 bg-primary text-on-primary">
+          <section className="py-20 bg-[#123b7a] text-white">
             <div className="px-margin-desktop max-w-container-max mx-auto">
               <div className="flex flex-col lg:flex-row items-center gap-16">
                 <div className="lg:w-1/2">
@@ -529,7 +530,7 @@ export default function TransparentePage() {
                     {/* Health */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span>Saúde</span>
+                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#A7F3D0]" />Saúde</span>
                         <span>R$ {saudePct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -539,7 +540,7 @@ export default function TransparentePage() {
                     {/* Education */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span>Educação</span>
+                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#BAE6FD]" />Educação</span>
                         <span>R$ {educacaoPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -549,7 +550,7 @@ export default function TransparentePage() {
                     {/* Obras */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span>Obras e Infraestrutura</span>
+                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#FED7AA]" />Obras e Infraestrutura</span>
                         <span>R$ {obrasPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -559,7 +560,7 @@ export default function TransparentePage() {
                     {/* Transport */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span>Transporte e Mobilidade</span>
+                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#FEF08A]" />Transporte e Mobilidade</span>
                         <span>R$ {mobilidadePct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -569,7 +570,7 @@ export default function TransparentePage() {
                     {/* Social */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span>Assistência Social e Segurança</span>
+                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#F87171]" />Assistência Social e Segurança</span>
                         <span>R$ {socialPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -579,7 +580,7 @@ export default function TransparentePage() {
                     {/* Other */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md opacity-70">
-                        <span>Demais Secretarias</span>
+                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-white/40" />Demais Secretarias</span>
                         <span>R$ {otherPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -663,29 +664,29 @@ export default function TransparentePage() {
         </main>
 
         {/* Footer */}
-        <footer className="bg-surface-container-highest">
+        <footer className="bg-[#0b2d6b] text-white">
           <div className="w-full py-12 px-margin-desktop flex flex-col md:flex-row justify-between items-center max-w-container-max mx-auto gap-8">
             <div className="flex flex-col items-center md:items-start">
-              <div className="font-headline-md text-headline-md text-primary font-bold mb-2">Orçamento Transparente</div>
-              <p className="font-label-md text-label-md text-on-surface-variant">© 2024 Orçamento Transparente - Portal de Transparência Orçamentária.</p>
+              <div className="font-headline-md text-headline-md text-white font-bold mb-2">Orçamento Transparente</div>
+              <p className="font-label-md text-label-md text-white/75">© 2024 Orçamento Transparente - Portal de Transparência Orçamentária.</p>
             </div>
             <div className="flex flex-wrap justify-center gap-6 font-label-md text-label-md">
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Privacidade</a>
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Acessibilidade</a>
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Dados Abertos</a>
-              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Contato</a>
+              <a className="text-white/80 hover:text-white transition-colors" href="#">Privacidade</a>
+              <a className="text-white/80 hover:text-white transition-colors" href="#">Acessibilidade</a>
+              <a className="text-white/80 hover:text-white transition-colors" href="#">Dados Abertos</a>
+              <a className="text-white/80 hover:text-white transition-colors" href="#">Contato</a>
             </div>
             <div className="flex gap-4">
-              <a className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-primary-fixed transition-soft" href="#">
+              <a className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-soft" href="#">
                 <span className="material-symbols-outlined">share</span>
               </a>
-              <a className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-primary-fixed transition-soft" href="#">
+              <a className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-soft" href="#">
                 <span className="material-symbols-outlined">help</span>
               </a>
             </div>
           </div>
-          <div className="border-t border-outline-variant/30 py-4 text-center text-xs text-outline">
-            Prefeitura do Município de Osasco - Secretaria de Planejamento e Gestão
+          <div className="border-t border-white/20 py-4 text-center text-xs text-white/70">
+            Prefeitura do Município de Osasco - Secretaria de Finanças
           </div>
         </footer>
       </div>
