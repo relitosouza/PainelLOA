@@ -7,7 +7,8 @@ export type PrimaryPageKey =
   | "analise-loa"
   | "elaboracao-loa"
   | "importacao"
-  | "relatorios";
+  | "relatorios"
+  | "assistente-loa";
 
 export type PrimaryPageLink = {
   key: PrimaryPageKey;
@@ -35,6 +36,7 @@ export const NAVIGATION_SETTINGS_STORAGE_KEY = "painel_loa_navigation_settings_v
 export const DEFAULT_NAVIGATION_SECTIONS: NavigationSection[] = [
   { key: "visao-analitica", label: "Visão Analítica", pages: ["dashboard"] },
   { key: "loa-transparente", label: "Orçamento Transparente", pages: ["transparente"] },
+  { key: "ferramentas", label: "Ferramentas", pages: ["assistente-loa"] },
 ];
 
 export const PRIMARY_PAGE_LINKS: PrimaryPageLink[] = [
@@ -47,6 +49,7 @@ export const PRIMARY_PAGE_LINKS: PrimaryPageLink[] = [
   { key: "despesas", label: "Painel de Despesas Municipais", href: "/despesas", icon: "shopping_cart" },
   { key: "importacao", label: "Importações", href: "/importacao", icon: "upload_file" },
   { key: "relatorios", label: "Relatórios", href: "/relatorios", icon: "assessment" },
+  { key: "assistente-loa", label: "Assistente LOA", href: "/assistente-loa", icon: "auto_awesome" },
 ];
 
 export function getPrimaryPageLinks(_currentView?: string) {
