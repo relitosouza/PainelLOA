@@ -517,7 +517,7 @@ export default function TransparentePage() {
           </section>
 
           {/* Interactive Section: Where does R$ 100 go? */}
-          <section className="py-20 bg-[#123b7a] text-white">
+          <section className="py-20 bg-primary text-on-primary">
             <div className="px-margin-desktop max-w-container-max mx-auto">
               <div className="flex flex-col lg:flex-row items-center gap-16">
                 <div className="lg:w-1/2">
@@ -530,7 +530,7 @@ export default function TransparentePage() {
                     {/* Health */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#A7F3D0]" />Saúde</span>
+                        <span>Saúde</span>
                         <span>R$ {saudePct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -540,7 +540,7 @@ export default function TransparentePage() {
                     {/* Education */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#BAE6FD]" />Educação</span>
+                        <span>Educação</span>
                         <span>R$ {educacaoPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -550,7 +550,7 @@ export default function TransparentePage() {
                     {/* Obras */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#FED7AA]" />Obras e Infraestrutura</span>
+                        <span>Obras e Infraestrutura</span>
                         <span>R$ {obrasPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -560,7 +560,7 @@ export default function TransparentePage() {
                     {/* Transport */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#FEF08A]" />Transporte e Mobilidade</span>
+                        <span>Transporte e Mobilidade</span>
                         <span>R$ {mobilidadePct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -570,7 +570,7 @@ export default function TransparentePage() {
                     {/* Social */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md">
-                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#F87171]" />Assistência Social e Segurança</span>
+                        <span>Assistência Social e Segurança</span>
                         <span>R$ {socialPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -580,7 +580,7 @@ export default function TransparentePage() {
                     {/* Other */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-label-md opacity-70">
-                        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-white/40" />Demais Secretarias</span>
+                        <span>Demais Secretarias</span>
                         <span>R$ {otherPct.toFixed(2).replace(".", ",")}</span>
                       </div>
                       <div className="w-full bg-white/20 h-4 rounded-full overflow-hidden">
@@ -664,28 +664,28 @@ export default function TransparentePage() {
         </main>
 
         {/* Footer */}
-        <footer className="bg-[#0b2d6b] text-white">
+        <footer className="bg-surface-container-highest">
           <div className="w-full py-12 px-margin-desktop flex flex-col md:flex-row justify-between items-center max-w-container-max mx-auto gap-8">
             <div className="flex flex-col items-center md:items-start">
-              <div className="font-headline-md text-headline-md text-white font-bold mb-2">Orçamento Transparente</div>
-              <p className="font-label-md text-label-md text-white/75">© 2024 Orçamento Transparente - Portal de Transparência Orçamentária.</p>
+              <div className="font-headline-md text-headline-md text-primary font-bold mb-2">Orçamento Transparente</div>
+              <p className="font-label-md text-label-md text-on-surface-variant">© 2024 Orçamento Transparente - Portal de Transparência Orçamentária.</p>
             </div>
             <div className="flex flex-wrap justify-center gap-6 font-label-md text-label-md">
-              <a className="text-white/80 hover:text-white transition-colors" href="#">Privacidade</a>
-              <a className="text-white/80 hover:text-white transition-colors" href="#">Acessibilidade</a>
-              <a className="text-white/80 hover:text-white transition-colors" href="#">Dados Abertos</a>
-              <a className="text-white/80 hover:text-white transition-colors" href="#">Contato</a>
+              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Privacidade</a>
+              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Acessibilidade</a>
+              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Dados Abertos</a>
+              <a className="text-on-surface-variant hover:text-primary transition-colors" href="#">Contato</a>
             </div>
             <div className="flex gap-4">
-              <a className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-soft" href="#">
+              <a className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-primary-fixed transition-soft" href="#">
                 <span className="material-symbols-outlined">share</span>
               </a>
-              <a className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-soft" href="#">
+              <a className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-primary-fixed transition-soft" href="#">
                 <span className="material-symbols-outlined">help</span>
               </a>
             </div>
           </div>
-          <div className="border-t border-white/20 py-4 text-center text-xs text-white/70">
+          <div className="border-t border-outline-variant/30 py-4 text-center text-xs text-outline">
             Prefeitura do Município de Osasco - Secretaria de Finanças
           </div>
         </footer>
