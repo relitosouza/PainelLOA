@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:staging": "next dev -p 3001",
     "build": "prisma generate && next build",
     "start": "next start",
+    "start:staging": "next start -p 3001",
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "playwright test",
