@@ -114,13 +114,38 @@ export function ElaboracaoLoaView() {
         </aside>
       </div>
 
-      {isActionPanelOpen && selected && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 md:p-8" role="dialog" aria-modal="true" aria-labelledby="action-panel-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsActionPanelOpen(false); }}>
-        <div className="w-full max-w-5xl">
-          <div className="mb-2 flex justify-end"><button type="button" onClick={() => setIsActionPanelOpen(false)} aria-label="Fechar detalhamento da ação" className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant bg-surface text-slate-700 shadow-lg hover:bg-slate-100"><span aria-hidden="true" className="material-symbols-outlined">close</span></button></div>
-          <div id="action-panel-title" className="sr-only">Detalhamento da ação {selected.acaoCodigo}</div>
-          <ClassificationPanel action={selected} onSaved={loadActions} />
+      {isActionPanelOpen && selected && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4 md:p-8 animate-in fade-in zoom-in-95"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="action-panel-title"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setIsActionPanelOpen(false);
+            }
+          }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsActionPanelOpen(false);
+          }}
+        >
+          <div className="w-full max-w-5xl">
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsActionPanelOpen(false)}
+                aria-label="Fechar detalhamento da ação"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant bg-surface text-on-surface shadow-lg hover:bg-surface-container transition-colors"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            <div id="action-panel-title" className="sr-only">Detalhamento da ação {selected.acaoCodigo}</div>
+            <ClassificationPanel action={selected} onSaved={loadActions} />
+          </div>
         </div>
-      </div>}
+      )}
 
       {actions.some((action) => action.enquadramentos.length) && <TraceabilityMatrix actions={actions} />}
     </div>
