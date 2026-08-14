@@ -6,6 +6,53 @@ import { currency, integer } from "@/lib/format";
 import { inferImportExercise } from "@/lib/import-metadata";
 
 type Preview = { records: BudgetRow[]; invalidValues: number[]; missingOrgan: boolean; hasRequiredFields: boolean };
+type ComparisonChange = { secretaria: string; programa: string; acao: string; valorAtual: number; valorNovo: number; diferenca: number };
+type ImportComparison = { currentRows: number; newRows: number; currentTotal: number; newTotal: number; added: ComparisonChange[]; removed: ComparisonChange[]; changed: ComparisonChange[] };
+
+function compareProgramActions(current: BudgetRow[], incoming: BudgetRow[]): ImportComparison {
+  const aggregate = (rows: BudgetRow[]) => {
+    const map = new Map<string, ComparisonChange>();
+    rows.forEach((row) => {
+      const secretaria = row.organ.trim();
+      const programa = row.program.trim();
+      const acao = row.action.trim();
+      if (!programa || !acao) return;
+      const key = `${secretaria}|${programa}|${acao}`;
+      const previous = map.get(key) ?? { secretaria, programa, acao, valorAtual: 0, valorNovo: 0, diferenca: 0 };
+      previous.valorNovo += row.value;
+      map.set(key, previous);
+    });
+    return map;
+  };
+  const currentMap = aggregate(current);
+  const incomingMap = aggregate(incoming);
+  const added: ComparisonChange[] = [];
+  const removed: ComparisonChange[] = [];
+  const changed: ComparisonChange[] = [];
+  incomingMap.forEach((incomingRow, key) => {
+    const currentRow = currentMap.get(key);
+    if (!currentRow) {
+      added.push({ ...incomingRow, diferenca: incomingRow.valorNovo });
+      return;
+    }
+    const diferenca = incomingRow.valorNovo - currentRow.valorNovo;
+    if (Math.abs(diferenca) > 0.005) {
+      changed.push({ ...incomingRow, valorAtual: currentRow.valorNovo, diferenca });
+    }
+  });
+  currentMap.forEach((currentRow, key) => {
+    if (!incomingMap.has(key)) removed.push({ ...currentRow, valorNovo: 0, diferenca: -currentRow.valorNovo });
+  });
+  return {
+    currentRows: current.length,
+    newRows: incoming.length,
+    currentTotal: current.reduce((sum, row) => sum + row.value, 0),
+    newTotal: incoming.reduce((sum, row) => sum + row.value, 0),
+    added,
+    removed,
+    changed,
+  };
+}
 
 async function downloadTemplate() {
   const XLSX = await import("xlsx");
@@ -42,10 +89,14 @@ export function ImportView() {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [comparison, setComparison] = useState<ImportComparison | null>(null);
+  const [comparisonConfirmed, setComparisonConfirmed] = useState(false);
 
   async function selectFile(selected?: File) {
     if (!selected) return;
     setMessage(null);
+    setComparison(null);
+    setComparisonConfirmed(false);
     if (!/\.(xlsx|xls|csv)$/i.test(selected.name)) {
       setMessage({ type: "error", text: "Formato inválido. Selecione um arquivo XLSX, XLS ou CSV." });
       return;
@@ -57,6 +108,18 @@ export function ImportView() {
       setFile(selected);
       setExercise(inferImportExercise(selected.name, new Date().getFullYear() + 1) ?? new Date().getFullYear() + 1);
       setPreview(parsed);
+      try {
+        const currentResponse = await fetch("/api/loa?all=true");
+        if (currentResponse.ok) {
+          const currentData = await currentResponse.json() as { records?: Array<Record<string, unknown>> };
+          const currentRecords = (currentData.records ?? []).map((row) => ({
+            organ: String(row.organ ?? ""), budgetUnit: String(row.budgetUnit ?? ""), functionName: "", subfunction: "", program: String(row.program ?? ""), action: String(row.action ?? ""), expenseNature: "", subelement: "", administrativeProcess: "", value: Number(row.value) || 0,
+          }));
+          setComparison(compareProgramActions(currentRecords, parsed.records));
+        }
+      } catch {
+        setComparison(null);
+      }
       if (!parsed.hasRequiredFields || parsed.missingOrgan) setMessage({ type: "error", text: "A planilha não possui todos os campos obrigatórios ou há registros sem Órgão." });
       else if (parsed.invalidValues.length) setMessage({ type: "error", text: `${parsed.invalidValues.length} valor(es) não puderam ser interpretados. Revise a coluna VALOR.` });
     } catch {
@@ -65,12 +128,12 @@ export function ImportView() {
   }
 
   function cancel() {
-    setFile(null); setPreview(null); setMessage(null);
+    setFile(null); setPreview(null); setMessage(null); setComparison(null); setComparisonConfirmed(false);
     if (inputRef.current) inputRef.current.value = "";
   }
 
   async function confirm() {
-    if (!file || !preview) return;
+    if (!file || !preview || (comparison && (comparison.added.length || comparison.removed.length || comparison.changed.length) && !comparisonConfirmed)) return;
     setLoading(true); setMessage(null);
     const body = new FormData(); body.set("file", file); body.set("replace", String(replace)); body.set("exercise", String(exercise));
     try {
@@ -78,7 +141,7 @@ export function ImportView() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.message);
       setMessage({ type: "success", text: `${result.message} Exercício ${result.summary.exercise}: ${integer.format(result.summary.rows)} registros e ${currency.format(result.summary.totalValue)} importados como dados reais.` });
-      setFile(null); setPreview(null);
+      setFile(null); setPreview(null); setComparison(null); setComparisonConfirmed(false);
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Falha na importação." });
     } finally { setLoading(false); }
@@ -86,6 +149,7 @@ export function ImportView() {
 
   const total = preview?.records.reduce((sum, row) => sum + row.value, 0) ?? 0;
   const valid = Boolean(preview?.hasRequiredFields && !preview.missingOrgan && !preview.invalidValues.length && preview.records.length && Number.isInteger(exercise) && exercise >= 2000 && exercise <= 2100);
+  const hasDifferences = Boolean(comparison && (comparison.added.length || comparison.removed.length || comparison.changed.length));
   return (
     <>
       <header className="page-heading border-b border-outline-variant/30 pb-4 mb-6">
@@ -228,6 +292,35 @@ export function ImportView() {
               <span className="text-xs font-semibold bg-green-100 text-green-800 px-2.5 py-1 rounded-full">Validação OK</span>
             </div>
 
+            {comparison && (
+              <div className={`mb-6 rounded-xl border p-4 ${hasDifferences ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`} role="status">
+                <div className="flex items-start gap-3">
+                  <span className={`material-symbols-outlined ${hasDifferences ? "text-amber-700" : "text-emerald-700"}`}>{hasDifferences ? "difference" : "verified"}</span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className={`text-sm font-bold ${hasDifferences ? "text-amber-900" : "text-emerald-900"}`}>
+                      {hasDifferences ? "Foram encontradas diferenças na base atual" : "Nenhuma diferença de valor encontrada"}
+                    </h3>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      Base atual: {integer.format(comparison.currentRows)} registros · {currency.format(comparison.currentTotal)} | Nova planilha: {integer.format(comparison.newRows)} registros · {currency.format(comparison.newTotal)}
+                    </p>
+                    {hasDifferences && (
+                      <p className="mt-1 text-xs font-semibold text-amber-900">
+                        {comparison.changed.length} programa(s)/ação(ões) com valores alterados · {comparison.added.length} novos · {comparison.removed.length} removidos · Diferença total: {currency.format(comparison.newTotal - comparison.currentTotal)}
+                      </p>
+                    )}
+                    {comparison.changed.length > 0 && (
+                      <div className="mt-3 max-h-48 overflow-auto rounded-lg border border-amber-200 bg-white">
+                        <table className="w-full text-left text-xs">
+                          <thead className="sticky top-0 bg-amber-100 text-amber-950"><tr><th className="px-3 py-2">Secretaria</th><th className="px-3 py-2">Programa</th><th className="px-3 py-2">Ação</th><th className="px-3 py-2 text-right">Atual</th><th className="px-3 py-2 text-right">Novo</th><th className="px-3 py-2 text-right">Diferença</th></tr></thead>
+                          <tbody className="divide-y divide-amber-100">{comparison.changed.map((row) => <tr key={`${row.secretaria}-${row.programa}-${row.acao}`}><td className="px-3 py-2">{row.secretaria}</td><td className="px-3 py-2 font-semibold">{row.programa}</td><td className="px-3 py-2">{row.acao}</td><td className="px-3 py-2 text-right">{currency.format(row.valorAtual)}</td><td className="px-3 py-2 text-right">{currency.format(row.valorNovo)}</td><td className={`px-3 py-2 text-right font-bold ${row.diferenca < 0 ? "text-rose-700" : "text-emerald-700"}`}>{currency.format(row.diferenca)}</td></tr>)}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Validation Log */}
             <div className="bg-neutral-950 text-green-400 font-mono text-xs p-4 rounded-xl mb-6 space-y-1 shadow-inner">
               <div>&gt; [SYSTEM] INICIANDO PARSE DA PLANILHA ORÇAMENTÁRIA...</div>
@@ -289,6 +382,12 @@ export function ImportView() {
                 />
                 Substituir dados existentes
               </label>
+              {hasDifferences && (
+                <label className="flex max-w-md items-start gap-2 cursor-pointer text-xs font-semibold text-amber-900">
+                  <input type="checkbox" checked={comparisonConfirmed} onChange={(event) => setComparisonConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-tertiary" />
+                  <span>Confirmei as diferenças entre os programas, ações e valores e autorizo a atualização.</span>
+                </label>
+              )}
               <div className="flex gap-3">
                 <button
                   className="brutalist-button bg-surface text-on-surface hover:bg-surface-container font-semibold text-xs border border-outline-variant"
@@ -299,7 +398,7 @@ export function ImportView() {
                 <button
                   className="brutalist-button brutalist-button-primary bg-tertiary text-on-tertiary hover:bg-tertiary-container font-semibold text-xs disabled:opacity-50 border-0"
                   onClick={confirm}
-                  disabled={!valid || loading}
+                  disabled={!valid || loading || Boolean(hasDifferences && !comparisonConfirmed)}
                 >
                   {loading ? "Importando..." : "Confirmar Importação"}
                 </button>

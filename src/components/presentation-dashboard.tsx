@@ -4,6 +4,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { currency, percent } from "@/lib/format";
 import { getPresentationRecords, groupPresentation, type PresentationRecord } from "@/lib/presentation-data";
+import { calculateExecutiveMetrics } from "@/lib/executive-calculations";
+import { DecisionCapacityCard } from "./executive/decision-capacity-card";
+import { WaterfallDecisionMargin } from "./executive/waterfall-decision-margin";
+import { RigidityDonut, MandatoryVsDiscretionaryCard } from "./executive/rigidity-donut";
+import { RevenueEvolutionChart } from "./executive/revenue-evolution-chart";
+import { RevenueRiskTable } from "./executive/revenue-risk-table";
+import { BudgetScenarioSimulator } from "./executive/budget-scenario-simulator";
+import { PolicyAllocationChart, InvestmentsByOrganCard } from "./executive/policy-allocation-chart";
+import { LdoDeliveryMatrix, InsufficientLdoGoalsCard, StrategicProgramsCard } from "./executive/ldo-delivery-matrix";
+import { ExecutiveActionKpis, ExecutiveAlertsMap } from "./executive/executive-alerts-panel";
 import { useDataSource } from "./data-source-toggle";
 import type { DashboardData, BudgetRow } from "@/types/loa";
 
@@ -607,6 +617,11 @@ export function PresentationDashboard() {
     return observations;
   }, [budgetPressure, summary, topFiveShare, topInvestmentAction, topProcess, topProgram]);
 
+  const execMetrics = useMemo(() => {
+    const records = getCurrentRecords(year).filter((record) => !secretariat || record.secretariat === secretariat);
+    return calculateExecutiveMetrics(records, summary.total);
+  }, [getCurrentRecords, year, secretariat, summary.total]);
+
   return (
     <div className="relative min-h-screen bg-background font-body text-on-surface antialiased">
       {/* TopNavBar */}
@@ -623,8 +638,9 @@ export function PresentationDashboard() {
             </span>
           </button>
           <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuCPv8bxz9qBvO0U-LbRPOpq5Zv3IM3GqYCCJdLPolQmfhY7LWhcVQDNA6O2hlCTigyfqa-Vi8V2Ybvn75DIVi8vi7GszUXwtVR6DaIrN-RouQO7vy-b0Z1MU4e3amKwkEuYL3_hPizKdBt2UjiF9P9o7N03Rdv5u7kbtO9Vsr5wr2h-ikyncy-lB9A8KxhGQfO4QLV97UDbsZm3M4-LAvJQaBHUyuEdX2dffDmmvGzNiE7-SIAosqsO58xtB337OLqhfqs"
+              src="/brasao.png"
               alt="Brasão de Osasco"
               className="h-10 w-auto object-contain"
             />
@@ -672,52 +688,52 @@ export function PresentationDashboard() {
             <span className="font-medium">Despesa</span>
           </Link>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
-            href="#prioridades"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            href="#secao-1"
           >
-            <span className="material-symbols-outlined text-xl">account_balance</span>
-            <span className="font-medium">Secretarias</span>
+            <span className="material-symbols-outlined text-xl">account_balance_wallet</span>
+            <span className="font-medium">1. Quanto temos?</span>
           </a>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
-            href="#prioridades"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            href="#secao-2"
           >
-            <span className="material-symbols-outlined text-xl">track_changes</span>
-            <span className="font-medium">Prioridades</span>
+            <span className="material-symbols-outlined text-xl">target</span>
+            <span className="font-medium">2. Quanto podemos decidir?</span>
           </a>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
-            href="#despesas"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            href="#secao-3"
           >
-            <span className="material-symbols-outlined text-xl">trending_up</span>
-            <span className="font-medium">Investimentos</span>
+            <span className="material-symbols-outlined text-xl">pie_chart</span>
+            <span className="font-medium">3. Onde está o dinheiro?</span>
           </a>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
-            href="#alertas"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            href="#secao-4"
           >
-            <span className="material-symbols-outlined text-xl">warning</span>
-            <span className="font-medium">Riscos e Concentração</span>
+            <span className="material-symbols-outlined text-xl">assignment_turned_in</span>
+            <span className="font-medium">4. Entrega o Plano?</span>
           </a>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
-            href="#prioridades"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            href="#secao-5"
           >
-            <span className="material-symbols-outlined text-xl">insights</span>
-            <span className="font-medium">Comparativos</span>
+            <span className="material-symbols-outlined text-xl">notification_important</span>
+            <span className="font-medium">5. Onde agir?</span>
           </a>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
             href="#insights"
           >
             <span className="material-symbols-outlined text-xl">psychology</span>
-            <span className="font-medium">Insights</span>
+            <span className="font-medium">Análise IA</span>
           </a>
           <a
-            className="flex items-center gap-4 px-4 py-3 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
+            className="flex items-center gap-4 px-4 py-2.5 text-white/70 hover:bg-white/5 hover:text-white transition-all font-body text-sm rounded-xl"
             href="#pergunte"
           >
-            <span className="material-symbols-outlined text-xl">chat</span>
+            <span className="material-symbols-outlined text-xl">forum</span>
             <span className="font-medium">Pergunte ao Orçamento</span>
           </a>
         </nav>
@@ -754,15 +770,22 @@ export function PresentationDashboard() {
         />
       )}
 
-      {/* Main Content */}
-      <main className={`transition-all duration-300 pt-28 px-8 pb-12 max-w-[1600px] mx-auto ${
+      <main className={`transition-all duration-300 pt-24 px-4 sm:px-8 pb-16 max-w-[1600px] mx-auto w-full ${
         sidebarCollapsed ? "lg:ml-0" : "lg:ml-72"
       }`}>
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-6">
           <div>
-            <h1 className="text-4xl font-headline font-black text-on-surface tracking-tight mb-2">Painel Executivo da LOA</h1>
-            <p className="text-on-surface-variant text-lg">Sala de Situação do Prefeito — Visão Consolidada de Recursos</p>
+            <div className="flex items-center gap-2 text-xs font-semibold text-on-surface-variant mb-1">
+              <span>Gabinete do Prefeito</span>
+              <span className="material-symbols-outlined text-xs">chevron_right</span>
+              <span className="text-primary">Sala de Situação Orçamentária</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-headline font-black text-on-surface tracking-tight">
+              Painel Executivo da LOA 2027
+            </h1>
+            <p className="text-on-surface-variant text-base mt-1">
+              Sala de Situação do Prefeito — Visão Consolidada para Tomada de Decisão
+            </p>
           </div>
         </div>
 
@@ -779,60 +802,8 @@ export function PresentationDashboard() {
           </div>
         )}
 
-        {/* 1. Panorama Geral (Header Row) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="p-7 rounded-2xl bg-gradient-to-br from-tertiary to-[#00386b] text-white shadow-xl shadow-tertiary/20 relative overflow-hidden group border border-tertiary/20">
-            <div className="absolute -right-6 -bottom-6 opacity-[0.08] group-hover:scale-110 transition-transform duration-700">
-              <span className="material-symbols-outlined text-[160px]">account_balance</span>
-            </div>
-            <div className="relative z-10">
-              <p className="text-tertiary-fixed font-semibold text-sm tracking-wide mb-2 opacity-90 uppercase">Orçamento Total (LOA)</p>
-              <h3 className="text-5xl font-headline font-black mb-5 tracking-tight">{compactCurrency(summary.total)}</h3>
-              <div className="flex items-center gap-2 text-sm font-bold bg-white/10 backdrop-blur-sm w-fit px-3 py-1.5 rounded-lg border border-white/10">
-                <span className="material-symbols-outlined text-[16px]">trending_up</span>
-                <span>{trend >= 0 ? "+" : ""}{percent.format(trend)} vs Ano Anterior</span>
-              </div>
-            </div>
-          </div>
-
-          <div id="alertas" className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-            <div>
-              <div className="flex justify-between items-start mb-3">
-                <p className="text-outline font-bold text-xs uppercase tracking-wider">Receita vs Despesa</p>
-                <div className="w-10 h-10 rounded-full bg-[#e6f4ea] flex items-center justify-center text-[#137333] shadow-inner">
-                  <span className="material-symbols-outlined text-xl">check_circle</span>
-                </div>
-              </div>
-              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">Equilibrado</h3>
-              <p className="text-sm font-semibold text-[#137333]">Superávit Projetado: R$ 12M</p>
-            </div>
-            <div className="mt-6 h-2 w-full bg-surface-container rounded-full overflow-hidden border border-outline-variant/20">
-              <div className="bg-[#1e8e3e] h-full w-[100%] rounded-full shadow-[0_0_10px_rgba(30,142,62,0.5)]"></div>
-            </div>
-          </div>
-
-          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-3">
-              <p className="text-outline font-bold text-xs uppercase tracking-wider">Investimento / Hab.</p>
-              <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-outline">
-                <span className="material-symbols-outlined text-xl">person_pin_circle</span>
-              </div>
-            </div>
-            <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{currency.format(perCapita)}</h3>
-            <p className="text-sm font-medium text-on-surface-variant">População: 723.441 hab.</p>
-            <div className="mt-6 flex gap-1.5 h-2">
-              <div className="h-full flex-1 bg-tertiary rounded-l-full shadow-[0_0_8px_rgba(0,93,167,0.4)]"></div>
-              <div className="h-full flex-1 bg-tertiary/80 shadow-[0_0_8px_rgba(0,93,167,0.4)]"></div>
-              <div className="h-full flex-1 bg-tertiary/60 shadow-[0_0_8px_rgba(0,93,167,0.4)]"></div>
-              <div className="h-full flex-1 bg-surface-container-high rounded-r-full"></div>
-            </div>
-          </div>
-        </div>
-
-        {/* FilterBar */}
         <div className="bg-surface-container-low border border-outline-variant/30 px-6 py-4 mb-8 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-4 w-full">
-            {/* Custom Styled Secretariat Filter */}
             <div className="relative flex items-center bg-surface border border-outline-variant/60 rounded-xl px-4 py-2.5 hover:bg-surface-container-low transition-colors shadow-sm text-sm font-semibold text-on-surface">
               <span className="material-symbols-outlined text-[18px] mr-2">corporate_fare</span>
               <select
@@ -850,7 +821,6 @@ export function PresentationDashboard() {
               <span className="material-symbols-outlined text-sm absolute right-3 pointer-events-none">expand_more</span>
             </div>
 
-            {/* Year Toggle Button */}
             <button
               onClick={() => setYear((y) => (y === 2027 ? 2026 : 2027))}
               className="px-5 py-2.5 bg-surface border border-outline-variant/60 rounded-xl flex items-center gap-2 text-sm font-semibold hover:bg-surface-container-low transition-colors shadow-sm cursor-pointer"
@@ -859,7 +829,6 @@ export function PresentationDashboard() {
               LOA {year}
             </button>
 
-            {/* Dynamic Data Source Toggle */}
             <div className="flex bg-surface-container-high p-1 rounded-xl border border-outline-variant/30" role="group" aria-label="Origem dos dados">
               <button
                 type="button"
@@ -885,7 +854,6 @@ export function PresentationDashboard() {
               </button>
             </div>
 
-            {/* Reset Button */}
             <button
               onClick={() => {
                 setSecretariat("");
@@ -899,236 +867,175 @@ export function PresentationDashboard() {
           </div>
         </div>
 
-        {/* Stats Summary Panel */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
-          <div className="p-5 bg-surface border border-outline-variant/40 rounded-2xl flex flex-col justify-center text-center shadow-sm hover:border-tertiary/30 transition-colors">
-            <p className="text-[11px] uppercase font-bold text-outline tracking-wider mb-1">Secretarias</p>
-            <p className="text-2xl font-black text-on-surface">{summary.secretariatCount}</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+          <div className="p-7 rounded-2xl bg-gradient-to-br from-tertiary to-[#00386b] text-white shadow-xl shadow-tertiary/20 relative overflow-hidden group border border-tertiary/20">
+            <div className="absolute -right-6 -bottom-6 opacity-[0.08] group-hover:scale-110 transition-transform duration-700">
+              <span className="material-symbols-outlined text-[160px]">account_balance</span>
+            </div>
+            <div className="relative z-10">
+              <p className="text-tertiary-fixed font-semibold text-xs tracking-wide mb-2 opacity-90 uppercase">LOA Total {year}</p>
+              <h3 className="text-4xl font-headline font-black mb-3 tracking-tight">{compactCurrency(summary.total)}</h3>
+              <div className="flex items-center gap-1.5 text-xs font-bold bg-white/10 backdrop-blur-sm w-fit px-2.5 py-1 rounded-lg border border-white/10">
+                <span className="material-symbols-outlined text-sm">trending_up</span>
+                <span>{trend >= 0 ? "+" : ""}{percent.format(trend)} vs 2026</span>
+              </div>
+            </div>
           </div>
-          <div className="p-5 bg-surface border border-outline-variant/40 rounded-2xl flex flex-col justify-center text-center shadow-sm hover:border-tertiary/30 transition-colors">
-            <p className="text-[11px] uppercase font-bold text-outline tracking-wider mb-1">Programas</p>
-            <p className="text-2xl font-black text-on-surface">{summary.programCount}</p>
+
+          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-start mb-2">
+              <p className="text-outline font-bold text-xs uppercase tracking-wider">Receita Própria</p>
+              <span className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xs">
+                41%
+              </span>
+            </div>
+            <div>
+              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{compactCurrency(execMetrics.ownRevenue)}</h3>
+              <p className="text-xs text-on-surface-variant font-medium">IPTU, ISS, Taxas e Contribuições</p>
+            </div>
           </div>
-          <div className="p-5 bg-surface border border-outline-variant/40 rounded-2xl flex flex-col justify-center text-center shadow-sm hover:border-tertiary/30 transition-colors">
-            <p className="text-[11px] uppercase font-bold text-outline tracking-wider mb-1">Ações</p>
-            <p className="text-2xl font-black text-on-surface">{summary.unitCount}</p>
+
+          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-start mb-2">
+              <p className="text-outline font-bold text-xs uppercase tracking-wider">Transferências</p>
+              <span className="w-8 h-8 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-xs">
+                59%
+              </span>
+            </div>
+            <div>
+              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{compactCurrency(execMetrics.transfers)}</h3>
+              <p className="text-xs text-on-surface-variant font-medium">FPM, ICMS, SUS, FUNDEB</p>
+            </div>
           </div>
-          <div className="p-5 bg-surface border border-outline-variant/40 rounded-2xl flex flex-col justify-center text-center shadow-sm hover:border-tertiary/30 transition-colors">
-            <p className="text-[11px] uppercase font-bold text-outline tracking-wider mb-1">Processos</p>
-            <p className="text-2xl font-black text-on-surface">{summary.processCount}</p>
+
+          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-start mb-2">
+              <p className="text-outline font-bold text-xs uppercase tracking-wider">Resultado Projetado</p>
+              <div className="w-8 h-8 rounded-full bg-[#e6f4ea] flex items-center justify-center text-[#137333]">
+                <span className="material-symbols-outlined text-lg">check_circle</span>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">Equilibrado</h3>
+              <p className="text-xs font-semibold text-[#137333]">Superávit Projetado: R$ 12 mi</p>
+            </div>
           </div>
         </div>
 
-        {/* 2 & 3. De onde vem e Para onde vai o dinheiro */}
-        <div id="receitas" className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-10">
-          {/* Receita Section */}
-          <div className="bg-surface rounded-2xl border border-outline-variant/40 p-8 shadow-sm">
-            <div className="flex items-center justify-between mb-8 pb-4 border-b border-outline-variant/30">
-              <h2 className="text-2xl font-headline font-black flex items-center gap-3 text-on-surface">
-                <div className="w-10 h-10 rounded-xl bg-[#e6f4ea] flex items-center justify-center text-[#137333]">
-                  <span className="material-symbols-outlined">arrow_downward</span>
-                </div>
-                De onde vem o dinheiro
-              </h2>
-              <span className="text-xs font-bold px-3 py-1.5 bg-surface-container rounded-lg text-outline-variant border border-outline-variant/20 tracking-wider">
-                FONTES {year}
-              </span>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-12">
+          <div className="lg:col-span-4">
+            <DecisionCapacityCard
+              value={execMetrics.managerialMargin}
+              totalLoa={summary.total}
+              managerialMarginPct={execMetrics.managerialMarginPct}
+            />
+          </div>
+          <div className="lg:col-span-4">
+            <WaterfallDecisionMargin
+              totalLoa={summary.total}
+              mandatoryPersonnel={execMetrics.mandatoryPersonnel}
+              constitutionalObligations={execMetrics.constitutionalObligations}
+              continuedContracts={execMetrics.continuedContracts}
+              definedInvestments={execMetrics.definedInvestments}
+              managerialMargin={execMetrics.managerialMargin}
+            />
+          </div>
+          <div className="lg:col-span-4">
+            <RigidityDonut
+              rigidCompromisedPct={execMetrics.rigidCompromisedPct}
+              breakdown={execMetrics.rigidityBreakdown}
+            />
+          </div>
+        </div>
+
+        <section id="secao-1" className="mb-14 scroll-mt-24">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              1
             </div>
-
-            <div className="grid grid-cols-2 gap-6 mb-8">
-              <div className="p-5 bg-[#fce8e6] rounded-xl border border-[#fad2cf] relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 opacity-20">
-                  <span className="material-symbols-outlined text-4xl text-[#c5221f]">account_balance_wallet</span>
-                </div>
-                <p className="text-xs text-[#c5221f] font-bold uppercase tracking-wider mb-2 relative z-10">Receita Própria</p>
-                <p className="text-3xl font-black text-[#a50e0e] mb-1 relative z-10">{compactCurrency(ownRevenue)}</p>
-                <p className="text-[11px] font-medium text-[#c5221f] relative z-10">IPTU, ISS, Taxas</p>
-              </div>
-
-              <div className="p-5 bg-[#e8f0fe] rounded-xl border border-[#d2e3fc] relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 opacity-20">
-                  <span className="material-symbols-outlined text-4xl text-[#1967d2]">swap_horiz</span>
-                </div>
-                <p className="text-xs text-[#1967d2] font-bold uppercase tracking-wider mb-2 relative z-10">Transferências</p>
-                <p className="text-3xl font-black text-[#174ea6] mb-1 relative z-10">{compactCurrency(transfers)}</p>
-                <p className="text-[11px] font-medium text-[#1967d2] relative z-10">FPM, ICMS, SUS, FUNDEB</p>
-              </div>
-            </div>
-
-            <div className="bg-[#fef7e0] border border-[#fbe9a7] p-5 rounded-xl mb-8 flex gap-4 items-start shadow-inner">
-              <div className="bg-[#f9ab00] text-white p-1.5 rounded-lg shrink-0 mt-0.5">
-                <span className="material-symbols-outlined text-lg">warning</span>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-[#b06000] mb-1">Alerta Estratégico: Dependência Externa</p>
-                <p className="text-xs text-[#b06000]/80 font-medium leading-relaxed">
-                  A dependência de transferências estaduais e federais é de {share(transfers, summary.total)}. Recomenda-se reforço na fiscalização do ISS para 2025.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-10 p-6 bg-surface-container-lowest rounded-xl border border-outline-variant/30">
-              <div className="relative w-36 h-36 shrink-0">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" fill="transparent" r="40" stroke="#f0eded" strokeWidth="12"></circle>
-                  <circle
-                    className="drop-shadow-sm transition-all duration-500"
-                    cx="50"
-                    cy="50"
-                    fill="transparent"
-                    r="40"
-                    stroke="#ea4335"
-                    strokeDasharray={`${(ownRevenue / (summary.total || 1)) * 251} 251`}
-                    strokeDashoffset="0"
-                    strokeWidth="12"
-                  ></circle>
-                  <circle
-                    className="drop-shadow-sm transition-all duration-500"
-                    cx="50"
-                    cy="50"
-                    fill="transparent"
-                    r="40"
-                    stroke="#4285f4"
-                    strokeDasharray={`${(transfers / (summary.total || 1)) * 251} 251`}
-                    strokeDashoffset={`-${(ownRevenue / (summary.total || 1)) * 251}`}
-                    strokeWidth="12"
-                  ></circle>
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-2xl font-black text-on-surface">{share(ownRevenue, summary.total)}</span>
-                  <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Própria</span>
-                </div>
-              </div>
-
-              <div className="flex-1 space-y-4 w-full">
-                <p className="text-sm italic text-on-surface-variant font-medium leading-relaxed border-l-4 border-outline-variant/30 pl-4 py-1">
-                  &quot;O município gera {share(ownRevenue, summary.total)} da sua própria receita, garantindo autonomia para investimentos essenciais.&quot;
-                </p>
-                <div className="flex flex-col gap-2.5 text-xs font-semibold">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-md bg-[#ea4335]"></span>
-                      <span className="text-on-surface">Receita Própria</span>
-                    </div>
-                    <span className="text-outline">{share(ownRevenue, summary.total)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-md bg-[#4285f4]"></span>
-                      <span className="text-on-surface">Transferências</span>
-                    </div>
-                    <span className="text-outline">{share(transfers, summary.total)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-md bg-surface-container-high"></span>
-                      <span className="text-on-surface">Capital/Outros</span>
-                    </div>
-                    <span className="text-outline">{share(capitalRevenue, summary.total)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <h2 className="text-2xl font-headline font-black text-on-surface">Quanto temos?</h2>
           </div>
 
-          {/* Despesa Section */}
-          <div id="despesas" className="bg-surface rounded-2xl border border-outline-variant/40 p-8 shadow-sm">
-            <div className="flex items-center justify-between mb-8 pb-4 border-b border-outline-variant/30">
-              <h2 className="text-2xl font-headline font-black flex items-center gap-3 text-on-surface">
-                <div className="w-10 h-10 rounded-xl bg-[#fce8e6] flex items-center justify-center text-[#c5221f]">
-                  <span className="material-symbols-outlined">arrow_upward</span>
-                </div>
-                Para onde vai o dinheiro
-              </h2>
-              <span className="text-xs font-bold px-3 py-1.5 bg-surface-container rounded-lg text-outline-variant border border-outline-variant/20 tracking-wider">
-                APLICAÇÃO {year}
-              </span>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <RevenueEvolutionChart currentLoaTotal={summary.total} />
+            <RevenueRiskTable totalLoa={summary.total} />
+            <BudgetScenarioSimulator baseTotal={summary.total} />
+          </div>
+        </section>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <div className="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm text-center">
-                <p className="text-[11px] text-outline font-bold uppercase tracking-wider mb-2">Pessoal</p>
-                <p className="text-xl font-black text-on-surface">{compactCurrency(summary.natureTotals.Pessoal)}</p>
-              </div>
-              <div className="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm text-center">
-                <p className="text-[11px] text-outline font-bold uppercase tracking-wider mb-2">Custeio</p>
-                <p className="text-xl font-black text-on-surface">{compactCurrency(summary.natureTotals.Custeio)}</p>
-              </div>
-              <div className="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm text-center">
-                <p className="text-[11px] text-outline font-bold uppercase tracking-wider mb-2">Dívida</p>
-                <p className="text-xl font-black text-on-surface">{compactCurrency(summary.natureTotals.Amortização)}</p>
-              </div>
-              <div className="p-4 bg-tertiary text-white rounded-xl border border-tertiary shadow-md shadow-tertiary/20 text-center relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-                <p className="text-[11px] text-tertiary-fixed font-bold uppercase tracking-wider mb-2 relative z-10">Investimento</p>
-                <p className="text-xl font-black relative z-10">{compactCurrency(summary.natureTotals.Investimentos)}</p>
-              </div>
+        <section id="secao-2" className="mb-14 scroll-mt-24">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              2
             </div>
+            <h2 className="text-2xl font-headline font-black text-on-surface">Quanto realmente podemos decidir?</h2>
+          </div>
 
-            <div className="p-6 rounded-xl bg-[#e3f2fd] border border-[#bbdefb] mb-8 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[#1976d2] text-white rounded-xl shadow-inner">
-                  <span className="material-symbols-outlined text-2xl">trending_up</span>
-                </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <MandatoryVsDiscretionaryCard
+              totalMandatory={execMetrics.totalMandatory}
+              totalDiscretionary={execMetrics.totalDiscretionary}
+              mandatoryPct={execMetrics.mandatoryPct}
+              discretionaryPct={execMetrics.discretionaryPct}
+            />
+            <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start mb-4">
                 <div>
-                  <p className="text-sm font-bold text-[#1565c0] uppercase tracking-wider mb-1">Índice de Investimento</p>
-                  <h4 className="text-3xl font-black text-[#0d47a1]">
-                    {percent.format(investmentShare)}{" "}
-                    <span className="text-sm font-semibold text-[#1976d2]/70 lowercase">da Receita Líquida</span>
-                  </h4>
-                </div>
-              </div>
-              <div className="w-24 h-16 opacity-30 hidden sm:block">
-                <svg className="w-full h-full text-[#1976d2] stroke-current" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" viewBox="0 0 100 50">
-                  <path d="M0 40 Q 20 40, 30 20 T 60 20 T 100 5"></path>
-                </svg>
-              </div>
-            </div>
-
-            <div className="space-y-6 p-6 bg-surface-container-lowest rounded-xl border border-outline-variant/30">
-              <div>
-                <div className="flex justify-between text-xs font-bold mb-2 uppercase tracking-wide text-on-surface">
-                  <span>Manutenção da Máquina ({share(summary.operating, summary.total)})</span>
-                  <span className="text-outline">{compactCurrency(summary.operating)}</span>
-                </div>
-                <div className="h-3 w-full bg-surface-container rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-outline rounded-full transition-all duration-500"
-                    style={{ width: `${summary.total > 0 ? (summary.operating / summary.total) * 100 : 0}%` }}
-                  ></div>
+                  <h3 className="font-headline font-black text-lg text-on-surface">Destinação das Fontes de Recursos</h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">Alocação entre Manutenção da Máquina e Obras</p>
                 </div>
               </div>
 
-              <div>
-                <div className="flex justify-between text-xs font-bold mb-2 uppercase tracking-wide text-tertiary">
-                  <span>Obras e Novos Projetos ({share(summary.investment, summary.total)})</span>
-                  <span>{compactCurrency(summary.investment)}</span>
+              <div className="space-y-5">
+                <div>
+                  <div className="flex justify-between text-xs font-bold mb-1.5 uppercase text-on-surface">
+                    <span>Manutenção da Máquina ({share(summary.operating, summary.total)})</span>
+                    <span className="font-mono text-outline">{compactCurrency(summary.operating)}</span>
+                  </div>
+                  <div className="h-3 w-full bg-surface-container rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-slate-600 rounded-full transition-all duration-500"
+                      style={{ width: `${summary.total > 0 ? (summary.operating / summary.total) * 100 : 0}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-3 w-full bg-surface-container rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-tertiary rounded-full shadow-[0_0_8px_rgba(0,93,167,0.5)] transition-all duration-500"
-                    style={{ width: `${summary.total > 0 ? (summary.investment / summary.total) * 100 : 0}%` }}
-                  ></div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-bold mb-1.5 uppercase text-primary">
+                    <span>Investimentos e Obras ({share(summary.investment, summary.total)})</span>
+                    <span className="font-mono">{compactCurrency(summary.investment)}</span>
+                  </div>
+                  <div className="h-3 w-full bg-surface-container rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500 shadow-xs"
+                      style={{ width: `${summary.total > 0 ? (summary.investment / summary.total) * 100 : 0}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-              <p className="text-sm font-medium text-on-surface-variant italic border-l-4 border-tertiary/40 pl-4 py-1 mt-4">
-                &quot;R$ {compactCurrency(summary.investment)} será investido diretamente em melhorias estruturais da cidade neste exercício.&quot;
+
+              <p className="text-xs font-medium text-on-surface-variant italic border-l-4 border-primary/40 pl-3 py-1 mt-4">
+                &quot;R$ {compactCurrency(summary.investment)} está alocado em melhorias estruturais da cidade neste exercício.&quot;
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* 4. Prioridades de Governo (Bento Grid) */}
-        <h2 id="prioridades" className="text-2xl font-headline font-black mb-8 flex items-center gap-3 text-on-surface scroll-mt-24">
-          <div className="w-10 h-10 rounded-xl bg-tertiary/10 flex items-center justify-center text-tertiary">
-            <span className="material-symbols-outlined">dashboard_customize</span>
+        <section id="secao-3" className="mb-14 scroll-mt-24">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              3
+            </div>
+            <h2 className="text-2xl font-headline font-black text-on-surface">Onde estamos colocando o dinheiro?</h2>
           </div>
-          Prioridades de Governo
-        </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-12">
-          <div className="md:col-span-8 bg-surface border border-outline-variant/40 rounded-2xl p-8 shadow-sm">
-            <div className="flex justify-between items-center mb-8 flex-wrap gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <PolicyAllocationChart functions={execMetrics.functionsRanking} />
+            <InvestmentsByOrganCard investments={execMetrics.investmentsByOrgan} />
+          </div>
+
+          <div className="bg-surface border border-outline-variant/40 rounded-2xl p-7 shadow-sm">
+            <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
               <div>
                 <h3 className="font-bold text-lg text-on-surface">Alocação por Secretaria (Mapa de Valor)</h3>
                 {secretariat && (
@@ -1138,173 +1045,66 @@ export function PresentationDashboard() {
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                {secretariat && (
-                  <button
-                    onClick={() => setSecretariat("")}
-                    className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 flex items-center gap-1.5 cursor-pointer shadow-sm"
-                    title="Voltar à visão inicial (mostrar todas as secretarias)"
-                  >
-                    <span className="material-symbols-outlined text-sm">arrow_back</span>
-                    <span>Voltar para todas</span>
-                  </button>
-                )}
-                <div className="flex gap-2 p-1 bg-surface-container-low rounded-lg border border-outline-variant/30">
-                  <button className="w-9 h-9 rounded-md bg-white shadow-sm flex items-center justify-center text-tertiary cursor-pointer">
-                    <span className="material-symbols-outlined text-sm">grid_view</span>
-                  </button>
-                </div>
-              </div>
+              {secretariat && (
+                <button
+                  onClick={() => setSecretariat("")}
+                  className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <span className="material-symbols-outlined text-sm">arrow_back</span>
+                  <span>Mostrar todas as secretarias</span>
+                </button>
+              )}
             </div>
 
             <Treemap items={summary.organs} selectedSecretariat={secretariat} onSelectSecretariat={setSecretariat} />
+          </div>
+        </section>
 
-            {secretariat ? (
-              <div className="mt-6 p-4 bg-tertiary/10 border border-tertiary/20 rounded-xl text-sm font-medium text-tertiary flex items-center justify-between gap-3 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-tertiary">filter_alt</span>
-                  <span>
-                    Exibindo apenas dados da secretaria: <strong>{cleanBudgetLabel(secretariat)}</strong>
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSecretariat("")}
-                  className="px-3 py-1.5 text-xs font-bold bg-tertiary text-white rounded-lg hover:bg-tertiary/90 transition-colors flex items-center gap-1 cursor-pointer shadow-sm shrink-0"
-                >
-                  <span className="material-symbols-outlined text-xs">restart_alt</span>
-                  Voltar à Visão Inicial
-                </button>
-              </div>
-            ) : (
-              <div className="mt-6 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl text-sm font-medium text-on-surface-variant flex items-start gap-3 shadow-sm">
-                <span className="material-symbols-outlined text-tertiary mt-0.5">info</span>
-                Nota: As 5 maiores Secretarias representam {percent.format(topFiveShare)} de toda a LOA, indicando forte concentração em áreas sociais e infraestrutura. Clique nas caixas acima para filtrar por secretaria específica.
-              </div>
-            )}
+        <section id="secao-4" className="mb-14 scroll-mt-24">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              4
+            </div>
+            <h2 className="text-2xl font-headline font-black text-on-surface">O orçamento entrega o Plano de Governo?</h2>
           </div>
 
-          <div className="md:col-span-4 space-y-6">
-            <div className="bg-surface border border-outline-variant/40 rounded-2xl p-7 shadow-sm">
-              <h3 className="font-black text-lg mb-6 flex items-center gap-3 text-on-surface pb-4 border-b border-outline-variant/30">
-                <div className="w-8 h-8 rounded-lg bg-[#fff8e1] flex items-center justify-center text-[#fbc02d]">
-                  <span className="material-symbols-outlined text-lg">workspace_premium</span>
-                </div>
-                Top Rankings {year}
-              </h3>
-              <div className="space-y-5">
-                <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors shrink-0">
-                    1
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Maior Programa</p>
-                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors truncate" title={topProgram?.label}>
-                      {cleanBudgetLabel(topProgram?.label ?? "Não informado")}
-                    </p>
-                    <p className="text-xs font-extrabold text-tertiary mt-0.5">
-                      {currency.format(topProgram?.value || 0)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors shrink-0">
-                    2
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Maior Processo Administrativo</p>
-                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors leading-snug break-words" title={topProcess?.label}>
-                      {topProcess?.label ? (cleanBudgetLabel(topProcess.label) || topProcess.label) : "Não informado"}
-                    </p>
-                    <p className="text-xs font-extrabold text-tertiary mt-1">
-                      {currency.format(topProcess?.value || 0)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center font-black text-tertiary text-lg group-hover:bg-tertiary group-hover:text-white transition-colors shrink-0">
-                    3
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase font-bold text-outline tracking-wider mb-0.5">Ação com Maior Investimento (Despesas 4.4)</p>
-                    <p className="text-sm font-bold text-on-surface group-hover:text-tertiary transition-colors leading-snug break-words" title={topInvestmentAction?.label}>
-                      {topInvestmentAction?.label || "Não informado"}
-                    </p>
-                    <p className="text-xs font-extrabold text-tertiary mt-1">
-                      {currency.format(topInvestmentAction?.value || 0)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-surface border border-outline-variant/40 rounded-2xl p-7 shadow-sm">
-              <h3 className="font-black text-lg mb-6 flex items-center gap-3 text-on-surface pb-4 border-b border-outline-variant/30">
-                <div className="w-8 h-8 rounded-lg bg-[#fff8e1] flex items-center justify-center text-[#fbc02d]">
-                  <span className="material-symbols-outlined text-lg">star</span>
-                </div>
-                Prioridades de Governo
-              </h3>
-              <div className="space-y-4">
-                {priorities.map((item) => {
-                  const pct = summary.total > 0 ? (item.value / summary.total) * 100 : 0;
-                  return (
-                    <div key={item.label} className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-bold text-on-surface">
-                        <span>{item.label}</span>
-                        <span className="text-outline">{compactCurrency(item.value)} ({pct.toFixed(1)}%)</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
-                        <div className={`h-full ${item.color} rounded-full`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="bg-[#202124] text-white rounded-2xl p-7 shadow-xl relative overflow-hidden border border-white/10">
-              <div className="absolute top-0 right-0 p-4 opacity-5">
-                <span className="material-symbols-outlined text-[100px]">insights</span>
-              </div>
-              <div className="relative z-10">
-                <h3 className="font-bold mb-6 text-xs text-white/50 uppercase tracking-widest flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm">summarize</span> Resumo Executivo
-                </h3>
-                <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                  <div>
-                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Custeio Real</p>
-                    <p className="text-2xl font-black">{share(summary.operating, summary.total)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Investimento</p>
-                    <p className="text-2xl font-black text-[#8ab4f8]">{share(summary.investment, summary.total)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-white/40 uppercase font-bold tracking-wider mb-1">Folha</p>
-                    <p className="text-2xl font-black">{share(summary.natureTotals.Pessoal, summary.total)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-[#f28b82]/70 uppercase font-bold tracking-wider mb-1">Ponto Crítico</p>
-                    <p className="text-xl font-bold text-[#f28b82] leading-tight">
-                      {cleanBudgetLabel(summary.functions[0]?.label ?? "Previdência")}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <LdoDeliveryMatrix totalLoa={summary.total} />
+            <InsufficientLdoGoalsCard />
+            <StrategicProgramsCard />
           </div>
-        </div>
+        </section>
 
-        {/* 5. Insights Estratégicos (AI Analysis) */}
+        <section id="secao-5" className="mb-14 scroll-mt-24">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              5
+            </div>
+            <h2 className="text-2xl font-headline font-black text-on-surface">Onde o Prefeito precisa agir?</h2>
+          </div>
+
+          <div className="space-y-6">
+            <ExecutiveActionKpis
+              transfersDependencyPct={execMetrics.transfersDependencyPct}
+              transfersValue={execMetrics.transfers}
+              topFiveOrgansShare={execMetrics.topFiveOrgansShare}
+              highRiskRevenueTotal={execMetrics.highRiskRevenueTotal}
+              insufficientGoalsCount={4}
+            />
+            <ExecutiveAlertsMap />
+          </div>
+        </section>
+
         <div id="insights" className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12 scroll-mt-24">
           <div className="lg:col-span-2 bg-surface rounded-2xl border border-outline-variant/40 p-8 shadow-sm">
             <div className="flex items-center gap-3 mb-8 pb-4 border-b border-outline-variant/30">
               <div className="w-10 h-10 rounded-xl bg-tertiary/10 flex items-center justify-center text-tertiary">
                 <span className="material-symbols-outlined">auto_awesome</span>
               </div>
-              <h2 className="text-2xl font-headline font-black text-on-surface">O que merece atenção (Análise IA)</h2>
+              <div>
+                <h2 className="text-2xl font-headline font-black text-on-surface">Análise Inteligente (IA)</h2>
+                <p className="text-xs text-on-surface-variant">Recomendações e pontos de atenção com base estrita nos dados da LOA 2027</p>
+              </div>
             </div>
             <div className="space-y-4">
               {aiObservations.map((observation) => {
@@ -1346,7 +1146,6 @@ export function PresentationDashboard() {
             </div>
           </div>
 
-          {/* 6. Pergunte ao Orçamento (Interactivity) */}
           <div id="pergunte" className="bg-gradient-to-b from-surface-container-low to-surface-container rounded-2xl p-8 shadow-inner flex flex-col border border-outline-variant/50 scroll-mt-24">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-tertiary">
@@ -1401,45 +1200,6 @@ export function PresentationDashboard() {
               </form>
             </div>
             {questionText && !suggestedQuestions.includes(questionText) && <div className="mt-4">{renderAnswerDisplay()}</div>}
-          </div>
-        </div>
-
-        {/* 7. Indicadores Estratégicos (Bottom Summary) */}
-        <div className="bg-white rounded-2xl p-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10 border border-outline-variant/40 shadow-sm">
-          <div className="text-center md:text-left group cursor-default">
-            <p className="text-[11px] font-bold uppercase text-outline tracking-wider mb-2">Concentração Orçamentária</p>
-            <div className="flex items-end justify-center md:justify-start gap-3 mb-1">
-              <span className="text-4xl font-black text-on-surface group-hover:text-tertiary transition-colors">{percent.format(topFiveShare)}</span>
-              <span className="text-sm text-error font-bold bg-error/10 px-2 py-0.5 rounded-md mb-1">-2% vs 23</span>
-            </div>
-            <p className="text-xs font-medium text-on-surface-variant">Dependência Top 5 Secretarias</p>
-          </div>
-
-          <div className="text-center md:text-left lg:border-l lg:border-outline-variant/30 lg:pl-10 group cursor-default">
-            <p className="text-[11px] font-bold uppercase text-outline tracking-wider mb-2">Índice de Investimento</p>
-            <div className="flex items-end justify-center md:justify-start gap-3 mb-1">
-              <span className="text-4xl font-black text-on-surface group-hover:text-tertiary transition-colors">{percent.format(investmentShare)}</span>
-              <span className="text-sm text-[#137333] font-bold bg-[#e6f4ea] px-2 py-0.5 rounded-md mb-1">+5% meta</span>
-            </div>
-            <p className="text-xs font-medium text-on-surface-variant">Percentual da Receita Corrente Líquida</p>
-          </div>
-
-          <div className="text-center md:text-left lg:border-l lg:border-outline-variant/30 lg:pl-10 group cursor-default">
-            <p className="text-[11px] font-bold uppercase text-outline tracking-wider mb-2">Receita Própria</p>
-            <div className="flex items-end justify-center md:justify-start gap-3 mb-1">
-              <span className="text-4xl font-black text-on-surface group-hover:text-tertiary transition-colors">{share(ownRevenue, summary.total)}</span>
-              <span className="text-sm text-tertiary font-bold bg-tertiary/10 px-2 py-0.5 rounded-md mb-1">Estável</span>
-            </div>
-            <p className="text-xs font-medium text-on-surface-variant">Capacidade de Arrecadação Direta</p>
-          </div>
-
-          <div className="text-center md:text-left lg:border-l lg:border-outline-variant/30 lg:pl-10 group cursor-default">
-            <p className="text-[11px] font-bold uppercase text-outline tracking-wider mb-2">Dependência Externa</p>
-            <div className="flex items-end justify-center md:justify-start gap-3 mb-1">
-              <span className="text-4xl font-black text-on-surface group-hover:text-tertiary transition-colors">{share(transfers, summary.total)}</span>
-              <span className="text-sm text-[#b06000] font-bold bg-[#fef7e0] px-2 py-0.5 rounded-md mb-1">Atenção</span>
-            </div>
-            <p className="text-xs font-medium text-on-surface-variant">Fundo Participação e Repasses</p>
           </div>
         </div>
       </main>

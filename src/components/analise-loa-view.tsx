@@ -1,8 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { currency, integer, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
+import { BancoProjetosCard } from "./banco-projetos-card";
+import { AddElementExpenseDialog } from "./add-element-expense-dialog";
+import {
+  AnaliseLoaCardsConfigDialog,
+  DEFAULT_LAYOUT_CONFIG,
+  type AnaliseLoaLayoutConfig,
+} from "./analise-loa-cards-config-dialog";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -56,6 +63,8 @@ export interface RawBudgetItem {
   processo: string;
   valLdo: number;
   valLoa: number;
+  origem?: "Banco de Projetos";
+  bancoProjetoKey?: string;
 }
 
 interface EditableGroup {
@@ -73,7 +82,91 @@ interface EditableGroup {
 
 type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "diff" | "status" | "adjusted";
 type NaturezaOption = { codigo: string; nome: string };
+type Iniciativa = { id?: string | number; acao?: string; secretaria?: string; programa?: string; despesa?: string; dsIniciativa?: string; programaticaLdo?: string; vinculo?: string; valorFinalPldo27?: number };
 const ADDED_EXPENSES_STORAGE_KEY = "painel_loa_added_expenses_v1";
+
+const ACTION_CANONICAL_MAP: Record<string, string> = {
+  "0.001": "0.001 - Serviços da Dívida Pública",
+  "0.002": "0.002 - Obrigações Tributárias e Contributivas",
+  "0.003": "0.003 - Precatórios e Sentenças Judiciais",
+  "1.001": "1.001 - Estudos, Pesquisas, Planos e Projetos",
+  "1.002": "1.002 - Reforma e Ampliação de Unidades",
+  "1.003": "1.003 - Implantação de Novas Unidades",
+  "1.004": "1.004 - Expansão do Turismo",
+  "1.005": "1.005 - Desenvolvimento da Infraestrutura Urbana",
+  "1.006": "1.006 - Desenvolvimento da Infraestrutura Viária",
+  "1.007": "1.007 - Drenagem Urbana",
+  "1.008": "1.008 - Microdrenagem Urbana",
+  "1.009": "1.009 - Urbanização de Favelas e Comunidades",
+  "1.010": "1.010 - Requalificação de Favelas e Comunidades",
+  "1.011": "1.011 - Regularização Fundiária de Assentamentos Precários, Loteamentos e Conjuntos Habitacionais",
+  "1.012": "1.012 - Construção de Unidades Habitacionais",
+  "1.013": "1.013 - Melhoria das Unidades Habitacionais",
+  "1.014": "1.014 - Recuperação de Conjuntos Habitacionais",
+  "2.001": "2.001 - Remuneração, Benefícios e Encargos",
+  "2.002": "2.002 - Abastecimento de Frota",
+  "2.003": "2.003 - Qualificação de Servidores e Processos Institucionais",
+  "2.004": "2.004 - Qualificação Socioprofissional",
+  "2.005": "2.005 - Promoção de Eventos, Comunicação e Participação Social",
+  "2.006": "2.006 - Representações Oficiais",
+  "2.007": "2.007 - Ampliação e Manutenção de Sistemas de Inteligência, Fiscalização e Tecnologia",
+  "2.008": "2.008 - Estágio e Aprendizagem",
+  "2.009": "2.009 - Locação de Imóveis",
+  "2.010": "2.010 - Manutenção do Transporte Coletivo",
+  "2.011": "2.011 - Manutenção de Equipamentos Públicos",
+  "2.012": "2.012 - Manutenção de Equipamentos Públicos - Atenção Primária",
+  "2.013": "2.013 - Manutenção de Equipamentos Públicos - Atenção Especializada",
+  "2.014": "2.014 - Manutenção de Equipamentos Públicos - Atenção Hospitalar e Urgência e Emergência",
+  "2.015": "2.015 - Manutenção de Equipamentos Públicos - Proteção Básica",
+  "2.016": "2.016 - Manutenção de Equipamentos Públicos - Proteção Especial",
+  "2.017": "2.017 - Suporte ao Aluno",
+  "2.018": "2.018 - Conectividade e Tecnologia na Educação",
+  "2.019": "2.019 - Ações Pedagógicas Complementares",
+  "2.020": "2.020 - Transporte de Alunos",
+  "2.021": "2.021 - Educação Cidadã",
+  "2.022": "2.022 - Parcerias para Criação de Vagas",
+  "2.023": "2.023 - Gestão Compartilhada de Equipamentos Públicos",
+  "2.024": "2.024 - Distribuição de Alimentos e Benefícios para as Famílias em Situação de Vulnerabilidade",
+  "2.025": "2.025 - Auxílio para Inclusão no Mercado de Trabalho",
+  "2.026": "2.026 - Residências e Internações Compulsórias",
+  "2.027": "2.027 - Intermediação Profissional",
+  "2.028": "2.028 - Disseminação de Atividades Culturais e Esportivas Descentralizadas",
+  "2.029": "2.029 - Valorização do Patrimônio Histórico-Cultural",
+  "2.030": "2.030 - Apoio ao Esporte de Alto Rendimento",
+  "2.031": "2.031 - Esporte Amador",
+  "2.032": "2.032 - Iniciação Esportiva",
+  "2.033": "2.033 - Fortalecimento da Economia Criativa e Solidária",
+  "2.034": "2.034 - Manutenção da Infraestrutura Viária",
+  "2.035": "2.035 - Manutenção e Serviços de Drenagem Urbana",
+  "2.036": "2.036 - Manutenção da Mobilidade Ativa",
+  "2.037": "2.037 - Ampliação e Manutenção de Áreas Verdes",
+  "2.038": "2.038 - Iluminação Pública",
+  "2.039": "2.039 - Limpeza Urbana e Gestão de Resíduos Sólidos",
+  "2.040": "2.040 - Auxílio para Acesso à Moradia",
+  "2.041": "2.041 - Ação Transversal de Garantia de Direitos",
+  "2.042": "2.042 - Manutenção das Atividades Legislativas",
+  "2.043": "2.043 - Benefícios Previdenciários",
+  "2.044": "2.044 - Reserva de Contingência",
+  "9.999": "9.999 - Reserva de Contingência",
+};
+
+function normalizeActionLabel(value: string) {
+  if (!value) return value;
+  const clean = value.trim();
+  const match = clean.match(/^(\d+[\.\d]*|\d+)/);
+  const code = match ? match[1] : null;
+  if (code && ACTION_CANONICAL_MAP[code]) {
+    return ACTION_CANONICAL_MAP[code];
+  }
+  return clean.replace(/^(\d+[\.\d]*)\s*[-—–]+\s*/, "$1 - ").replace(/\s+/g, " ");
+}
+
+function normalizeProgramLabel(value: string) {
+  if (!value) return value;
+  const program = value.trim();
+  if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
+  return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
+}
 
 function getStatusLabel(valLdo: number, valLoa: number) {
   if (valLdo === 0 && valLoa > 0) return "Nova Dotação";
@@ -81,6 +174,16 @@ function getStatusLabel(valLdo: number, valLoa: number) {
   if (valLoa > valLdo) return "Suplementada";
   if (valLoa < valLdo) return "Reduzida";
   return "Sem alteração";
+}
+
+import ldoPlanningJson from "@/lib/ldo-planning-data.json";
+
+interface LdoPlanningData {
+  indicador: string;
+  unidadeMedida: string;
+  custoFisico2027: number | string;
+  produto?: string;
+  custoFinanceiro2027?: number;
 }
 
 interface TreeNode {
@@ -101,37 +204,232 @@ interface TreeNode {
 }
 
 export function AnaliseLoaView() {
-  const [loading, setLoading] = useState(true);
   const [rawItems, setRawItems] = useState<RawBudgetItem[]>([]);
+  const [dataLoadState, setDataLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [dataLoadError, setDataLoadError] = useState("");
+  const [dataReloadKey, setDataReloadKey] = useState(0);
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(0);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
   // Estados da Tree View, Tabela, Alterações e Justificativas
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [expandedEditGroups, setExpandedEditGroups] = useState<Set<string>>(new Set());
+  const [expandedNatureGroups, setExpandedNatureGroups] = useState<Set<string>>(new Set());
   const [tableSearch, setTableSearch] = useState("");
+  const [openFilterKey, setOpenFilterKey] = useState<string | null>(null);
+  const [filterSearchQuery, setFilterSearchQuery] = useState<Record<string, string>>({});
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(10);
   const [tableSort, setTableSort] = useState<{ column: TableSortColumn; direction: "asc" | "desc" }>({ column: "acao", direction: "asc" });
+  const [natureSort, setNatureSort] = useState<{ column: "natureza" | "subelementos" | "valLdo" | "valLoa" | "diff" | "status"; direction: "asc" | "desc" }>({ column: "natureza", direction: "asc" });
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedItemForInsights, setSelectedItemForInsights] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveError, setSaveError] = useState("");
   const [savedRawItems, setSavedRawItems] = useState<RawBudgetItem[]>([]);
   const [originalRawItems, setOriginalRawItems] = useState<RawBudgetItem[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const saveModalDialogRef = useRef<HTMLDivElement>(null);
+  const saveModalTriggerRef = useRef<HTMLElement | null>(null);
   const [justifications, setJustifications] = useState<Record<string, string>>({});
   const [naturezaOptions, setNaturezaOptions] = useState<NaturezaOption[]>([]);
   const [addExpenseGroup, setAddExpenseGroup] = useState<EditableGroup | null>(null);
+  const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
+  const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
+  const [elementSearch, setElementSearch] = useState("");
+  const [selectedElement, setSelectedElement] = useState<{ code: string; label: string } | null>(null);
+  const originalValuesById = useMemo(() => new Map(originalRawItems.map((item) => [item.id, item.valLoa])), [originalRawItems]);
   const [newExpenseVinculo, setNewExpenseVinculo] = useState("");
   const [newExpenseProcesso, setNewExpenseProcesso] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
+  // Estado para Edição de Subelemento via Modal
+  const [editingSubelementItem, setEditingSubelementItem] = useState<RawBudgetItem | null>(null);
+  const [editSubelementName, setEditSubelementName] = useState("");
+  const [editSubelementProcesso, setEditSubelementProcesso] = useState("");
+  const [editSubelementValor, setEditSubelementValor] = useState("");
+  // Estado para Rastrear Subelementos/Dotações Excluídos
+  const [removedRawItems, setRemovedRawItems] = useState<RawBudgetItem[]>([]);
+  const addNatureDialogRef = useRef<HTMLDivElement>(null);
+  const editSubelementDialogRef = useRef<HTMLDivElement>(null);
+  const addNatureTriggerRef = useRef<HTMLElement | null>(null);
+  const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
+  // Estados para o Planejamento LDO - 2027 (Indicador, Meta Física, Custo Físico 2027)
+  const [ldoPlanningMap, setLdoPlanningMap] = useState<Record<string, LdoPlanningData>>({});
+  const [editingLdoPlanningGroupKey, setEditingLdoPlanningGroupKey] = useState<string | null>(null);
+  const [tempLdoPlanning, setTempLdoPlanning] = useState<LdoPlanningData>({
+    indicador: "",
+    unidadeMedida: "Percentual (%)",
+    custoFisico2027: "0,00",
+  });
+
+  // Estado para Personalização de Cards e Ordenação do Layout
+  const [layoutConfig, setLayoutConfig] = useState<AnaliseLoaLayoutConfig>(DEFAULT_LAYOUT_CONFIG);
+  const [cardsConfigModalOpen, setCardsConfigModalOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedLayout = localStorage.getItem("painel_loa_cards_config_v1");
+      if (savedLayout) {
+        const parsed = JSON.parse(savedLayout);
+        // Garantir retrocompatibilidade caso novas chaves sejam adicionadas
+        setLayoutConfig({
+          sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+            ? parsed.sectionsOrder
+            : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+          receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
+            ? parsed.receitaKpisOrder
+            : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
+          despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
+            ? parsed.despesaKpisOrder
+            : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+          visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+        });
+      }
+    } catch {}
+  }, []);
+
+  const handleSaveLayoutConfig = (newConfig: AnaliseLoaLayoutConfig) => {
+    setLayoutConfig(newConfig);
+    try {
+      localStorage.setItem("painel_loa_cards_config_v1", JSON.stringify(newConfig));
+    } catch {}
+  };
+
+  const handleResetLayoutConfig = () => {
+    setLayoutConfig(DEFAULT_LAYOUT_CONFIG);
+    try {
+      localStorage.removeItem("painel_loa_cards_config_v1");
+    } catch {}
+  };
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("painel_loa_ldo_planning_v1");
+      if (saved) {
+        setLdoPlanningMap(JSON.parse(saved));
+      }
+    } catch {}
+  }, []);
+
+  const getLdoPlanningForGroup = (group: EditableGroup): LdoPlanningData => {
+    // 1. Verificar se o usuário já salvou manualmente uma edição para este grupo/ação
+    const customUserSaved = ldoPlanningMap[group.id] ?? ldoPlanningMap[group.acao];
+    if (customUserSaved) return customUserSaved;
+
+    // Extrair códigos da secretaria, programa e ação do grupo
+    const secCodeMatch = (group.secretaria || "").match(/^(\d+)/);
+    const secCode = secCodeMatch ? secCodeMatch[1].padStart(2, "0") : "";
+
+    const progCodeMatch = (group.programa || "").match(/^(\d+)/);
+    const progCode = progCodeMatch ? progCodeMatch[1].padStart(4, "0") : "";
+
+    const acaoClean = (group.acao || "").trim();
+    const acaoCodeMatch = acaoClean.match(/^(\d+[\.\d]*|\d+)/);
+    const acaoCode = acaoCodeMatch ? acaoCodeMatch[1] : acaoClean;
+
+    const dataIndexes = ldoPlanningJson as {
+      bySecProgAcao: Record<string, any>;
+      byProgAcao: Record<string, any>;
+      byAcao: Record<string, any>;
+    };
+
+    // 2. Busca exata por Secretaria + Programa + Ação
+    const keySecProgAcao = `${secCode}|${progCode}|${acaoCode}`;
+    const exactMatch = dataIndexes.bySecProgAcao?.[keySecProgAcao];
+    if (exactMatch) {
+      return {
+        indicador: exactMatch.indicador || exactMatch.produto || "Não informado",
+        unidadeMedida: exactMatch.unidMedida || "Unidade",
+        custoFisico2027: exactMatch.custoFisico2027 ?? 0,
+        produto: exactMatch.produto,
+        custoFinanceiro2027: exactMatch.custoFinanceiro2027,
+      };
+    }
+
+    // 3. Busca por Secretaria + Ação (útil quando o programa na LOA foi cadastrado diferente da LDO)
+    const keySecAcao = `${secCode}|${acaoCode}`;
+    const secAcaoMatch = (dataIndexes as any).bySecAcao?.[keySecAcao];
+    if (secAcaoMatch) {
+      return {
+        indicador: secAcaoMatch.indicador || secAcaoMatch.produto || "Não informado",
+        unidadeMedida: secAcaoMatch.unidMedida || "Unidade",
+        custoFisico2027: secAcaoMatch.custoFisico2027 ?? 0,
+        produto: secAcaoMatch.produto,
+        custoFinanceiro2027: secAcaoMatch.custoFinanceiro2027,
+      };
+    }
+
+    // 4. Busca por Programa + Ação
+    const keyProgAcao = `${progCode}|${acaoCode}`;
+    const progAcaoMatch = dataIndexes.byProgAcao?.[keyProgAcao];
+    if (progAcaoMatch) {
+      return {
+        indicador: progAcaoMatch.indicador || progAcaoMatch.produto || "Não informado",
+        unidadeMedida: progAcaoMatch.unidMedida || "Unidade",
+        custoFisico2027: progAcaoMatch.custoFisico2027 ?? 0,
+        produto: progAcaoMatch.produto,
+        custoFinanceiro2027: progAcaoMatch.custoFinanceiro2027,
+      };
+    }
+
+    // 5. Busca por Código da Ação Geral
+    const acaoMatch = dataIndexes.byAcao?.[acaoCode];
+    if (acaoMatch) {
+      return {
+        indicador: acaoMatch.indicador || acaoMatch.produto || "Não informado",
+        unidadeMedida: acaoMatch.unidMedida || "Unidade",
+        custoFisico2027: acaoMatch.custoFisico2027 ?? 0,
+        produto: acaoMatch.produto,
+        custoFinanceiro2027: acaoMatch.custoFinanceiro2027,
+      };
+    }
+
+    // Fallback padrão
+    return {
+      indicador: "Gestão dos compromissos e execução das atividades da ação",
+      unidadeMedida: "Percentual (%)",
+      custoFisico2027: 100,
+    };
+  };
+
   // Estados adicionais para os cards de Sub-elementos e Iniciativas Estratégicas
   const [cardSubelementosAcao, setCardSubelementosAcao] = useState<string>("");
   const [cardIniciativasAcao, setCardIniciativasAcao] = useState<string>("");
-  const [iniciativas, setIniciativas] = useState<any[]>([]);
+  const [iniciativas, setIniciativas] = useState<Iniciativa[]>([]);
   const [loadingIniciativas, setLoadingIniciativas] = useState(false);
+
+  useEffect(() => {
+    if (addExpenseGroup && !addElementContext) {
+      addNatureTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      requestAnimationFrame(() => addNatureDialogRef.current?.querySelector<HTMLElement>("select, input, button:not([aria-label^='Fechar'])")?.focus());
+    } else if (!addExpenseGroup && !addElementContext) {
+      addNatureTriggerRef.current?.focus();
+      addNatureTriggerRef.current = null;
+    }
+  }, [addExpenseGroup, addElementContext]);
+
+  useEffect(() => {
+    if (editingSubelementItem) {
+      editSubelementTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      requestAnimationFrame(() => editSubelementDialogRef.current?.querySelector<HTMLElement>("input, button:not([aria-label^='Fechar'])")?.focus());
+    } else {
+      editSubelementTriggerRef.current?.focus();
+      editSubelementTriggerRef.current = null;
+    }
+  }, [editingSubelementItem]);
+
+  useEffect(() => {
+    if (saveModalOpen) {
+      saveModalTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      requestAnimationFrame(() => saveModalDialogRef.current?.querySelector<HTMLElement>("textarea, button:not([aria-label^='Fechar'])")?.focus());
+    } else {
+      saveModalTriggerRef.current?.focus();
+      saveModalTriggerRef.current = null;
+    }
+  }, [saveModalOpen]);
 
   // Buscar Iniciativas Estratégicas sempre que qualquer filtro mudar
   useEffect(() => {
@@ -213,15 +511,9 @@ export function AnaliseLoaView() {
   // Carregar dados de ambos os cenários e consolidar
   useEffect(() => {
     async function loadTechnicalData() {
+      setDataLoadState("loading");
+      setDataLoadError("");
       try {
-        setLoading(true);
-        // Ler planilha pública consolidada atualizada com Vínculos reais
-        const res = await fetch("/loa_new.xlsx");
-        if (!res.ok) throw new Error("Planilha não encontrada");
-        const buffer = await res.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
 
         // Carregar nomenclaturas de despesa do banco de dados
         let nomMap: Record<string, string> = {};
@@ -238,30 +530,125 @@ export function AnaliseLoaView() {
         setNaturezaOptions(Object.entries(nomMap).map(([codigo, nome]) => ({ codigo, nome })).sort((left, right) => left.codigo.localeCompare(right.codigo, "pt-BR", { numeric: true })));
         const loaMap = new Map<string, RawBudgetItem>();
 
+        // Tentar carregar registros reais atualizados via API /api/loa?all=true
+        try {
+          const apiLoaRes = await fetch("/api/loa?all=true");
+          if (apiLoaRes.ok) {
+            const apiLoaData = await apiLoaRes.json();
+            if (false && apiLoaData && Array.isArray(apiLoaData.records) && apiLoaData.records.length > 0) {
+              apiLoaData.records.forEach((r: { id?: string; organ?: string; budgetUnit?: string; program?: string; action?: string; expenseNature?: string; subelement?: string; administrativeProcess?: string; value?: number }) => {
+                const organStr = String(r.organ || "").trim();
+                const unitStr = String(r.budgetUnit || "").trim();
+                const programStr = normalizeProgramLabel(String(r.program || ""));
+                const actionStr = normalizeActionLabel(String(r.action || ""));
+                let natureStr = String(r.expenseNature || "").trim();
+                const subelemStr = String(r.subelement || "").trim();
+                const processStr = String(r.administrativeProcess || "").trim();
+                const valor = Number(r.value) || 0;
+                const vinculo = "Tesouro / Próprio";
+
+                const natCodeClean = natureStr.split("-")[0].trim();
+                const natCodeRaw = natCodeClean.replace(/\D/g, "");
+                const officialDesc = nomMap[natCodeClean] || nomMap[natCodeRaw];
+                if (officialDesc) {
+                  natureStr = `${natCodeClean} - ${officialDesc}`;
+                }
+
+                const parts = natCodeClean.split(".");
+                const catDespesaMap: Record<string, string> = {
+                  "3": "3 — DESPESAS CORRENTES",
+                  "4": "4 — DESPESAS DE CAPITAL",
+                  "9": "9 — RESERVA DE CONTINGÊNCIA",
+                };
+                const catEcon = parts[0] ? (catDespesaMap[parts[0]] || `${parts[0]} — Despesa`) : "Outras";
+                const grupoDespesaMap: Record<string, string> = {
+                  "0": "RESTOS A PAGAR",
+                  "1": "PESSOAL E ENCARGOS SOCIAIS",
+                  "2": "JUROS E ENCARGOS DA DÍVIDA",
+                  "3": "OUTRAS DESPESAS CORRENTES",
+                  "4": "INVESTIMENTOS",
+                  "5": "INVERSÕES FINANCEIRAS",
+                  "6": "AMORTIZAÇÃO DA DÍVIDA",
+                  "8": "EXTRAORÇAMENTÁRIA",
+                  "9": "RESERVA DE CONTINGÊNCIA",
+                };
+                const grupoNome = parts[1] ? grupoDespesaMap[parts[1]] : undefined;
+                const grpNat = parts[1]
+                  ? (grupoNome ? `${parts[0]}.${parts[1]} — ${grupoNome}` : `${parts[0]}.${parts[1]} — Grupo`)
+                  : "Outros";
+                const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
+
+                const groupKey = `${organStr}|${programStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${subelemStr}`;
+
+                loaMap.set(groupKey, {
+                  id: groupKey,
+                  progKey: programStr || groupKey,
+                  secretaria: organStr,
+                  orgao: organStr,
+                  unidade: unitStr,
+                  programa: programStr,
+                  acao: actionStr,
+                  natureza: natureStr,
+                  fonteVinculo: vinculo,
+                  categoriaEconomica: catEcon,
+                  grupoNatureza: grpNat,
+                  elemento: elem,
+                  subelemento: subelemStr,
+                  processo: processStr || "—",
+                  valLdo: 0,
+                  valLoa: valor,
+                });
+              });
+            }
+          }
+        } catch (apiError) {
+          console.warn("Não foi possível carregar registros via API:", apiError);
+        }
+        const res = await fetch("/loa_new.xlsx");
+        if (!res.ok) throw new Error("Planilha não encontrada");
+        const buffer = await res.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+        const headers = rows[0] ?? [];
+        const columnIndex = (name: string) => headers.map((value, index) => String(value ?? "") === name ? index : -1).filter((index) => index >= 0).pop() ?? -1;
+        const columns = {
+          piece: columnIndex("Peça Orçamentária"),
+          programKey: columnIndex("Programática_LOA"),
+          organ: columnIndex("secretaria"),
+          unit: columnIndex("unidade"),
+          program: columnIndex("programa"),
+          action: columnIndex("acao"),
+          nature: columnIndex("natureza"),
+          subelement: columnIndex("desc_sub"),
+          process: columnIndex("processo"),
+          value: columnIndex("valor"),
+          link: columnIndex("Vínculo"),
+        };
+
         for (let i = 1; i < rows.length; i++) {
           const r = rows[i];
           if (!r || r.length === 0) continue;
 
-          const peca = String(r[18] || "").trim();
-          const progKey = String(r[7] || "").trim().replace(/^\.+/, "");
-          const organStr = String(r[8] || "").trim().replace(/^\.+/, "");
-          const unitStr = String(r[9] || "").trim().replace(/^\.+/, "");
-          const funcStr = String(r[10] || "").trim().replace(/^\.+/, "");
-          const subfuncStr = String(r[11] || "").trim().replace(/^\.+/, "");
-          const programStr = String(r[12] || "").trim().replace(/^\.+/, "");
-          const actionStr = String(r[13] || "").trim().replace(/^\.+/, "");
-          let natureStr = String(r[14] || "").trim().replace(/^\.+/, "").replace(/\.\./g, ".");
-          // Correção de códigos de despesa truncados
+          const peca = String(r[columns.piece] || "").trim();
+          const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
+          let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
+          organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
+          if (organStr === "01 - CMO" || organStr === "01- CMO") organStr = "01 - CMO";
+          const unitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
+          const programStr = normalizeProgramLabel(String(r[columns.program] || "").trim().replace(/^\.+/, ""));
+          const actionStr = normalizeActionLabel(String(r[columns.action] || "").trim().replace(/^\.+/, ""));
+          if (!organStr && !programStr && !actionStr) continue;
+          let natureStr = String(r[columns.nature] || "").trim().replace(/^\.+/, "").replace(/\.\./g, ".");
           natureStr = natureStr
             .replace(/^3\.50\.39/, "3.3.50.39")
             .replace(/^3\.90\.35/, "3.3.90.35")
             .replace(/^4\.90\.52/, "4.4.90.52");
-          const subelemStr = String(r[15] || "").trim().replace(/^\.+/, "");
-          const processStr = String(r[16] || "").trim().replace(/^\.+/, "");
-          const valor = Number(r[17]) || 0;
-          const realVinculoStr = String(r[19] || "").trim();
+          const subelemStr = String(r[columns.subelement] || "").trim().replace(/^\.+/, "");
+          const processStr = String(r[columns.process] || "").trim().replace(/^\.+/, "");
+          const valor = Number(r[columns.value]) || 0;
+          const realVinculoStr = String(r[columns.link] || "").trim();
 
-          // Enriquecer natureza com a descrição oficial da NomenclaturaDespesa se disponível
           const natCodeClean = natureStr.split("-")[0].trim();
           const natCodeRaw = natCodeClean.replace(/\D/g, "");
           const officialDesc = nomMap[natCodeClean] || nomMap[natCodeRaw];
@@ -269,7 +656,6 @@ export function AnaliseLoaView() {
             natureStr = `${natCodeClean} - ${officialDesc}`;
           }
 
-          // Extração de Categoria, Grupo e Elemento a partir do código de Natureza (ex: 3.3.90.39.00)
           const parts = natCodeClean.split(".");
           const catDespesaMap: Record<string, string> = {
             "3": "3 — DESPESAS CORRENTES",
@@ -295,7 +681,6 @@ export function AnaliseLoaView() {
           const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
           const vinculo = realVinculoStr || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
 
-          // Agrupamento por Secretaria (Órgão), Ação, Natureza da Despesa, Vínculo e Processo
           const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${subelemStr}`;
 
           if (!loaMap.has(groupKey)) {
@@ -322,46 +707,6 @@ export function AnaliseLoaView() {
           const item = loaMap.get(groupKey)!;
           if (peca === "LDO") item.valLdo += valor;
           else if (peca === "LOA") item.valLoa += valor;
-        }
-
-        // Atualizar o Valor LDO principal com o Custo Financeiro do Ano 2 (2027)
-        // da importação de ações LDO, preservando a distribuição por natureza.
-        try {
-          const actionsRes = await fetch("/api/elaboracao-loa/acoes?exercise=2026", { cache: "no-store" });
-          if (actionsRes.ok) {
-            const actionsData = await actionsRes.json() as { actions?: Array<{ secretaria: string; acaoCodigo: string; custoFinanceiro: number }> };
-            const normalizeActionCode = (value: string) => value.trim().split(".").map((part) => String(Number(part))).join(".");
-            const costByAction = new Map<string, number>();
-            (actionsData.actions ?? []).forEach((action) => {
-              const secretariaCode = action.secretaria.match(/^\s*(\d+)/)?.[1]?.padStart(2, "0") ?? action.secretaria.trim();
-              const actionCode = normalizeActionCode(action.acaoCodigo);
-              const key = `${secretariaCode}|${actionCode}`;
-              costByAction.set(key, (costByAction.get(key) ?? 0) + (Number(action.custoFinanceiro) || 0));
-            });
-            const itemsByAction = new Map<string, RawBudgetItem[]>();
-            loaMap.forEach((item) => {
-              const secretariaCode = item.secretaria.match(/^\s*(\d+)/)?.[1]?.padStart(2, "0") ?? item.secretaria.trim();
-              const actionCode = normalizeActionCode(item.acao.match(/^\s*([\d.]+)/)?.[1] ?? item.acao.trim().split("-")[0].trim());
-              const key = `${secretariaCode}|${actionCode}`;
-              itemsByAction.set(key, [...(itemsByAction.get(key) ?? []), item]);
-            });
-            const importedTotalsByAction = new Map([...itemsByAction.entries()].map(([key, items]) => [key, items.reduce((sum, item) => sum + item.valLdo, 0)]));
-            const importedValuesById = new Map([...loaMap.values()].map((item) => [item.id, item.valLdo]));
-            // Remove os resíduos da LDO antiga antes de aplicar a nova importação.
-            loaMap.forEach((item) => { item.valLdo = 0; });
-            itemsByAction.forEach((items, key) => {
-              const cost = costByAction.get(key);
-              if (cost === undefined) return;
-              const importedTotal = importedTotalsByAction.get(key) ?? 0;
-              if (importedTotal > 0) {
-                items.forEach((item) => { item.valLdo = ((importedValuesById.get(item.id) ?? 0) / importedTotal) * cost; });
-              } else {
-                items.forEach((item, index) => { item.valLdo = index === 0 ? cost : 0; });
-              }
-            });
-          }
-        } catch (ldoActionError) {
-          console.warn("Não foi possível atualizar os valores LDO pelo Custo Financeiro Ano 2:", ldoActionError);
         }
 
         // Guardar cópia original inalterada para comparação em modificações
@@ -411,14 +756,15 @@ export function AnaliseLoaView() {
           console.warn("Não foi possível carregar o total da LdoReceita via API:", apiErr);
         }
       } catch (err) {
-        console.error("Erro ao carregar dados técnicos da LOA/LDO:", err);
+        setDataLoadState("error");
+        setDataLoadError(err instanceof Error ? err.message : "Não foi possível carregar os dados da análise.");
       } finally {
-        setLoading(false);
+        setDataLoadState((current) => current === "loading" ? "ready" : current);
       }
     }
 
     loadTechnicalData();
-  }, []);
+  }, [dataReloadKey]);
 
   // Obter a lista de itens modificados em relação aos valores da última gravação
   const modifiedItems = useMemo(() => {
@@ -431,28 +777,31 @@ export function AnaliseLoaView() {
 
   // Abrir o Modal de Justificativa ao clicar em Salvar
   const handleSaveEdits = () => {
-    if (modifiedItems.length === 0 && !hasChanges) {
+    if (modifiedItems.length === 0 && removedRawItems.length === 0 && !hasChanges) {
       return;
     }
+    setSaveError("");
     setSaveModalOpen(true);
   };
 
   // Cancelar a edição e reverter todos os campos editados ao valor anterior (antes de abrir o modal)
   const handleCancelSaveModal = () => {
     setRawItems(JSON.parse(JSON.stringify(savedRawItems)));
+    setRemovedRawItems([]);
     setHasChanges(false);
     setSaveModalOpen(false);
   };
 
   const handleAddExpense = () => {
     if (!addExpenseGroup || !newExpenseNatureza || parseBr(newExpenseValor) <= 0) return;
+    if (addElementContext && !selectedElement) return;
     const option = naturezaOptions.find((item) => item.codigo === newExpenseNatureza);
-    const natureza = option ? `${option.codigo} - ${option.nome}` : newExpenseNatureza;
+    const natureza = addElementContext?.natureza || (option ? `${option.codigo} - ${option.nome}` : newExpenseNatureza);
     const naturezaCodigo = newExpenseNatureza.split("-")[0].trim();
     const elemento = naturezaCodigo.split(".").slice(0, 4).join(".");
     const item: RawBudgetItem = {
       id: `added-expense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      progKey: `${addExpenseGroup.acao}|${elemento}`,
+      progKey: `${addExpenseGroup.acao}|${elemento}|${newExpenseSubelemento}`,
       secretaria: addExpenseGroup.secretaria,
       orgao: addExpenseGroup.secretaria,
       unidade: "",
@@ -463,7 +812,7 @@ export function AnaliseLoaView() {
       categoriaEconomica: naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES",
       grupoNatureza: naturezaCodigo,
       elemento,
-      subelemento: "",
+      subelemento: addElementContext ? `${selectedElement?.code ? `${selectedElement.code} - ` : ""}${selectedElement?.label ?? ""}` : newExpenseSubelemento.trim(),
       processo: newExpenseProcesso.trim() || "—",
       valLdo: 0,
       valLoa: parseBr(newExpenseValor),
@@ -478,10 +827,45 @@ export function AnaliseLoaView() {
     setExpandedEditGroups((previous) => new Set(previous).add(addExpenseGroup.id));
     setHasChanges(true);
     setAddExpenseGroup(null);
+    setAddElementContext(null);
     setNewExpenseNatureza("");
+    setNewExpenseSubelemento("");
+    setElementSearch("");
+    setSelectedElement(null);
     setNewExpenseVinculo("");
     setNewExpenseProcesso("");
     setNewExpenseValor("");
+  };
+
+  const handleAllocateBancoProjeto = (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
+    const naturezaCodigo = project.natureza.split("-")[0].trim();
+    const item: RawBudgetItem = {
+      id: `banco-projeto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      progKey: `banco-projeto|${project.secretaria}|${project.objeto}`,
+      secretaria: project.secretaria,
+      orgao: project.secretaria,
+      unidade: "",
+      programa: "Banco de Projetos",
+      acao: project.objeto,
+      natureza: project.natureza,
+      fonteVinculo: "Tesouro / Próprio",
+      categoriaEconomica: naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES",
+      grupoNatureza: naturezaCodigo,
+      elemento: naturezaCodigo.split(".").slice(0, 4).join("."),
+      subelemento: "",
+      processo: "—",
+      valLdo: 0,
+      valLoa: project.valor,
+      origem: "Banco de Projetos",
+      bancoProjetoKey: [project.secretaria, project.objeto, project.natureza, project.valor].join("|") ,
+    };
+    setRawItems((previous) => [...previous, item]);
+    setHasChanges(true);
+  };
+
+  const handleRemoveBancoProjeto = (item: RawBudgetItem) => {
+    setRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+    setHasChanges(true);
   };
 
   // Confirmar e Gravar Alterações + Justificativas no localStorage
@@ -502,8 +886,19 @@ export function AnaliseLoaView() {
         }
       });
 
-      // Atualizar lista final de itens (revertendo os sem justificativa ao valor salvo)
-      const finalItems = rawItems.map((item) => {
+      // Tratar itens excluídos: se não possuírem justificativa, restaurá-los!
+      const restoredFromRemoval: RawBudgetItem[] = [];
+      removedRawItems.forEach((item) => {
+        const text = (justifications[item.id] || "").trim();
+        if (!text) {
+          restoredFromRemoval.push(item);
+        } else {
+          validJustifications[item.id] = text;
+        }
+      });
+
+      // Atualizar lista final de itens (revertendo os sem justificativa ao valor salvo + restaurando removidos sem justificativa)
+      let finalItems = rawItems.map((item) => {
         if (itemsToRevert.includes(item.id)) {
           const savedVal = savedMap.get(item.id) ?? item.valLdo;
           return { ...item, valLoa: savedVal };
@@ -511,8 +906,13 @@ export function AnaliseLoaView() {
         return item;
       });
 
+      if (restoredFromRemoval.length > 0) {
+        finalItems = [...finalItems, ...restoredFromRemoval];
+      }
+
       setRawItems(finalItems);
       setSavedRawItems(JSON.parse(JSON.stringify(finalItems)));
+      setRemovedRawItems([]);
 
       setSavingState("saving");
 
@@ -538,7 +938,7 @@ export function AnaliseLoaView() {
 
       setTimeout(() => setSavingState("idle"), 3000);
     } catch (err) {
-      console.error("Erro ao salvar alterações:", err);
+      setSaveError(err instanceof Error ? err.message : "Não foi possível salvar as alterações.");
       setSavingState("idle");
     }
   };
@@ -625,7 +1025,7 @@ export function AnaliseLoaView() {
   const tableItems = useMemo(() => {
     return filteredItems.filter((item) => {
       if (statusFilters.length > 0) {
-        const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
+        const original = originalValuesById.get(item.id) ?? item.valLdo;
         const adjusted = Math.abs(item.valLoa - original) > 0.001;
         const matchesFilter = statusFilters.some((filter) =>
           filter === "Ajustado" ? adjusted : filter === getStatusLabel(item.valLdo, item.valLoa)
@@ -643,7 +1043,7 @@ export function AnaliseLoaView() {
         item.subelemento.toLowerCase().includes(query)
       );
     });
-  }, [filteredItems, originalRawItems, statusFilters, tableSearch]);
+  }, [filteredItems, originalValuesById, statusFilters, tableSearch]);
 
   const editableGroups = useMemo<EditableGroup[]>(() => {
     const groups = new Map<string, EditableGroup>();
@@ -669,11 +1069,14 @@ export function AnaliseLoaView() {
     });
 
     const getAdjusted = (item: RawBudgetItem) => {
-      const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
+      const original = originalValuesById.get(item.id) ?? item.valLdo;
       return Math.abs(item.valLoa - original) > 0.001 ? 1 : 0;
     };
     const compareText = (left: string, right: string) => left.localeCompare(right, "pt-BR", { numeric: true, sensitivity: "base" });
     const compareGroup = (left: EditableGroup, right: EditableGroup) => {
+      const leftFromBank = left.children.some((item) => item.origem === "Banco de Projetos");
+      const rightFromBank = right.children.some((item) => item.origem === "Banco de Projetos");
+      if (leftFromBank !== rightFromBank) return leftFromBank ? 1 : -1;
       let result = 0;
       if (tableSort.column === "acao") result = compareText(left.acao, right.acao);
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
@@ -700,7 +1103,17 @@ export function AnaliseLoaView() {
       ...group,
       children: [...group.children].sort(compareChild),
     })).sort(compareGroup);
-  }, [originalRawItems, tableItems, tableSort]);
+  }, [originalValuesById, tableItems, tableSort]);
+
+  const totalTablePages = useMemo(
+    () => Math.max(1, Math.ceil(editableGroups.length / tablePageSize)),
+    [editableGroups.length, tablePageSize]
+  );
+
+  const paginatedEditableGroups = useMemo(() => {
+    const start = (tablePage - 1) * tablePageSize;
+    return editableGroups.slice(start, start + tablePageSize);
+  }, [editableGroups, tablePage, tablePageSize]);
 
   // Métricas Recalculadas Instantaneamente para os Cards Superiores
   const metrics = useMemo(() => {
@@ -727,7 +1140,7 @@ export function AnaliseLoaView() {
       totalAcoes: acoesSet.size,
       totalNaturezas: naturezasSet.size,
     };
-  }, [filteredItems]);
+  }, [tableItems]);
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
@@ -986,6 +1399,83 @@ export function AnaliseLoaView() {
     setHasChanges(true);
   };
 
+  const applyNatureLoa = (items: RawBudgetItem[], newTotal: number) => {
+    const currentTotal = items.reduce((sum, item) => sum + item.valLoa, 0);
+    const basisTotal = currentTotal > 0 ? currentTotal : items.reduce((sum, item) => sum + item.valLdo, 0);
+    const equalShare = items.length ? newTotal / items.length : 0;
+    let assigned = 0;
+    const allocations = new Map<string, number>();
+    items.forEach((item, index) => {
+      const basis = currentTotal > 0 ? item.valLoa : item.valLdo;
+      const value = index === items.length - 1
+        ? Math.max(0, Math.round((newTotal - assigned) * 100) / 100)
+        : Math.max(0, Math.round((newTotal * (basisTotal > 0 ? basis / basisTotal : 0) || equalShare) * 100) / 100);
+      assigned += value;
+      allocations.set(item.id, value);
+    });
+    setRawItems((previous) => previous.map((item) => allocations.has(item.id) ? { ...item, valLoa: allocations.get(item.id)! } : item));
+    setHasChanges(true);
+  };
+
+  const getNatureLabel = (value: string, fallback: string) => {
+    const label = (value || fallback || "Outros").trim();
+    const separator = label.indexOf("-");
+    return separator >= 0 ? label.slice(0, separator).trim() + " — " + label.slice(separator + 1).trim() : label;
+  };
+
+  const getSubelementLabel = (item: RawBudgetItem) => {
+    const subelement = item.subelemento.trim();
+    if (subelement) return subelement;
+    const label = (item.natureza || item.elemento || "Outros").trim();
+    const separator = label.indexOf("-");
+    return separator >= 0 ? label.slice(separator + 1).trim() : label;
+  };
+
+  const availableElements = useMemo(() => {
+    if (!addElementContext) return [];
+    const natureCode = addElementContext.natureza.split("-")[0].trim();
+    const elements = new Map<string, { code: string; label: string }>();
+    addElementContext.group.children
+      .filter((item) => (item.natureza || item.elemento).split("-")[0].trim() === natureCode)
+      .forEach((item) => {
+        const label = getSubelementLabel(item);
+        const match = label.match(/^(\d{1,2})\s*[-–]\s*(.+)$/);
+        const code = match?.[1] ?? "";
+        const description = match?.[2]?.trim() ?? label;
+        const key = `${code}|${description}`;
+        if (description && !elements.has(key)) elements.set(key, { code, label: description });
+      });
+    const query = elementSearch.trim().toLowerCase();
+    return [...elements.values()].filter((element) => !query || element.code.toLowerCase().startsWith(query));
+  }, [addElementContext, elementSearch]);
+
+  const removeSubelement = (item: RawBudgetItem) => {
+    if (!window.confirm("Remover este subelemento da Natureza da Despesa?")) return;
+    setRemovedRawItems((prev) => [...prev.filter((entry) => entry.id !== item.id), item]);
+    setRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+    setHasChanges(true);
+  };
+
+  const handleModalKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, dialogRef: RefObject<HTMLDivElement | null>, onClose: () => void) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab" || !dialogRef.current) return;
+    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled])")];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const renderSortHeader = (column: TableSortColumn, label: string, alignment = "text-left") => (
     <button
       type="button"
@@ -1002,42 +1492,80 @@ export function AnaliseLoaView() {
 
   // Funções de exportação
   const exportToExcel = () => {
-    const exportData = editableGroups.flatMap((group) => [
-      {
-        Nível: "Programa + Ação",
+    // 1. Aba: Visão Geral das Ações Orçamentárias
+    const acoesData = editableGroups.map((group) => {
+      const ldoData = getLdoPlanningForGroup(group);
+      return {
         Secretaria: group.secretaria,
         Programa: group.programa,
         Ação: group.acao,
-        "Natureza de despesa": "TOTAL DO AGRUPAMENTO",
-        Elemento: "",
-        Subelemento: "",
-        Vínculo: "",
-        Processo: "",
         "Valor LDO (R$)": group.valLdo,
         "Valor LOA (R$)": group.valLoa,
-        "Diferença (R$)": group.valLoa - group.valLdo,
+        "Diferença Nominal (R$)": group.valLoa - group.valLdo,
+        "Variação (%)": group.valLdo > 0 ? ((group.valLoa - group.valLdo) / group.valLdo) * 100 : 0,
         Status: getStatusInfo(group.valLdo, group.valLoa).label,
-      },
-      ...group.children.map((item) => ({
-        Nível: "Despesa",
+        Indicador: ldoData.indicador || "Não informado",
+        "Unidade de Medida": ldoData.unidadeMedida || "Unidade",
+        "Meta Física 2027": ldoData.custoFisico2027 ?? 0,
+      };
+    });
+
+    // 2. Aba: Detalhamento Analítico Completo
+    const analiticoData = editableGroups.flatMap((group) =>
+      group.children.map((item) => {
+        const original = originalValuesById.get(item.id) ?? item.valLdo;
+        const adjusted = Math.abs(item.valLoa - original) > 0.001;
+        return {
+          Secretaria: item.secretaria,
+          Programa: item.programa,
+          Ação: item.acao,
+          "Natureza da Despesa": item.natureza || item.elemento,
+          Elemento: item.elemento,
+          Subelemento: item.subelemento || "—",
+          "Fonte/Vínculo": item.fonteVinculo || "01",
+          Processo: item.processo || "—",
+          "Valor Original (R$)": original,
+          "Valor LOA Editável (R$)": item.valLoa,
+          "Diferença (R$)": item.valLoa - original,
+          "Item Ajustado": adjusted ? "SIM" : "NÃO",
+          "Justificativa do Ajuste": (justifications[item.id] || "").trim() || "—",
+        };
+      })
+    );
+
+    // 3. Aba: Memória de Ajustes e Exclusões (Auditoria)
+    const pendingItems = [
+      ...modifiedItems.map((item) => ({ item, isRemoved: false })),
+      ...removedRawItems.map((item) => ({ item, isRemoved: true })),
+    ];
+    const auditoriaData = pendingItems.map(({ item, isRemoved }) => {
+      const origVal = originalValuesById.get(item.id) ?? item.valLdo;
+      return {
+        Tipo: isRemoved ? "EXCLUSÃO DE SUBELEMENTO" : "ALTERAÇÃO DE VALOR",
         Secretaria: item.secretaria,
         Programa: item.programa,
         Ação: item.acao,
-        "Natureza de despesa": item.natureza,
-        Elemento: item.elemento,
-        Subelemento: item.subelemento,
-        Vínculo: item.fonteVinculo,
-        Processo: item.processo,
-        "Valor LDO (R$)": "",
-        "Valor LOA (R$)": item.valLoa,
-        "Diferença (R$)": "",
-        Status: "Detalhamento LOA",
-      })),
-    ]);
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+        "Natureza da Despesa": item.natureza || item.elemento,
+        Subelemento: item.subelemento || "—",
+        "Valor Original (R$)": origVal,
+        "Novo Valor LOA (R$)": isRemoved ? 0 : item.valLoa,
+        "Diferença (R$)": isRemoved ? -origVal : item.valLoa - origVal,
+        "Justificativa Técnica": (justifications[item.id] || "").trim() || "Sem justificativa detalhada",
+      };
+    });
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Analise_LDO_LOA");
-    XLSX.writeFile(workbook, "analise-tecnica-ldo-loa.xlsx");
+    const wsAcoes = XLSX.utils.json_to_sheet(acoesData);
+    const wsAnalitico = XLSX.utils.json_to_sheet(analiticoData);
+    XLSX.utils.book_append_sheet(workbook, wsAcoes, "Resumo_Acoes_LOA");
+    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_Analitico");
+
+    if (auditoriaData.length > 0) {
+      const wsAuditoria = XLSX.utils.json_to_sheet(auditoriaData);
+      XLSX.utils.book_append_sheet(workbook, wsAuditoria, "Memoria_Ajustes");
+    }
+
+    XLSX.writeFile(workbook, "relatorio-tecnico-orcamento-osasco-2027.xlsx");
   };
 
   const exportToPDF = async () => {
@@ -1046,118 +1574,151 @@ export function AnaliseLoaView() {
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 16;
-    const reportDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(new Date());
-    const reportBody: Array<Array<string | { content: string; colSpan?: number; styles?: Record<string, unknown> }>> = [];
+    const margin = 14;
+    const reportDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short" }).format(new Date());
+    type ReportCell = string | { content: string; colSpan?: number; styles?: Record<string, unknown> };
+    type ReportRow = ReportCell[];
 
-    editableGroups.forEach((group) => {
-      reportBody.push([
-        { content: group.secretaria, styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
-        { content: `${group.programa}\n${group.acao}`, styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
-        { content: "TOTAL DO AGRUPAMENTO", styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
-        { content: "", styles: { fillColor: [230, 238, 248] } },
-        { content: currency.format(group.valLdo), styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
-        { content: currency.format(group.valLoa), styles: { fontStyle: "bold", fillColor: [230, 238, 248] } },
-      ]);
-      group.children.forEach((item) => {
-        const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
-        const adjusted = Math.abs(item.valLoa - original) > 0.001;
-      reportBody.push([
-        item.secretaria,
-        `↳ ${item.acao.split("-")[0].trim()}`,
-        item.natureza || item.elemento,
-        item.elemento || "",
-        "",
-        currency.format(item.valLoa),
-      ]);
-
-      if (adjusted) {
-        reportBody.push([
-          {
-            content: "Justificativa do ajuste",
-            styles: { fontStyle: "bold", textColor: [91, 63, 12] },
-          },
-          {
-            content: (justifications[item.id] || "Ajuste registrado sem justificativa detalhada.").trim(),
-            colSpan: 5,
-            styles: { fontStyle: "italic", textColor: [75, 75, 75] },
-          },
-        ]);
-      }
+    // Carregar imagem do brasão para converter em base64 se disponível
+    try {
+      const img = new Image();
+      img.src = "/brasao.png";
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
       });
-    });
+      if (img.complete && img.naturalWidth > 0) {
+        doc.addImage(img, "PNG", margin, 6, 20, 20);
+      }
+    } catch {}
 
-    doc.setFillColor(24, 28, 34);
-    doc.rect(0, 0, pageWidth, 32, "F");
+    const programs = Array.from(editableGroups.reduce((map, group) => {
+      const key = group.programa || "Programa não informado";
+      map.set(key, [...(map.get(key) ?? []), group]);
+      return map;
+    }, new Map<string, EditableGroup[]>()));
+    const secretariats = [...new Set(editableGroups.map((group) => group.secretaria).filter(Boolean))];
+    const reportSecretariat = filters.secretaria.length === 1
+      ? filters.secretaria[0]
+      : secretariats.length === 1
+        ? secretariats[0]
+        : secretariats.length > 0 ? secretariats.join(" · ") : "Prefeitura do Município de Osasco";
+
+    // Cabeçalho Institucional
+    doc.setFillColor(0, 52, 111);
+    doc.rect(0, 0, pageWidth, 28, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("RELATÓRIO TÉCNICO", margin, 14);
+    doc.setFontSize(15);
+    doc.text("PREFEITURA DO MUNICÍPIO DE OSASCO", margin + 24, 11);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text("Análise do Orçamento — LDO x LOA 2027", margin, 21);
-    doc.text(`Emitido em ${reportDate}`, margin, 26);
+    doc.setFontSize(8.5);
+    doc.text(`SECRETARIA: ${reportSecretariat.toUpperCase()}`, margin + 24, 17);
+    doc.text(`RELATÓRIO TÉCNICO ORÇAMENTÁRIO — ANÁLISE LDO x LOA 2027  •  Emitido em: ${reportDate}`, margin + 24, 23);
 
+    // Sumário Executivo
     doc.setTextColor(24, 28, 34);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("Detalhamento analítico editável", margin, 43);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(90, 95, 102);
-    doc.text(`${tableItems.length} registro(s) considerado(s) nos filtros atuais`, margin, 49);
+    doc.setFontSize(10);
+    doc.text("1. Detalhamento Analítico e Metas Físicas da LOA 2027", margin, 36);
 
-    autoTable(doc, {
-      startY: 55,
-      margin: { left: margin, right: margin },
-      head: [["Secretaria", "Programa / Ação", "Natureza de despesa", "Elemento", "Valor LDO", "Valor LOA"]],
-      body: reportBody,
-      theme: "grid",
-      headStyles: { fillColor: [0, 90, 180], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
-      bodyStyles: { fontSize: 7.5, textColor: [35, 38, 42], cellPadding: 2.5, valign: "middle" },
-      alternateRowStyles: { fillColor: [246, 248, 250] },
-      columnStyles: {
-        0: { cellWidth: 48 },
-        1: { cellWidth: 62 },
-        2: { cellWidth: 60 },
-        3: { cellWidth: 30 },
-        4: { cellWidth: 27, halign: "right" },
-        5: { cellWidth: 27, halign: "right" },
-      },
-      didParseCell: (data) => {
-        const firstCell = Array.isArray(data.row.raw) ? data.row.raw[0] as { content?: string } | undefined : undefined;
-        if (firstCell?.content === "Justificativa do ajuste") {
-          data.cell.styles.fillColor = [255, 248, 230];
-          data.cell.styles.lineColor = [235, 211, 155];
-        }
-      },
+    let cursorY = 40;
+    programs.forEach(([programa, groups], programIndex) => {
+      if (cursorY > pageHeight - 45) { doc.addPage(); cursorY = 18; }
+      const programHasAdjustment = groups.some((group) => group.children.some((item) => {
+        const original = originalValuesById.get(item.id) ?? item.valLdo;
+        return Math.abs(item.valLoa - original) > 0.001;
+      }));
+      doc.setTextColor(0, 52, 111);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.text(`Programa: ${programa}${programHasAdjustment ? "  • [POSSUI AJUSTES TÉCNICOS]" : ""}`, margin, cursorY);
+      doc.setDrawColor(0, 52, 111);
+      doc.setLineWidth(0.3);
+      doc.line(margin, cursorY + 2, pageWidth - margin, cursorY + 2);
+
+      const reportBody: ReportRow[] = [];
+      groups.forEach((group) => {
+        const ldoData = getLdoPlanningForGroup(group);
+        const totalFill = [238, 243, 250];
+        const totalText = [0, 52, 111];
+        reportBody.push([
+          { content: `AÇÃO: ${group.acao}\nMeta Física 2027: ${ldoData.custoFisico2027 ?? "—"} (${ldoData.unidadeMedida || "unid."}) • Indicador: ${ldoData.indicador || "—"}`, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: "TOTAL DA AÇÃO", styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: currency.format(group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: currency.format(group.valLoa), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: currency.format(group.valLoa - group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: getStatusInfo(group.valLdo, group.valLoa).label, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+        ]);
+        group.children.forEach((item) => {
+          const original = originalValuesById.get(item.id) ?? item.valLdo;
+          const adjusted = Math.abs(item.valLoa - original) > 0.001;
+          const diff = item.valLoa - original;
+          reportBody.push([
+            `  ↳ ${item.subelemento || item.elemento || "Dotação"}`,
+            item.natureza || item.elemento,
+            currency.format(item.valLdo),
+            currency.format(item.valLoa),
+            diff > 0 ? `+${currency.format(diff)}` : currency.format(diff),
+            adjusted ? "Ajustado" : "Conforme LDO",
+          ]);
+          if (adjusted && justifications[item.id]) {
+            reportBody.push([{
+              content: `Motivação Técnica / Justificativa: ${justifications[item.id]}`,
+              colSpan: 6,
+              styles: { fontStyle: "italic", textColor: [91, 63, 12], fillColor: [255, 250, 235] },
+            }]);
+          }
+        });
+      });
+
+      autoTable(doc, {
+        startY: cursorY + 6,
+        margin: { left: margin, right: margin },
+        head: [["AÇÃO / SUBELEMENTO & METAS", "NATUREZA DA DESPESA", "VALOR LDO", "VALOR LOA", "DIFERENÇA", "STATUS"]],
+        body: reportBody,
+        theme: "grid",
+        headStyles: { fillColor: [235, 238, 242], textColor: [20, 24, 30], fontStyle: "bold", fontSize: 7.5 },
+        bodyStyles: { fontSize: 7, textColor: [35, 38, 42], cellPadding: 2, valign: "middle" },
+        alternateRowStyles: { fillColor: [252, 252, 253] },
+        columnStyles: {
+          0: { cellWidth: 85 },
+          1: { cellWidth: 70 },
+          2: { cellWidth: 28, halign: "right" },
+          3: { cellWidth: 28, halign: "right" },
+          4: { cellWidth: 28, halign: "right" },
+          5: { cellWidth: 30, halign: "center" },
+        },
+      });
+      cursorY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY + 40;
+      if (programIndex < programs.length - 1) cursorY += 8;
     });
 
     const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 55;
-    const signatureY = Math.min(finalY + 24, pageHeight - 25);
+    const signatureY = Math.min(finalY + 22, pageHeight - 24);
     doc.setDrawColor(90, 95, 102);
     doc.setLineWidth(0.3);
     doc.line(margin, signatureY, margin + 70, signatureY);
     doc.line(pageWidth - margin - 70, signatureY, pageWidth - margin, signatureY);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(35, 38, 42);
-    doc.text("Técnico responsável", margin, signatureY + 5, { align: "left" });
-    doc.text("Secretário responsável", pageWidth - margin, signatureY + 5, { align: "right" });
+    doc.text("Técnico Responsável pelo Planejamento", margin, signatureY + 4, { align: "left" });
+    doc.text("Secretário / Ordenador de Despesa", pageWidth - margin, signatureY + 4, { align: "right" });
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
+    doc.setFontSize(6.5);
     doc.setTextColor(90, 95, 102);
-    doc.text("Nome e assinatura", margin, signatureY + 10);
-    doc.text("Nome e assinatura", pageWidth - margin, signatureY + 10, { align: "right" });
+    doc.text("Assinatura e Matrícula", margin, signatureY + 8);
+    doc.text("Assinatura e Carimbo", pageWidth - margin, signatureY + 8, { align: "right" });
 
     const pageCount = doc.getNumberOfPages();
     for (let page = 1; page <= pageCount; page += 1) {
       doc.setPage(page);
-      doc.setFontSize(7);
+      doc.setFontSize(6.5);
       doc.setTextColor(120, 125, 130);
-      doc.text(`Painel LOA • Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 8, { align: "right" });
+      doc.text(`Prefeitura de Osasco • Painel LOA 2027 • Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: "right" });
     }
-    doc.save("analise-tecnica-ldo-loa.pdf");
+    doc.save("relatorio-tecnico-ldo-loa-osasco-2027.pdf");
   };
 
   // Alternar nó expansível da árvore
@@ -1280,26 +1841,61 @@ export function AnaliseLoaView() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
-      {/* 1. Subtítulo e Breadcrumb */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-on-surface-variant mb-1">
-            <span>Planejamento Orçamentário</span>
-            <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span className="text-primary">Análise Técnica LDO x LOA</span>
+    <div className="space-y-6 pb-12 print:space-y-4 print:p-0">
+      {/* Cabeçalho Oficial exclusivo para Impressão com Brasão de Osasco */}
+      <div className="hidden print:flex items-center justify-between border-b-2 border-primary/80 pb-4 mb-6">
+        <div className="flex items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brasao.png" alt="Brasão de Osasco" className="h-16 w-auto object-contain" />
+          <div>
+            <h1 className="text-xl font-bold font-headline text-on-surface uppercase tracking-wide">
+              Prefeitura do Município de Osasco
+            </h1>
+            <p className="text-xs font-semibold text-on-surface-variant">
+              Secretaria de Planejamento e Gestão • Departamento de Orçamento
+            </p>
+            <p className="text-[11px] text-on-surface-variant font-mono mt-0.5">
+              Análise Técnica do Orçamento — LDO x LOA 2027
+            </p>
           </div>
-          <h1 className="text-2xl md:text-3xl font-headline font-extrabold text-on-surface tracking-tight">
-            Análise LOA (subelemento)
-          </h1>
-          <p className="text-sm text-on-surface-variant mt-1">
-            Compare em tempo real os valores da LDO e LOA identificando diferenças, suplementações, reduções e distribuição orçamentária.
-          </p>
+        </div>
+        <div className="text-right font-mono text-[10px] text-on-surface-variant">
+          <p>Data de Emissão: {new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}</p>
+          <p>Relatório de Planejamento e Metas Físicas</p>
+        </div>
+      </div>
+
+      {/* 1. Subtítulo e Breadcrumb */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brasao.png" alt="Brasão de Osasco" className="h-12 w-auto object-contain shrink-0 hidden sm:block" />
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-on-surface-variant mb-1">
+              <span>Planejamento Orçamentário</span>
+              <span className="material-symbols-outlined text-xs">chevron_right</span>
+              <span className="text-primary">Análise Técnica LDO x LOA</span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-headline font-extrabold text-on-surface tracking-tight">
+              Análise LOA (subelemento)
+            </h1>
+            <p className="text-sm text-on-surface-variant mt-1">
+              Compare em tempo real os valores da LDO e LOA identificando diferenças, suplementações, reduções e distribuição orçamentária.
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
+            type="button"
+            onClick={() => setCardsConfigModalOpen(true)}
+            className="flex min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-surface border border-outline-variant text-on-surface hover:bg-surface-container transition-colors shadow-sm sm:w-auto"
+          >
+            <span className="material-symbols-outlined text-base text-primary">dashboard_customize</span>
+            Personalizar Cards
+          </button>
+          <button
             onClick={() => setDrawerOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-surface border border-outline-variant text-primary hover:bg-surface-container transition-colors shadow-sm"
+            className="flex min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-surface border border-outline-variant text-primary hover:bg-surface-container transition-colors shadow-sm sm:w-auto"
           >
             <span className="material-symbols-outlined text-base">auto_awesome</span>
             Insights Inteligentes
@@ -1307,460 +1903,645 @@ export function AnaliseLoaView() {
         </div>
       </header>
 
-      {/* 2. Camadas de Cards Superiores (Camada 1: Receita | Camada 2: Despesa com Divisória) */}
-      <div className="space-y-6">
-        {/* === CAMADA 1: CARDS DE RECEITA === */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-            <span className="material-symbols-outlined text-sm text-emerald-600">account_balance_wallet</span>
-            <span>Painel da Receita Orçamentária</span>
+      {dataLoadState === "loading" && rawItems.length === 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant" role="status" aria-live="polite">
+          <span className="material-symbols-outlined animate-spin text-primary" aria-hidden="true">progress_activity</span>
+          <span>Carregando dados da análise...</span>
+        </div>
+      )}
+      {dataLoadState === "error" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-error/40 bg-error-container px-4 py-3 text-sm text-on-error-container sm:flex-row sm:items-center sm:justify-between" role="alert">
+          <div>
+            <p className="font-semibold">Não foi possível carregar todos os dados da análise.</p>
+            <p className="mt-1 text-xs">{dataLoadError || "Verifique a conexão e tente novamente."}</p>
           </div>
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            {/* Card 1: Valor Previsto LDO (Receita) */}
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-emerald-600 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {currency.format(ldoReceitaTotal)}
-              </h3>
-              <p className="text-[10px] text-emerald-700 font-semibold mt-1">Receita Planejada LDO</p>
+          <button type="button" onClick={() => setDataReloadKey((value) => value + 1)} className="min-h-11 shrink-0 rounded-lg border border-error/40 bg-surface px-4 py-2 text-xs font-bold text-on-error-container hover:bg-error-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error">
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {/* Renderização Dinâmica de Seções e Cards Baseada em layoutConfig */}
+      {layoutConfig.sectionsOrder.map((sectionId) => {
+        if (layoutConfig.visibility[sectionId] === false) return null;
+
+        // Seção 1: Painel da Receita Orçamentária
+        if (sectionId === "painel-receita") {
+          return (
+            <div key="painel-receita" className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                <span className="material-symbols-outlined text-sm text-emerald-600">account_balance_wallet</span>
+                <span>Painel da Receita Orçamentária</span>
+              </div>
+              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                {layoutConfig.receitaKpisOrder.map((kpiId) => {
+                  if (layoutConfig.visibility[kpiId] === false) return null;
+
+                  if (kpiId === "rec-ldo") {
+                    return (
+                      <div key="rec-ldo" className="glass-card bg-surface p-4 border-t-2 border-t-emerald-600 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {currency.format(ldoReceitaTotal)}
+                        </h3>
+                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">Receita Planejada LDO</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "rec-loa") {
+                    return (
+                      <div key="rec-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-600 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {currency.format(0)}
+                        </h3>
+                        <p className="text-[10px] text-blue-700 font-semibold mt-1">Receita Fixada LOA</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "rec-diff") {
+                    const recLdo = ldoReceitaTotal;
+                    const recLoa = 0;
+                    const recDiff = recLoa - recLdo;
+                    const isGreater = recDiff > 0;
+                    const isSmaller = recDiff < 0;
+
+                    return (
+                      <div key="rec-diff" className={`glass-card bg-surface p-4 border-t-2 ${isGreater ? "border-t-rose-500 bg-rose-50/20" : isSmaller ? "border-t-emerald-500" : "border-t-gray-400"} shadow-sm`}>
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
+                        <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${isGreater ? "text-rose-600" : isSmaller ? "text-emerald-600" : "text-on-surface"}`}>
+                          {isGreater ? "▲" : isSmaller ? "▼" : "—"} {currency.format(Math.abs(recDiff))}
+                        </h3>
+                        <p className="text-[10px] text-on-surface-variant mt-1">
+                          {isGreater ? "⚠️ LOA maior que a LDO (+ Excesso)" : isSmaller ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "rec-exec") {
+                    return (
+                      <div key="rec-exec" className="glass-card bg-surface p-4 border-t-2 border-t-purple-600 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {percent.format(ldoReceitaTotal > 0 ? 0 : 1)}
+                        </h3>
+                        <p className="text-[10px] text-purple-700 font-semibold mt-1">Transformado em LOA</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "rec-maior") {
+                    return (
+                      <div key="rec-maior" className="glass-card bg-surface p-4 border-t-2 border-t-teal-600 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Maior Arrecadação LDO</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {currency.format(0)}
+                        </h3>
+                        <p className="text-[10px] text-teal-700 font-semibold mt-1">Maior Fonte LDO</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "rec-fontes") {
+                    return (
+                      <div key="rec-fontes" className="glass-card bg-surface p-4 border-t-2 border-t-amber-600 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total Fontes / Vínculos</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {integer.format(61)}
+                        </h3>
+                        <p className="text-[10px] text-amber-700 font-semibold mt-1">Fontes de Recurso LDO</p>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
+              </section>
             </div>
+          );
+        }
 
-            {/* Card 2: Valor Previsto LOA (Receita) */}
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-blue-600 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {currency.format(0)}
-              </h3>
-              <p className="text-[10px] text-blue-700 font-semibold mt-1">Receita Fixada LOA</p>
+        // Seção 2: Painel da Despesa Orçamentária
+        if (sectionId === "painel-despesa") {
+          return (
+            <div key="painel-despesa" className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                <span className="material-symbols-outlined text-sm text-blue-600">payments</span>
+                <span>Painel da Despesa Orçamentária</span>
+              </div>
+              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                {layoutConfig.despesaKpisOrder.map((kpiId) => {
+                  if (layoutConfig.visibility[kpiId] === false) return null;
+
+                  if (kpiId === "desp-ldo") {
+                    return (
+                      <div key="desp-ldo" className="glass-card bg-surface p-4 border-t-2 border-t-emerald-500 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {currency.format(metrics.valLdoTotal)}
+                        </h3>
+                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">Despesa Planejada</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "desp-loa") {
+                    return (
+                      <div key="desp-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-500 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {currency.format(metrics.valLoaTotal)}
+                        </h3>
+                        <p className="text-[10px] text-blue-700 font-semibold mt-1">Despesa Fixada</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "desp-diff") {
+                    return (
+                      <div key="desp-diff" className={`glass-card bg-surface p-4 border-t-2 ${metrics.diff > 0 ? "border-t-rose-500 bg-rose-50/20" : metrics.diff < 0 ? "border-t-emerald-500" : "border-t-gray-400"} shadow-sm`}>
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
+                        <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
+                          {metrics.diff > 0 ? "▲" : metrics.diff < 0 ? "▼" : "—"} {currency.format(Math.abs(metrics.diff))}
+                        </h3>
+                        <p className="text-[10px] text-on-surface-variant mt-1">
+                          {metrics.diff > 0 ? "⚠️ LOA maior que a LDO (+ Excesso)" : metrics.diff < 0 ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "desp-expectativa") {
+                    return (
+                      <div key="desp-expectativa" className="glass-card bg-surface p-4 border-t-2 border-t-purple-500 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Expectativa LOA</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {currency.format(metrics.valLoaTotal)}
+                        </h3>
+                        <p className="text-[10px] text-purple-700 font-semibold mt-1">Expectativa LOA Fixada</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "desp-exec") {
+                    return (
+                      <div key="desp-exec" className="glass-card bg-surface p-4 border-t-2 border-t-teal-500 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {percent.format(metrics.percentExec / 100)}
+                        </h3>
+                        <p className="text-[10px] text-teal-700 font-semibold mt-1">Transformado em LOA</p>
+                      </div>
+                    );
+                  }
+
+                  if (kpiId === "desp-naturezas") {
+                    return (
+                      <div key="desp-naturezas" className="glass-card bg-surface p-4 border-t-2 border-t-amber-500 shadow-sm">
+                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total de Naturezas</p>
+                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                          {integer.format(metrics.totalNaturezas)}
+                        </h3>
+                        <p className="text-[10px] text-on-surface-variant mt-1">Classificações econômicas</p>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
+              </section>
             </div>
+          );
+        }
 
-            {/* Card 3: Diferença LOA - LDO (Receita) */}
-            {(() => {
-              const recLdo = ldoReceitaTotal;
-              const recLoa = 0;
-              const recDiff = recLoa - recLdo;
-              const isGreater = recDiff > 0;
-              const isSmaller = recDiff < 0;
-
-              return (
-                <div className={`glass-card bg-surface p-4 border-l-4 ${isGreater ? "border-l-rose-500 bg-rose-50/20" : isSmaller ? "border-l-emerald-500" : "border-l-gray-400"} shadow-sm`}>
-                  <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
-                  <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${isGreater ? "text-rose-600" : isSmaller ? "text-emerald-600" : "text-on-surface"}`}>
-                    {isGreater ? "▲" : isSmaller ? "▼" : "—"} {currency.format(Math.abs(recDiff))}
-                  </h3>
-                  <p className="text-[10px] text-on-surface-variant mt-1">
-                    {isGreater ? "⚠️ LOA maior que a LDO (+ Excesso)" : isSmaller ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
-                  </p>
+        // Seção 3: Filtros Avançados Orçamentários
+        if (sectionId === "filtros-avancados") {
+          return (
+            <section key="filtros-avancados" className="glass-card p-5 bg-surface border border-outline-variant space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">tune</span>
+                  <h3 className="text-sm font-headline font-bold text-on-surface">Filtros Avançados Orçamentários</h3>
                 </div>
-              );
-            })()}
-
-            {/* Card 4: Execução Planejamento (Receita) */}
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-purple-600 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {percent.format(ldoReceitaTotal > 0 ? 0 : 1)}
-              </h3>
-              <p className="text-[10px] text-purple-700 font-semibold mt-1">Transformado em LOA</p>
-            </div>
-
-            {/* Card 5: Maior Arrecadação LDO (Receita) */}
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-teal-600 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Maior Arrecadação LDO</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {currency.format(0)}
-              </h3>
-              <p className="text-[10px] text-teal-700 font-semibold mt-1">Maior Fonte LDO</p>
-            </div>
-
-            {/* Card 6: Total de Fontes / Vínculos (Receita) */}
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-amber-600 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total Fontes / Vínculos</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {integer.format(61)}
-              </h3>
-              <p className="text-[10px] text-amber-700 font-semibold mt-1">Fontes de Recurso LDO</p>
-            </div>
-          </section>
-        </div>
-
-        {/* Divisória Sutil com Estilo de Linha Elegante */}
-        <div className="relative flex py-1 items-center">
-          <div className="flex-grow border-t border-outline-variant/60"></div>
-          <span className="flex-shrink mx-4 text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest bg-surface-container px-3 py-1 rounded-full border border-outline-variant/40">
-            Detalhamento Orçamentário
-          </span>
-          <div className="flex-grow border-t border-outline-variant/60"></div>
-        </div>
-
-        {/* === CAMADA 2: CARDS DE DESPESA === */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-            <span className="material-symbols-outlined text-sm text-blue-600">payments</span>
-            <span>Painel da Despesa Orçamentária</span>
-          </div>
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-emerald-500 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {currency.format(metrics.valLdoTotal)}
-              </h3>
-              <p className="text-[10px] text-emerald-700 font-semibold mt-1">Despesa Planejada</p>
-            </div>
-
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-blue-500 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {currency.format(metrics.valLoaTotal)}
-              </h3>
-              <p className="text-[10px] text-blue-700 font-semibold mt-1">Despesa Fixada</p>
-            </div>
-
-            <div className={`glass-card bg-surface p-4 border-l-4 ${metrics.diff > 0 ? "border-l-rose-500 bg-rose-50/20" : metrics.diff < 0 ? "border-l-emerald-500" : "border-l-gray-400"} shadow-sm`}>
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
-              <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
-                {metrics.diff > 0 ? "▲" : metrics.diff < 0 ? "▼" : "—"} {currency.format(Math.abs(metrics.diff))}
-              </h3>
-              <p className="text-[10px] text-on-surface-variant mt-1">
-                {metrics.diff > 0 ? "⚠️ LOA maior que a LDO (+ Excesso)" : metrics.diff < 0 ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
-              </p>
-            </div>
-
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-purple-500 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Expectativa LOA</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {currency.format(metrics.valLoaTotal)}
-              </h3>
-              <p className="text-[10px] text-purple-700 font-semibold mt-1">Expectativa LOA Fixada</p>
-            </div>
-
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-teal-500 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {percent.format(metrics.percentExec / 100)}
-              </h3>
-              <p className="text-[10px] text-teal-700 font-semibold mt-1">Transformado em LOA</p>
-            </div>
-
-            <div className="glass-card bg-surface p-4 border-l-4 border-l-amber-500 shadow-sm">
-              <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total de Naturezas</p>
-              <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                {integer.format(metrics.totalNaturezas)}
-              </h3>
-              <p className="text-[10px] text-on-surface-variant mt-1">Classificações econômicas</p>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      {/* 3. Área de Filtros em Formato Chips Completos */}
-      <section className="glass-card p-5 bg-surface border border-outline-variant space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">tune</span>
-            <h3 className="text-sm font-headline font-bold text-on-surface">Filtros Avançados Orçamentários</h3>
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Buscar por código, ação, palavra-chave..."
-              value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
-            />
-            <button
-              onClick={() => setFilters(INITIAL_FILTERS)}
-              className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200"
-            >
-              Limpar Filtros
-            </button>
-          </div>
-        </div>
-
-        {/* Grade de Select Chips */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
-            .filter((key) => key !== "orgao")
-            .map((key) => {
-              const labels: Record<string, string> = {
-                secretaria: "Secretaria",
-                unidade: "Unidade",
-              programa: "Programa",
-              acao: "Ação",
-              natureza: "Natureza",
-              fonteVinculo: "Fonte / Vínculo",
-              categoriaEconomica: "Cat. Despesa",
-              grupoNatureza: "Grupo Despesa",
-              elemento: "Mod. Aplicação",
-              subelemento: "Subelemento",
-              processo: "Processo",
-              exercicio: "Exercício",
-            };
-
-            const selectedCount = (filters[key] || []).length;
-            const isDisabled = false;
-
-            return (
-              <div key={key} className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
-                  <span>{labels[key] || key}</span>
-                </label>
-                <select
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (!val) return;
-                    setFilters((prev) => {
-                      const arr = prev[key] || [];
-                      return {
-                        ...prev,
-                        [key]: arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val],
-                      };
-                    });
-                  }}
-                  className={`text-xs px-2 py-1.5 rounded-lg border transition-colors ${
-                    selectedCount
-                      ? "bg-primary/5 border-primary font-bold text-primary cursor-pointer"
-                      : "bg-surface border-outline-variant text-on-surface-variant cursor-pointer hover:bg-surface-container/50"
-                  }`}
-                  value=""
-                >
-                  <option value="">{selectedCount ? `${selectedCount} sel.` : "Todos"}</option>
-                  {(filterOptions[key] || []).slice(0, 100).map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    placeholder="Buscar por código, ação, palavra-chave..."
+                    value={filters.search}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
+                  />
+                  <button
+                    onClick={() => setFilters(INITIAL_FILTERS)}
+                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200"
+                  >
+                    Limpar Filtros
+                  </button>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* 4. Painel Principal (Estrutura Hierárquica em cima, Tabela Dinâmica Editable embaixo) */}
-      <div className="space-y-6">
-        {/* Bloco 1 (CIMA): Estrutura Hierárquica (Pivot Table Tree View) */}
-        <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col">
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-outline-variant">
-            <div>
-              <h3 className="text-sm font-headline font-bold text-on-surface">Estrutura Hierárquica (Pivot)</h3>
-              <p className="text-[11px] text-on-surface-variant">Navegação em árvore da distribuição orçamentária</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={expandAllNodes}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors border border-outline-variant"
-                title="Expandir Tudo"
-              >
-                Expandir Tudo
-              </button>
-              <button
-                onClick={collapseAllNodes}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors border border-outline-variant"
-                title="Recolher Tudo"
-              >
-                Recolher Tudo
-              </button>
-            </div>
-          </div>
+              {/* Grade de Filtros Popover Multi-Select */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
+                  .filter((key) => key !== "orgao")
+                  .map((key) => {
+                    const labels: Record<string, string> = {
+                      secretaria: "Secretaria",
+                      unidade: "Unidade",
+                      programa: "Programa",
+                      acao: "Ação",
+                      natureza: "Natureza",
+                      fonteVinculo: "Fonte / Vínculo",
+                      categoriaEconomica: "Cat. Despesa",
+                      grupoNatureza: "Grupo Despesa",
+                      elemento: "Mod. Aplicação",
+                      subelemento: "Subelemento",
+                      processo: "Processo",
+                      exercicio: "Exercício",
+                    };
 
-          {/* Legend Header Bar */}
-          <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-lg bg-surface-container/70 border border-outline-variant/60 text-[11px] font-bold text-on-surface-variant">
-            <span>Estrutura / Agrupamento</span>
-            <div className="flex items-center gap-6 pr-2">
-              <span className="text-primary font-bold">Fixação LOA (R$)</span>
-              <span className="text-on-surface-variant font-bold">Diferença (LOA - LDO)</span>
-            </div>
-          </div>
+                    const fieldLabel = labels[key] || key;
+                    const selectedValues = (filters[key] || []) as string[];
+                    const selectedCount = selectedValues.length;
+                    const allOptions = filterOptions[key] || [];
+                    const searchQ = (filterSearchQuery[key] || "").toLowerCase();
+                    const visibleOptions = allOptions.filter((opt) => opt.toLowerCase().includes(searchQ));
+                    const isOpen = openFilterKey === key;
 
-          <div className="max-h-[350px] overflow-y-auto pr-1 space-y-1">
-            {pivotTree.length === 0 ? (
-              <p className="text-xs text-on-surface-variant p-4 text-center">Nenhum registro encontrado para a estrutura.</p>
-            ) : (
-              renderTreeNodes(pivotTree)
-            )}
-          </div>
-        </div>
+                    return (
+                      <div key={key} className="relative flex flex-col gap-1">
+                        <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
+                          <span>{fieldLabel}</span>
+                          {selectedCount > 0 && (
+                            <span className="text-[10px] text-primary font-extrabold">{selectedCount}</span>
+                          )}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setOpenFilterKey(isOpen ? null : key)}
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${
+                            selectedCount
+                              ? "bg-primary/10 border-primary font-bold text-primary"
+                              : "bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container/60"
+                          }`}
+                        >
+                          <span className="truncate">
+                            {selectedCount === 0
+                              ? "Todos"
+                              : selectedCount === 1
+                              ? selectedValues[0]
+                              : `${selectedCount} sel.`}
+                          </span>
+                          <span className="material-symbols-outlined text-xs shrink-0">
+                            {isOpen ? "expand_less" : "expand_more"}
+                          </span>
+                        </button>
 
-        {/* Bloco 2 (BAIXO): Tabela Analítica Editável de Detalhamento */}
-        <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col min-h-[500px]">
-          {/* Barra Superior da Tabela */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-3 border-b border-outline-variant">
-            <div className="flex items-center gap-3">
-              <div>
-                <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
-                <p className="text-[11px] text-on-surface-variant">Dê duplo clique ou edite os valores diretamente nas células</p>
-              </div>
-              <input
-                type="text"
-                placeholder="Buscar ação, elemento, subelemento ou processo..."
-                value={tableSearch}
-                onChange={(e) => setTableSearch(e.target.value)}
-                className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-56"
-              />
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                  className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${
-                    statusFilters.length > 0
-                      ? "border-primary text-primary bg-primary/5 font-bold"
-                      : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-sm">filter_alt</span>
-                  <span>
-                    {statusFilters.length === 0
-                      ? "Status/Ajustado"
-                      : statusFilters.length === 1
-                      ? statusFilters[0]
-                      : `${statusFilters.length} status sel.`}
-                  </span>
-                  <span className="material-symbols-outlined text-xs">
-                    {statusDropdownOpen ? "expand_less" : "expand_more"}
-                  </span>
-                </button>
+                        {isOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-30"
+                              onClick={() => setOpenFilterKey(null)}
+                            />
+                            <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
+                              <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
+                                <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
+                                {selectedCount > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFilters((prev) => ({ ...prev, [key]: [] }));
+                                    }}
+                                    className="text-[10px] font-bold text-rose-600 hover:underline"
+                                  >
+                                    Limpar
+                                  </button>
+                                )}
+                              </div>
 
-                {statusDropdownOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-20"
-                      onClick={() => setStatusDropdownOpen(false)}
-                    />
-                    <div className="absolute left-0 mt-1.5 w-52 bg-surface rounded-xl shadow-xl border border-outline-variant p-2 z-30 space-y-1 animate-in fade-in zoom-in-95">
-                      <div className="flex items-center justify-between px-2 py-1 border-b border-outline-variant/60 mb-1">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por Status/Ajustado</span>
-                        {statusFilters.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setStatusFilters([])}
-                            className="text-[10px] font-bold text-rose-600 hover:underline"
-                          >
-                            Limpar
-                          </button>
+                              <input
+                                type="text"
+                                placeholder={`Buscar ${fieldLabel.toLowerCase()}...`}
+                                value={filterSearchQuery[key] || ""}
+                                onChange={(e) =>
+                                  setFilterSearchQuery((prev) => ({ ...prev, [key]: e.target.value }))
+                                }
+                                className="w-full px-2 py-1 text-xs rounded-md border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+
+                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+                                {visibleOptions.length === 0 ? (
+                                  <p className="text-[11px] text-on-surface-variant p-2 text-center">Nenhuma opção encontrada</p>
+                                ) : (
+                                  visibleOptions.map((opt) => {
+                                    const isChecked = selectedValues.includes(opt);
+                                    return (
+                                      <label
+                                        key={opt}
+                                        className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors ${
+                                          isChecked
+                                            ? "bg-primary/10 text-primary font-semibold"
+                                            : "hover:bg-surface-container/60 text-on-surface"
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => {
+                                            setFilters((prev) => {
+                                              const current = (prev[key] || []) as string[];
+                                              return {
+                                                ...prev,
+                                                [key]: isChecked
+                                                  ? current.filter((v) => v !== opt)
+                                                  : [...current, opt],
+                                              };
+                                            });
+                                          }}
+                                          className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
+                                        />
+                                        <span className="truncate min-w-0" title={opt}>{opt}</span>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
-                      {[
-                        { label: "Suplementada", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" },
-                        { label: "Reduzida", badge: "bg-rose-100 text-rose-800 border-rose-300" },
-                        { label: "Nova Dotação", badge: "bg-blue-100 text-blue-800 border-blue-300" },
-                        { label: "Removida", badge: "bg-amber-100 text-amber-800 border-amber-300" },
-                        { label: "Sem alteração", badge: "bg-gray-100 text-gray-700 border-gray-300" },
-                        { label: "Ajustado", badge: "bg-amber-100 text-amber-800 border-amber-300" },
-                      ].map((st) => {
-                        const checked = statusFilters.includes(st.label);
-                        return (
-                          <label
-                            key={st.label}
-                            className={`flex items-center justify-between p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                              checked ? "bg-primary/10 font-bold text-primary" : "hover:bg-surface-container text-on-surface"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  setStatusFilters((prev) =>
-                                    prev.includes(st.label)
-                                      ? prev.filter((s) => s !== st.label)
-                                      : [...prev, st.label]
-                                  );
-                                }}
-                                className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
-                              />
-                              <span>{st.label}</span>
-                            </div>
-                            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded-full border ${st.badge}`}>
-                              •
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </>
+                    );
+                  })}
+              </div>
+            </section>
+          );
+        }
+
+        // Seção 4: Estrutura Hierárquica (Pivot Table Tree View)
+        if (sectionId === "estrutura-hierarquica") {
+          return (
+            <div key="estrutura-hierarquica" className="glass-card p-5 bg-surface border border-outline-variant flex flex-col">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-outline-variant">
+                <div>
+                  <h3 className="text-sm font-headline font-bold text-on-surface">Estrutura Hierárquica (Pivot)</h3>
+                  <p className="text-[11px] text-on-surface-variant">Navegação em árvore da distribuição orçamentária</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={expandAllNodes}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors border border-outline-variant"
+                    title="Expandir Tudo"
+                  >
+                    Expandir Tudo
+                  </button>
+                  <button
+                    onClick={collapseAllNodes}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors border border-outline-variant"
+                    title="Recolher Tudo"
+                  >
+                    Recolher Tudo
+                  </button>
+                </div>
+              </div>
+
+              {/* Legend Header Bar */}
+              <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-lg bg-surface-container/70 border border-outline-variant/60 text-[11px] font-bold text-on-surface-variant">
+                <span>Estrutura / Agrupamento</span>
+                <div className="flex items-center gap-6 pr-2">
+                  <span className="text-primary font-bold">Fixação LOA (R$)</span>
+                  <span className="text-on-surface-variant font-bold">Diferença (LOA - LDO)</span>
+                </div>
+              </div>
+
+              <div className="max-h-[350px] overflow-y-auto pr-1 space-y-1">
+                {pivotTree.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant p-4 text-center">Nenhum registro encontrado para a estrutura.</p>
+                ) : (
+                  renderTreeNodes(pivotTree)
                 )}
               </div>
             </div>
+          );
+        }
 
-            <div className="flex items-center gap-2">
-              {hasChanges && (
-                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 animate-pulse">
-                  Alterações não salvas
-                </span>
-              )}
-              <button
-                onClick={handleSaveEdits}
-                disabled={savingState === "saving"}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${
-                  hasChanges
-                    ? "bg-primary text-on-primary ring-2 ring-primary/40 hover:bg-primary/90"
-                    : savingState === "saved"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high"
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">
-                  {savingState === "saving" ? "sync" : savingState === "saved" ? "check_circle" : "save"}
-                </span>
-                <span>
-                  {savingState === "saving" ? "Salvando..." : savingState === "saved" ? "Salvo com sucesso!" : "Salvar Alterações"}
-                </span>
-              </button>
-              <button
-                onClick={exportToExcel}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-sm">description</span>
-                Excel
-              </button>
-              <button
-                onClick={exportToPDF}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                PDF
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-sm">print</span>
-                Imprimir
-              </button>
-            </div>
-          </div>
+        // Seção 5: Detalhamento Analítico Editável
+        if (sectionId === "detalhamento-analitico") {
+          return (
+            <div key="detalhamento-analitico" className="glass-card p-5 bg-surface border border-outline-variant flex flex-col">
+              {/* Barra Superior da Tabela */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-3 border-b border-outline-variant">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
+                    <p className="text-[11px] text-on-surface-variant">Dê duplo clique ou edite os valores diretamente nas células</p>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Buscar ação, elemento, subelemento ou processo..."
+                    value={tableSearch}
+                    onChange={(e) => setTableSearch(e.target.value)}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-56"
+                  />
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                      className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${
+                        statusFilters.length > 0
+                          ? "border-primary text-primary bg-primary/5 font-bold"
+                          : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">filter_alt</span>
+                      <span>
+                        {statusFilters.length === 0
+                          ? "Status/Ajustado"
+                          : statusFilters.length === 1
+                          ? statusFilters[0]
+                          : `${statusFilters.length} status sel.`}
+                      </span>
+                      <span className="material-symbols-outlined text-xs">
+                        {statusDropdownOpen ? "expand_less" : "expand_more"}
+                      </span>
+                    </button>
 
-          {/* Data Grid Analítica Editável */}
-          <div className="flex-1 overflow-auto max-h-[480px]">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-surface-container sticky top-0 z-10 text-[11px] font-bold text-on-surface-variant">
-                <tr>
-                  <th className="p-2.5 border-b border-outline-variant">{renderSortHeader("acao", "Ação")}</th>
-                  <th className="p-2.5 border-b border-outline-variant">{renderSortHeader("elemento", "Elemento de Despesa")}</th>
-                  <th className="p-2.5 border-b border-outline-variant text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>
-                  <th className="p-2.5 border-b border-outline-variant text-right">{renderSortHeader("valLoa", "Valor LOA (Editável)", "text-right")}</th>
-                  <th className="p-2.5 border-b border-outline-variant text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>
-                  <th className="p-2.5 border-b border-outline-variant text-center">{renderSortHeader("status", "Status", "text-center")}</th>
-                  <th className="p-2.5 border-b border-outline-variant text-center">{renderSortHeader("adjusted", "Ajustado", "text-center")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/40 font-mono">
-                {editableGroups.map((group) => {
-                  const isExpanded = expandedEditGroups.has(group.id);
-                  const diff = group.valLoa - group.valLdo;
-                  const status = getStatusInfo(group.valLdo, group.valLoa);
-                  const diffColor = diff > 0 ? "text-emerald-600 font-bold" : diff < 0 ? "text-rose-600 font-bold" : "text-gray-400";
-                  const groupAdjusted = group.children.some((item) => {
-                    const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
-                    return Math.abs(item.valLoa - original) > 0.001;
-                  });
+                    {statusDropdownOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-20"
+                          onClick={() => setStatusDropdownOpen(false)}
+                        />
+                        <div className="absolute left-0 mt-1.5 w-52 bg-surface rounded-xl shadow-xl border border-outline-variant p-2 z-30 space-y-1 animate-in fade-in zoom-in-95">
+                          <div className="flex items-center justify-between px-2 py-1 border-b border-outline-variant/60 mb-1">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por Status/Ajustado</span>
+                            {statusFilters.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setStatusFilters([])}
+                                className="text-[10px] font-bold text-rose-600 hover:underline"
+                              >
+                                Limpar
+                              </button>
+                            )}
+                          </div>
+                          {[
+                            { label: "Suplementada", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+                            { label: "Reduzida", badge: "bg-rose-100 text-rose-800 border-rose-300" },
+                            { label: "Nova Dotação", badge: "bg-blue-100 text-blue-800 border-blue-300" },
+                            { label: "Removida", badge: "bg-amber-100 text-amber-800 border-amber-300" },
+                            { label: "Sem alteração", badge: "bg-gray-100 text-gray-700 border-gray-300" },
+                            { label: "Ajustado", badge: "bg-amber-100 text-amber-800 border-amber-300" },
+                          ].map((st) => {
+                            const checked = statusFilters.includes(st.label);
+                            return (
+                              <label
+                                key={st.label}
+                                className={`flex items-center justify-between p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                                  checked ? "bg-primary/10 font-bold text-primary" : "hover:bg-surface-container text-on-surface"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setStatusFilters((prev) =>
+                                        prev.includes(st.label)
+                                          ? prev.filter((s) => s !== st.label)
+                                          : [...prev, st.label]
+                                      );
+                                    }}
+                                    className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
+                                  />
+                                  <span className="text-xs">{st.label}</span>
+                                </div>
+                                <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded-full border ${st.badge}`}>
+                                  •
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {hasChanges && (
+                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                      Alterações não salvas
+                    </span>
+                  )}
+                  <button
+                    onClick={handleSaveEdits}
+                    disabled={savingState === "saving"}
+                    className={`min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${
+                      hasChanges
+                        ? "bg-primary text-on-primary ring-2 ring-primary/40 hover:bg-primary/90"
+                        : savingState === "saved"
+                        ? "bg-emerald-600 text-white"
+                        : "bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {savingState === "saving" ? "sync" : savingState === "saved" ? "check_circle" : "save"}
+                    </span>
+                    <span>
+                      {savingState === "saving" ? "Salvando..." : savingState === "saved" ? "Salvo com sucesso!" : "Salvar Alterações"}
+                    </span>
+                  </button>
+                  <button
+                    onClick={exportToExcel}
+                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">description</span>
+                    Excel
+                  </button>
+                  <button
+                    onClick={exportToPDF}
+                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">print</span>
+                    Imprimir
+                  </button>
+                </div>
+              </div>
+
+              {/* Data Grid Analítica Editável */}
+              <p className="mb-2 text-[11px] text-on-surface-variant sm:hidden">Deslize horizontalmente para visualizar todas as colunas.</p>
+              <div className="w-full overflow-x-auto overscroll-x-contain rounded-lg border border-sky-100 dark:border-sky-900/40 shadow-sm" tabIndex={0} aria-label="Tabela de detalhamento analítico, deslize horizontalmente para ver todas as colunas">
+                <table className="w-full min-w-[760px] text-left border-collapse text-xs sm:min-w-[980px]">
+                  <thead className="bg-sky-50/70 dark:bg-sky-950/40 sticky top-0 z-10 text-[11px] font-bold text-sky-900 dark:text-sky-200 border-b border-sky-100 dark:border-sky-900/50">
+                    <tr>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[300px] min-w-[260px] sm:w-[450px] sm:min-w-[350px]">{renderSortHeader("acao", "Ação")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[100px] min-w-[90px] sm:w-[110px] sm:min-w-[100px]">{renderSortHeader("elemento", "Elemento de Despesa")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Editável)", "text-right")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Ajustado", "text-center")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
+                    {paginatedEditableGroups.map((group) => {
+                      const isExpanded = expandedEditGroups.has(group.id);
+                      const diff = group.valLoa - group.valLdo;
+                      const status = getStatusInfo(group.valLdo, group.valLoa);
+                      const diffColor = diff > 0 ? "text-emerald-600 font-bold" : diff < 0 ? "text-rose-600 font-bold" : "text-gray-400";
+                      const groupAdjusted = group.children.some((item) => {
+                        const original = originalValuesById.get(item.id) ?? item.valLdo;
+                        return Math.abs(item.valLoa - original) > 0.001;
+                      });
+                      const natureGroups = Array.from(group.children.reduce((map, item) => {
+                        const key = item.natureza || item.elemento || "Outros";
+                        map.set(key, [...(map.get(key) ?? []), item]);
+                        return map;
+                      }, new Map<string, RawBudgetItem[]>())).sort(([keyA, itemsA], [keyB, itemsB]) => {
+                        const ldoA = itemsA.reduce((sum, item) => sum + item.valLdo, 0);
+                        const ldoB = itemsB.reduce((sum, item) => sum + item.valLdo, 0);
+                        const loaA = itemsA.reduce((sum, item) => sum + item.valLoa, 0);
+                        const loaB = itemsB.reduce((sum, item) => sum + item.valLoa, 0);
+                        const diffA = loaA - ldoA;
+                        const diffB = loaB - ldoB;
+
+                        let res = 0;
+                        if (natureSort.column === "natureza") {
+                          res = keyA.localeCompare(keyB, "pt-BR", { numeric: true, sensitivity: "base" });
+                        } else if (natureSort.column === "subelementos") {
+                          res = itemsA.length - itemsB.length;
+                        } else if (natureSort.column === "valLdo") {
+                          res = ldoA - ldoB;
+                        } else if (natureSort.column === "valLoa") {
+                          res = loaA - loaB;
+                        } else if (natureSort.column === "diff") {
+                          res = diffA - diffB;
+                        } else if (natureSort.column === "status") {
+                          res = getStatusLabel(ldoA, loaA).localeCompare(getStatusLabel(ldoB, loaB), "pt-BR");
+                        }
+                        return natureSort.direction === "asc" ? res : -res;
+                      });
 
                   return (
                     <Fragment key={group.id}>
-                      <tr className="bg-surface-container/40 hover:bg-surface-container transition-colors">
-                        <td className="p-2.5 font-sans font-bold text-on-surface max-w-[260px]">
-                          <div className="flex items-center gap-2 min-w-0">
+                      {/* NÍVEL 1: LINHA DA AÇÃO (PAI) - AZUL MAIS CLARO E SUAVE */}
+                      <tr className={`border-t border-sky-200/60 dark:border-sky-900/40 transition-colors ${
+                        isExpanded
+                          ? "bg-sky-100/50 dark:bg-sky-950/60 border-b border-sky-200/80 shadow-xs"
+                          : "bg-sky-50/40 hover:bg-sky-50/90 dark:bg-sky-950/25 dark:hover:bg-sky-950/40"
+                      }`}>
+                        <td className="p-3 font-sans font-bold text-on-surface w-[320px] min-w-[280px] sm:w-[450px] sm:min-w-[350px]">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             <button
                               type="button"
                               onClick={() => setExpandedEditGroups((previous) => {
@@ -1769,19 +2550,55 @@ export function AnaliseLoaView() {
                                 else next.add(group.id);
                                 return next;
                               })}
-                              className="w-6 h-6 rounded-md border border-primary/30 bg-primary/5 text-primary flex items-center justify-center shrink-0 hover:bg-primary/10"
+                              className={`min-h-9 min-w-9 rounded-lg flex items-center justify-center shrink-0 transition-all font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${
+                                isExpanded
+                                  ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/40"
+                                  : "border border-sky-300 bg-white text-sky-700 hover:bg-sky-100 dark:bg-slate-900 dark:text-sky-300 dark:border-sky-700"
+                              }`}
                               aria-label={isExpanded ? "Recolher subelementos" : "Expandir subelementos"}
                             >
-                              <span className="material-symbols-outlined text-sm">{isExpanded ? "remove" : "add"}</span>
+                              <span className="material-symbols-outlined text-base">{isExpanded ? "expand_less" : "expand_more"}</span>
                             </button>
-                            <span className="min-w-0 truncate" title={`${group.programa} · ${group.acao}`}><span className="block text-[10px] font-medium text-on-surface-variant/80 dark:text-on-surface-variant/90">{group.programa || "Programa não informado"}</span><span className="block">{group.acao || "Sem Ação"}</span></span>
-                            <button type="button" onClick={() => setAddExpenseGroup(group)} aria-label={`Adicionar despesa em ${group.acao}`} title="Adicionar despesa por natureza" className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700"><span className="material-symbols-outlined text-[16px]">playlist_add</span></button>
+                            <div className="min-w-0 flex-1 truncate" title={`${group.programa} · ${group.acao}`}>
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                                {group.programa || "Programa não informado"}
+                              </span>
+                              <span className="block whitespace-normal text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                                {group.acao || "Sem Ação"}
+                              </span>
+                              {group.children.some((item) => item.origem === "Banco de Projetos") && (
+                                <span className="mt-1 inline-flex rounded-full bg-secondary-container px-2 py-0.5 text-[9px] font-bold text-on-secondary-container">
+                                  Banco de Projetos
+                                </span>
+                              )}
+                            </div>
+                            {group.children.filter((item) => item.origem === "Banco de Projetos").map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => handleRemoveBancoProjeto(item)}
+                                className="ml-auto shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                title="Remover este projeto da LOA"
+                              >
+                                Remover
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => { setAddElementContext(null); setAddExpenseGroup(group); }}
+                              aria-label={`Adicionar Natureza da Despesa em ${group.acao}`}
+                              title="Adicionar Natureza da Despesa"
+                              className="ml-auto flex min-h-8 px-2 items-center gap-1 rounded-lg border border-primary/30 bg-surface text-primary hover:bg-primary/10 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary shrink-0"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">add_circle</span>
+                              <span className="hidden sm:inline">Natureza</span>
+                            </button>
                           </div>
                         </td>
-                        <td className="p-2.5 text-on-surface-variant font-sans max-w-[150px] truncate" title={group.elemento}>
+                        <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
                           {group.elemento}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-on-surface-variant select-none bg-surface-container-low/60">
+                        <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
                           {formatBr(group.valLdo)}
                         </td>
                         <td className="p-2 border border-outline-variant/20 bg-surface text-right">
@@ -1803,55 +2620,495 @@ export function AnaliseLoaView() {
                             className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
                           />
                         </td>
-                        <td className={`p-2.5 text-right ${diffColor}`}>
+                        <td className={`p-3 text-right font-semibold ${diffColor}`}>
                           {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
                         </td>
-                        <td className="p-2.5 text-center">
-                          <span className={`inline-block px-2 py-0.5 text-[9px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
+                        <td className="p-3 text-center">
+                          <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
                         </td>
-                        <td className="p-2.5 text-center">
-                          {groupAdjusted ? <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}
+                        <td className="p-3 text-center">
+                          {groupAdjusted ? <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400">Sim</span> : <span className="text-[11px] text-gray-400 font-sans">—</span>}
                         </td>
                       </tr>
-                      {isExpanded && group.children.map((item) => {
-                        const original = originalRawItems.find((entry) => entry.id === item.id)?.valLoa ?? item.valLdo;
-                        const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
+                      {isExpanded && (
+                        <Fragment>
+                          {/* BLOCO PLANEJAMENTO LDO - 2027 */}
+                          <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/30">
+                            <td colSpan={7} className="p-3 pl-8 sm:pl-12">
+                              <div className="rounded-xl border border-primary/20 bg-surface p-4 shadow-sm space-y-3 dark:bg-surface-container-low">
+                                {/* Header do Bloco */}
+                                <div className="flex items-center justify-between border-b border-outline-variant/30 pb-2">
+                                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
+                                    Planejamento LDO — 2027
+                                  </span>
+                                  {editingLdoPlanningGroupKey === group.id ? (
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingLdoPlanningGroupKey(null)}
+                                        className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveLdoPlanning(group)}
+                                        className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm"
+                                      >
+                                        Salvar LDO
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditLdoPlanning(group)}
+                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                                    >
+                                      <span className="material-symbols-outlined text-xs">edit</span>
+                                      Editar LDO
+                                    </button>
+                                  )}
+                                </div>
 
-                        return (
-                          <tr key={item.id} className="bg-surface hover:bg-primary/[0.03] transition-colors">
-                            <td colSpan={2} className="p-2.5 pl-12 text-on-surface-variant font-sans truncate" title={item.natureza || item.elemento}>
-                              <span className="mr-2 text-primary">└</span><span className="font-mono font-semibold text-on-surface">{item.elemento || "Outros"}</span>{item.natureza && item.natureza !== item.elemento ? <span className="ml-2">{item.natureza}</span> : null}{item.subelemento ? <span className="ml-2 text-[10px]">· {item.subelemento}</span> : null}
+                                {editingLdoPlanningGroupKey === group.id ? (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                    {/* Card 1: Indicador (Edição) */}
+                                    <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
+                                      <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                          <span className="material-symbols-outlined text-xs">analytics</span>
+                                        </div>
+                                        <span>Indicador</span>
+                                      </label>
+                                      <input
+                                        id="edit-ldo-indicador"
+                                        type="text"
+                                        value={editLdoIndicador}
+                                        onChange={(e) => setEditLdoIndicador(e.target.value)}
+                                        placeholder="Ex: Taxa de atendimento..."
+                                        className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                      />
+                                      <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
+                                    </div>
+
+                                    {/* Card 2: Unidade de Medida (Edição) */}
+                                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                      <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                          <span className="material-symbols-outlined text-xs">straighten</span>
+                                        </div>
+                                        <span>Unidade de Medida</span>
+                                      </label>
+                                      <input
+                                        id="edit-ldo-unidade"
+                                        type="text"
+                                        value={editLdoUnidadeMedida}
+                                        onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
+                                        placeholder="Ex: %, Unidade, Alunos..."
+                                        className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                      />
+                                      <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
+                                    </div>
+
+                                    {/* Card 3: Custo Físico 2027 (Edição) */}
+                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
+                                      <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                          <span className="material-symbols-outlined text-xs">pie_chart</span>
+                                        </div>
+                                        <span>Custo Físico 2027</span>
+                                      </label>
+                                      <input
+                                        id="edit-ldo-custo-fisico"
+                                        type="text"
+                                        value={editLdoCustoFisico}
+                                        onChange={(e) => setEditLdoCustoFisico(e.target.value)}
+                                        placeholder="0,00"
+                                        className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      />
+                                      <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
+                                    </div>
+
+                                    {/* Card 4: Custo Financeiro LOA (Edição) */}
+                                    {(() => {
+                                      const valorCustoFin = group.valLoa;
+                                      const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                      const diffValor = valorCustoFin - totalNaturezas;
+                                      const hasDiff = Math.abs(diffValor) > 0.01;
+                                      return (
+                                        <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
+                                          <div className="flex items-center justify-between">
+                                            <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                              <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                <span className="material-symbols-outlined text-xs">payments</span>
+                                              </div>
+                                              <span>Custo Financeiro LOA</span>
+                                            </label>
+                                            {hasDiff && (
+                                              <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                <span className="material-symbols-outlined text-[10px]">warning</span>
+                                                Divergente
+                                              </span>
+                                            )}
+                                          </div>
+                                          <input
+                                            id="edit-ldo-custo-fin"
+                                            type="text"
+                                            value={editLdoCustoFinanceiro}
+                                            onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
+                                            placeholder={formatBr(group.valLoa)}
+                                            className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                          />
+                                          {hasDiff ? (
+                                            <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
+                                              Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
+                                            </p>
+                                          ) : (
+                                            <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                    {(() => {
+                                      const data = getLdoPlanningForGroup(group);
+                                      const formattedCustoFisico = data.custoFisico2027 != null
+                                        ? data.custoFisico2027.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                        : "0,00";
+                                      const valorCustoFin = group.valLoa;
+                                      const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                      const diffValor = valorCustoFin - totalNaturezas;
+                                      const hasDiff = Math.abs(diffValor) > 0.01;
+
+                                      return (
+                                        <>
+                                          {/* Card 1: Indicador (Visualização) */}
+                                          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
+                                            <div>
+                                              <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                                  <span className="material-symbols-outlined text-sm">analytics</span>
+                                                </div>
+                                                <span>Indicador</span>
+                                              </div>
+                                              <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
+                                                {data.indicador || "Não informado"}
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          {/* Card 2: Unidade de Medida (Visualização) */}
+                                          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
+                                            <div>
+                                              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                                  <span className="material-symbols-outlined text-sm">straighten</span>
+                                                </div>
+                                                <span>Unidade de Medida</span>
+                                              </div>
+                                              <p className="mt-2 text-base font-extrabold text-on-surface">
+                                                {data.unidadeMedida || "Não informado"}
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          {/* Card 3: Custo Físico 2027 (Visualização) */}
+                                          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
+                                            <div>
+                                              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                  <span className="material-symbols-outlined text-sm">pie_chart</span>
+                                                </div>
+                                                <span>Custo Físico 2027</span>
+                                              </div>
+                                              <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          {/* Card 4: Custo Financeiro LOA (Visualização) */}
+                                          <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
+                                            <div>
+                                              <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                    <span className="material-symbols-outlined text-sm">payments</span>
+                                                  </div>
+                                                  <span>Custo Financeiro LOA</span>
+                                                </div>
+                                                {hasDiff && (
+                                                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                    <span className="material-symbols-outlined text-[11px]">warning</span>
+                                                    Divergente
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                {currency.format(valorCustoFin)}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
                             </td>
-                            <td className="p-2.5 text-right font-mono text-on-surface-variant">—</td>
-                            <td className="p-2 border border-outline-variant/20 bg-surface text-right">
-                              <input
-                                type="text"
-                                value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
-                                onFocus={() => {
-                                  setEditingCell({ id: item.id, field: "valLoa" });
-                                  setTempInputValue(item.valLoa.toFixed(2).replace(".", ","));
-                                }}
-                                onChange={(event) => {
-                                  const sanitizedValue = event.target.value.replace(/-/g, "");
-                                  setTempInputValue(sanitizedValue);
-                                  const value = parseBr(sanitizedValue);
-                                  setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valLoa: value } : entry));
-                                  setHasChanges(true);
-                                }}
-                                onBlur={() => setEditingCell(null)}
-                                className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-outline-variant"
-                              />
-                            </td>
-                            <td className="p-2.5 text-right text-on-surface-variant">—</td>
-                            <td className="p-2.5 text-center"><span className="inline-block px-2 py-0.5 text-[9px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span></td>
-                            <td className="p-2.5 text-center">{childAdjusted ? <span className="text-[10px] font-bold text-amber-700">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}</td>
                           </tr>
-                        );
-                      })}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
+
+                          {/* DETALHAMENTO ORÇAMENTÁRIO HEADER INTERATIVO COM ORDENAÇÃO */}
+                          <tr className="bg-sky-50/50 dark:bg-sky-950/30 border-y border-sky-100 dark:border-sky-900/40 text-[10px] font-extrabold uppercase tracking-wider text-sky-900 dark:text-sky-200">
+                            <th className="p-2 pl-12 text-left">
+                              <button
+                                type="button"
+                                onClick={() => setNatureSort((curr) => ({ column: "natureza", direction: curr.column === "natureza" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
+                                title="Ordenar por Natureza / Elemento"
+                              >
+                                <span>Natureza / Elemento</span>
+                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "natureza" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                  {natureSort.column === "natureza" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                </span>
+                              </button>
+                            </th>
+                            <th className="p-2 text-left">
+                              <button
+                                type="button"
+                                onClick={() => setNatureSort((curr) => ({ column: "subelementos", direction: curr.column === "subelementos" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
+                                title="Ordenar por Quantidade de Subelementos"
+                              >
+                                <span>Subelementos</span>
+                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "subelementos" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                  {natureSort.column === "subelementos" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                </span>
+                              </button>
+                            </th>
+                            <th className="p-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setNatureSort((curr) => ({ column: "valLdo", direction: curr.column === "valLdo" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                title="Ordenar por Valor LDO"
+                              >
+                                <span>Valor LDO</span>
+                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLdo" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                  {natureSort.column === "valLdo" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                </span>
+                              </button>
+                            </th>
+                            <th className="p-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setNatureSort((curr) => ({ column: "valLoa", direction: curr.column === "valLoa" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                title="Ordenar por Valor LOA"
+                              >
+                                <span>Valor LOA</span>
+                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLoa" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                  {natureSort.column === "valLoa" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                </span>
+                              </button>
+                            </th>
+                            <th className="p-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setNatureSort((curr) => ({ column: "diff", direction: curr.column === "diff" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                title="Ordenar por Diferença"
+                              >
+                                <span>Diferença</span>
+                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "diff" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                  {natureSort.column === "diff" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                </span>
+                              </button>
+                            </th>
+                            <th className="p-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setNatureSort((curr) => ({ column: "status", direction: curr.column === "status" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                className="inline-flex items-center gap-1 mx-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                title="Ordenar por Status"
+                              >
+                                <span>Status</span>
+                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "status" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                  {natureSort.column === "status" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                </span>
+                              </button>
+                            </th>
+                            <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Ajustado</th>
+                          </tr>
+
+                          {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
+                          {natureGroups.map(([natureza, natureItems]) => {
+                            const natureKey = `${group.id}|${natureza}`;
+                            const natureExpanded = expandedNatureGroups.has(natureKey);
+                            const natureLdo = natureItems.reduce((sum, item) => sum + item.valLdo, 0);
+                            const natureLoa = natureItems.reduce((sum, item) => sum + item.valLoa, 0);
+                            const natureDiff = natureLoa - natureLdo;
+                            const natureStatus = getStatusInfo(natureLdo, natureLoa);
+                            return (
+                              <Fragment key={natureKey}>
+                                <tr className="bg-surface hover:bg-surface-container/60 transition-colors border-b border-outline-variant/20">
+                                  <td className="p-2.5 pl-8 sm:pl-12 font-sans font-medium text-on-surface" title={getNatureLabel(natureza, natureItems[0]?.elemento)}>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      {/* Linha guia conectora da árvore */}
+                                      <span className="text-outline-variant/80 font-mono text-xs select-none">├──</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedNatureGroups((previous) => {
+                                          const next = new Set(previous);
+                                          if (next.has(natureKey)) next.delete(natureKey);
+                                          else next.add(natureKey);
+                                          return next;
+                                        })}
+                                        className={`flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-md border text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                                          natureExpanded
+                                            ? "border-primary/40 bg-primary/10 text-primary font-bold"
+                                            : "border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container"
+                                        }`}
+                                        aria-label={natureExpanded ? "Recolher subelementos da natureza" : "Expandir subelementos da natureza"}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">{natureExpanded ? "expand_more" : "chevron_right"}</span>
+                                      </button>
+                                      <span className="truncate font-mono text-xs font-semibold text-on-surface">
+                                        {getNatureLabel(natureza, natureItems[0]?.elemento)}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAddExpenseGroup(group);
+                                          setAddElementContext({ group, natureza });
+                                          setNewExpenseNatureza(natureza.split("-")[0].trim());
+                                        }}
+                                        className="ml-auto flex min-h-6 px-1.5 shrink-0 items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 text-amber-800 hover:bg-amber-100 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700/60"
+                                        title="Adicionar Elemento de Despesa"
+                                        aria-label={`Adicionar Elemento de Despesa em ${getNatureLabel(natureza, natureItems[0]?.elemento)}`}
+                                      >
+                                        <span className="material-symbols-outlined text-[13px]">add</span>
+                                        <span className="hidden sm:inline">Elemento</span>
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="p-2.5 text-on-surface-variant font-sans text-xs">
+                                    {natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}
+                                  </td>
+                                  <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>
+                                  <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                    <input
+                                      type="text"
+                                      value={editingCell?.id === natureKey && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(natureLoa)}
+                                      onFocus={() => {
+                                        setEditingCell({ id: natureKey, field: "groupValLoa" });
+                                        setTempInputValue(natureLoa.toFixed(2).replace(".", ","));
+                                      }}
+                                      onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                      onBlur={() => {
+                                        applyNatureLoa(natureItems, parseBr(tempInputValue));
+                                        setEditingCell(null);
+                                      }}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") event.currentTarget.blur();
+                                      }}
+                                      className="w-32 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
+                                    />
+                                  </td>
+                                  <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                    {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
+                                  </td>
+                                  <td className="p-2.5 text-center text-xs text-on-surface-variant/60">—</td>
+                                </tr>
+
+                                {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (NETOS) */}
+                                {natureExpanded && natureItems.map((item) => {
+                                  const original = originalValuesById.get(item.id) ?? item.valLdo;
+                                  const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
+
+                                  return (
+                                    <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
+                                      <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans truncate text-xs" title={getSubelementLabel(item)}>
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-outline-variant/80 font-mono text-xs select-none">│   └──</span>
+                                          <div className="min-w-0 flex-1 truncate">
+                                            <span className="text-on-surface font-medium text-xs">{getSubelementLabel(item)}</span>
+                                            {item.processo && item.processo !== "—" && (
+                                              <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-on-surface-variant font-mono bg-surface-container px-1 rounded">
+                                                Proc: {item.processo}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingSubelementItem(item);
+                                              setEditSubelementName(getSubelementLabel(item));
+                                              setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
+                                              setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
+                                            }}
+                                            className="ml-auto inline-flex items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary opacity-80 hover:bg-primary/10 hover:opacity-100 transition-all"
+                                            title="Editar subelemento"
+                                            aria-label={`Editar ${getSubelementLabel(item)}`}
+                                          >
+                                            <span className="material-symbols-outlined text-[13px]">edit</span>
+                                            <span>Editar</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeSubelement(item)}
+                                            className="ml-1 rounded p-0.5 text-rose-600 opacity-60 hover:bg-rose-50 hover:opacity-100 transition-all"
+                                            title="Remover subelemento"
+                                            aria-label={`Remover ${getSubelementLabel(item)}`}
+                                          >
+                                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="p-2 text-right font-mono text-on-surface-variant/60 text-xs">—</td>
+                                      <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                        <input
+                                          type="text"
+                                          value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
+                                          onFocus={() => {
+                                            setEditingCell({ id: item.id, field: "valLoa" });
+                                            setTempInputValue(item.valLoa.toFixed(2).replace(".", ","));
+                                          }}
+                                          onChange={(event) => {
+                                            const sanitizedValue = event.target.value.replace(/-/g, "");
+                                            setTempInputValue(sanitizedValue);
+                                            const value = parseBr(sanitizedValue);
+                                            setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valLoa: value } : entry));
+                                            setHasChanges(true);
+                                          }}
+                                          onBlur={() => setEditingCell(null)}
+                                          className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
+                                        />
+                                      </td>
+                                      <td className="p-2 text-right text-on-surface-variant/60 text-xs">—</td>
+                                      <td className="p-2 text-center">
+                                        <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
+                                      </td>
+                                      <td className="p-2 text-center">
+                                        {childAdjusted ? <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </Fragment>
+                              );
+                            })}
+                          </Fragment>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
               <tfoot className="bg-surface-container sticky bottom-0 z-10 font-mono font-bold text-xs border-t-2 border-outline-variant">
                 <tr>
                   <td colSpan={2} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
@@ -1873,257 +3130,232 @@ export function AnaliseLoaView() {
               </tfoot>
             </table>
           </div>
-        </div>
 
-        {/* 4.1. Cards Dinâmicos: Sub-elementos (Esquerda) e Iniciativas Estratégicas (Direita) */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Card Esquerdo: Detalhamento por Sub-elementos */}
-          <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[400px]">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant pb-3 mb-3 gap-2">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">account_tree</span>
-                <div>
-                  <h3 className="text-sm font-headline font-bold text-on-surface">Sub-elementos de Despesa</h3>
-                  <p className="text-[10px] text-on-surface-variant">Filtrados pela seleção atual ({subelementosBreakdown.length} sub-elementos)</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={cardSubelementosAcao}
-                  onChange={(e) => setCardSubelementosAcao(e.target.value)}
-                  className="text-xs px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:outline-none max-w-[140px] font-mono font-medium"
-                >
-                  <option value="">Todas Ações</option>
-                  {availableSubelementosAcoes.map((ac) => {
-                    const codeOnly = ac.split("—")[0].split("-")[0].trim();
-                    return (
-                      <option key={ac} value={ac} title={ac}>
-                        Ação {codeOnly}
-                      </option>
-                    );
-                  })}
-                </select>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0 dark:bg-primary/20 dark:text-tertiary-fixed-dim">
-                  Subelementos
-                </span>
-              </div>
+          {/* Controles de Paginação (Padrão 10 linhas) */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 mt-2 border-t border-outline-variant text-xs">
+            <div className="flex items-center gap-2 text-on-surface-variant">
+              <span>
+                Exibindo <strong>{editableGroups.length > 0 ? (tablePage - 1) * tablePageSize + 1 : 0}</strong> a{" "}
+                <strong>{Math.min(tablePage * tablePageSize, editableGroups.length)}</strong> de <strong>{editableGroups.length}</strong> ações
+              </span>
+              <select
+                value={tablePageSize}
+                onChange={(e) => {
+                  setTablePageSize(Number(e.target.value));
+                  setTablePage(1);
+                }}
+                className="px-2 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface ml-2 font-medium"
+              >
+                <option value={10}>10 por página</option>
+                <option value={20}>20 por página</option>
+                <option value={50}>50 por página</option>
+                <option value={100}>100 por página</option>
+                <option value={editableGroups.length || 9999}>Todas</option>
+              </select>
             </div>
 
-            <div className="flex-1 overflow-auto space-y-2 pr-1">
-              {subelementosBreakdown.length === 0 ? (
-                <p className="text-xs text-on-surface-variant p-4 text-center">Nenhum sub-elemento encontrado para a Ação / seleção escolhida.</p>
-              ) : (
-                subelementosBreakdown.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs dark:bg-surface-container-low/70 dark:border-outline-variant/40"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                        {item.acao && (
-                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
-                            Ação {item.acao.split("—")[0].split("-")[0].trim()}
-                          </span>
-                        )}
-                        {item.natureza && (
-                          <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
-                            Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-mono text-on-surface-variant truncate">
-                          {item.secretaria}
-                        </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={tablePage <= 1}
+                onClick={() => setTablePage((p) => Math.max(1, p - 1))}
+                className="px-2.5 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container font-semibold transition-colors"
+              >
+                Anterior
+              </button>
+              <span className="px-3 font-semibold text-on-surface text-xs">
+                Página {tablePage} de {totalTablePages}
+              </span>
+              <button
+                type="button"
+                disabled={tablePage >= totalTablePages}
+                onClick={() => setTablePage((p) => Math.min(totalTablePages, p + 1))}
+                className="px-2.5 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container font-semibold transition-colors"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+        // Seção 6: Sub-elementos de Despesa & Iniciativas Estratégicas
+        if (sectionId === "subelementos-iniciativas") {
+          return (
+            <section key="subelementos-iniciativas" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Card Esquerdo: Detalhamento por Sub-elementos */}
+              <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[400px]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant pb-3 mb-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">account_tree</span>
+                    <div>
+                      <h3 className="text-sm font-headline font-bold text-on-surface">Sub-elementos de Despesa</h3>
+                      <p className="text-[10px] text-on-surface-variant">Filtrados pela seleção atual ({subelementosBreakdown.length} sub-elementos)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={cardSubelementosAcao}
+                      onChange={(e) => setCardSubelementosAcao(e.target.value)}
+                      className="text-xs px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:outline-none max-w-[140px] font-mono font-medium"
+                    >
+                      <option value="">Todas Ações</option>
+                      {availableSubelementosAcoes.map((ac) => {
+                        const codeOnly = ac.split("—")[0].split("-")[0].trim();
+                        return (
+                          <option key={ac} value={ac} title={ac}>
+                            Ação {codeOnly}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0 dark:bg-primary/20 dark:text-tertiary-fixed-dim">
+                      Subelementos
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-auto space-y-2 pr-1">
+                  {subelementosBreakdown.length === 0 ? (
+                    <p className="text-xs text-on-surface-variant p-4 text-center">Nenhum sub-elemento encontrado para a Ação / seleção escolhida.</p>
+                  ) : (
+                    subelementosBreakdown.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs dark:bg-surface-container-low/70 dark:border-outline-variant/40"
+                      >
+                        <div className="min-w-0 pr-3">
+                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                            {item.acao && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
+                                Ação {item.acao.split("—")[0].split("-")[0].trim()}
+                              </span>
+                            )}
+                            {item.natureza && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
+                                Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-mono text-on-surface-variant truncate">
+                              {item.secretaria}
+                            </span>
+                          </div>
+                          <p className="font-bold text-on-surface truncate" title={item.subelemento}>
+                            {item.subelemento}
+                          </p>
+                          <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5">
+                            {item.count} dotação(ões) • LDO: {formatBr(item.ldo)}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0 font-mono">
+                          <p className="font-extrabold text-primary dark:text-tertiary-fixed-dim">{formatBr(item.loa)}</p>
+                          <p className={`text-[10px] font-bold ${item.diff > 0 ? "text-emerald-600 dark:text-emerald-400" : item.diff < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-400"}`}>
+                            {item.diff > 0 ? `+${formatBr(item.diff)}` : formatBr(item.diff)}
+                          </p>
+                        </div>
                       </div>
-                      <p className="font-bold text-on-surface truncate" title={item.subelemento}>
-                        {item.subelemento}
-                      </p>
-                      <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5">
-                        {item.count} dotação(ões) • LDO: {formatBr(item.ldo)}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0 font-mono">
-                      <p className="font-extrabold text-primary dark:text-tertiary-fixed-dim">{formatBr(item.loa)}</p>
-                      <p className={`text-[10px] font-bold ${item.diff > 0 ? "text-emerald-600 dark:text-emerald-400" : item.diff < 0 ? "text-rose-600 dark:text-rose-400" : "text-gray-400"}`}>
-                        {item.diff > 0 ? `+${formatBr(item.diff)}` : formatBr(item.diff)}
-                      </p>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Card Direito: Iniciativas Estratégicas Vinculadas */}
+              <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[400px]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant pb-3 mb-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">stars</span>
+                    <div>
+                      <h3 className="text-sm font-headline font-bold text-on-surface">Iniciativas Estratégicas</h3>
+                      <p className="text-[10px] text-on-surface-variant">Projetos & Ações Estratégicas ({displayIniciativas.length} iniciativas)</p>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Card Direito: Iniciativas Estratégicas Vinculadas */}
-          <div className="glass-card p-5 bg-surface border border-outline-variant flex flex-col h-[400px]">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-outline-variant pb-3 mb-3 gap-2">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">stars</span>
-                <div>
-                  <h3 className="text-sm font-headline font-bold text-on-surface">Iniciativas Estratégicas</h3>
-                  <p className="text-[10px] text-on-surface-variant">Projetos & Ações Estratégicas ({displayIniciativas.length} iniciativas)</p>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={cardIniciativasAcao}
+                      onChange={(e) => setCardIniciativasAcao(e.target.value)}
+                      className="text-xs px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:ring-2 focus:ring-amber-500 focus:outline-none max-w-[140px] font-mono font-medium"
+                    >
+                      <option value="">Todas Ações</option>
+                      {availableIniciativasAcoes.map((ac) => {
+                        const codeOnly = ac.split("—")[0].split("-")[0].trim();
+                        return (
+                          <option key={ac} value={ac} title={ac}>
+                            Ação {codeOnly}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
+                      PLDO 2027
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={cardIniciativasAcao}
-                  onChange={(e) => setCardIniciativasAcao(e.target.value)}
-                  className="text-xs px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:ring-2 focus:ring-amber-500 focus:outline-none max-w-[140px] font-mono font-medium"
-                >
-                  <option value="">Todas Ações</option>
-                  {availableIniciativasAcoes.map((ac) => {
-                    const codeOnly = ac.split("—")[0].split("-")[0].trim();
-                    return (
-                      <option key={ac} value={ac} title={ac}>
-                        Ação {codeOnly}
-                      </option>
-                    );
-                  })}
-                </select>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 shrink-0 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
-                  PLDO 2027
-                </span>
-              </div>
-            </div>
 
-            <div className="flex-1 overflow-auto space-y-2 pr-1">
-              {loadingIniciativas ? (
-                <div className="p-8 text-center space-y-2">
-                  <span className="material-symbols-outlined animate-spin text-amber-600 dark:text-amber-400">sync</span>
-                  <p className="text-xs text-on-surface-variant">Buscando iniciativas correspondentes...</p>
-                </div>
-              ) : displayIniciativas.length === 0 ? (
-                <p className="text-xs text-on-surface-variant p-4 text-center">Nenhuma iniciativa estratégica encontrada para a Ação / seleção escolhida.</p>
-              ) : (
-                displayIniciativas.map((ini) => (
-                  <div
-                    key={ini.id}
-                    className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs dark:bg-surface-container-low/70 dark:border-outline-variant/40"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
-                          Ação {ini.acao}
-                        </span>
-                        {ini.despesa && (
-                          <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
-                            Despesa {ini.despesa}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-mono text-on-surface-variant truncate">
-                          {ini.secretaria}
-                        </span>
+                <div className="flex-1 overflow-auto space-y-2 pr-1">
+                  {loadingIniciativas ? (
+                    <div className="p-8 text-center space-y-2">
+                      <span className="material-symbols-outlined animate-spin text-amber-600 dark:text-amber-400">sync</span>
+                      <p className="text-xs text-on-surface-variant">Buscando iniciativas correspondentes...</p>
+                    </div>
+                  ) : displayIniciativas.length === 0 ? (
+                    <p className="text-xs text-on-surface-variant p-4 text-center">Nenhuma iniciativa estratégica encontrada para a Ação / seleção escolhida.</p>
+                  ) : (
+                    displayIniciativas.map((ini) => (
+                      <div
+                        key={ini.id}
+                        className="p-2.5 rounded-xl bg-surface-container/50 border border-outline-variant/60 hover:bg-surface-container transition-colors flex items-center justify-between text-xs dark:bg-surface-container-low/70 dark:border-outline-variant/40"
+                      >
+                        <div className="min-w-0 pr-3">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60">
+                              Ação {ini.acao}
+                            </span>
+                            {ini.despesa && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
+                                Despesa {ini.despesa}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-mono text-on-surface-variant truncate">
+                              {ini.secretaria}
+                            </span>
+                          </div>
+                          <p className="font-bold text-on-surface truncate" title={ini.dsIniciativa}>
+                            {ini.dsIniciativa}
+                          </p>
+                          <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5">
+                            {ini.programaticaLdo} • Vinculo: {ini.vinculo} {ini.despesa ? `• Despesa: ${ini.despesa}` : ""}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0 font-mono">
+                          <span className="text-[10px] text-on-surface-variant uppercase block">Valor PLDO</span>
+                          <span className="font-extrabold text-amber-700 dark:text-amber-400">{currency.format(ini.valorFinalPldo27 ?? 0)}</span>
+                        </div>
                       </div>
-                      <p className="font-bold text-on-surface truncate" title={ini.dsIniciativa}>
-                        {ini.dsIniciativa}
-                      </p>
-                      <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5">
-                        {ini.programaticaLdo} • Vinculo: {ini.vinculo} {ini.despesa ? `• Despesa: ${ini.despesa}` : ""}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0 font-mono">
-                      <span className="text-[10px] text-on-surface-variant uppercase block">Valor PLDO</span>
-                      <span className="font-extrabold text-amber-700 dark:text-amber-400">{currency.format(ini.valorFinalPldo27)}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* 5. Dashboards Analíticos Inferiores */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Ranking Top 5 Maiores Aumentos */}
-        <div className="glass-card p-5 bg-surface border border-outline-variant space-y-3">
-          <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
-            <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400">trending_up</span>
-            <h3 className="text-sm font-headline font-bold text-on-surface">Top 5 Maiores Aumentos (LOA &gt; LDO)</h3>
-          </div>
-          <div className="space-y-2">
-            {filteredItems
-              .map((i) => ({ ...i, diff: i.valLoa - i.valLdo }))
-              .sort((a, b) => b.diff - a.diff)
-              .slice(0, 5)
-              .map((item) => (
-                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-emerald-50/50 rounded-lg border border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800/60">
-                  <div className="min-w-0 pr-2">
-                    <p className="text-[10px] font-bold text-emerald-900 dark:text-emerald-300 truncate mb-0.5" title={item.secretaria}>
-                      {item.secretaria}
-                    </p>
-                    <p className="font-bold text-on-surface truncate" title={item.acao}>{item.acao}</p>
-                    <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5" title={item.natureza}>
-                      Despesa: {item.natureza} {item.subelemento ? `• ${item.subelemento}` : ""}
-                    </p>
-                  </div>
-                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 shrink-0">+{currency.format(item.diff)}</span>
+                    ))
+                  )}
                 </div>
-              ))}
-          </div>
-        </div>
+              </div>
+            </section>
+          );
+        }
 
-        {/* Ranking Top 5 Maiores Reduções */}
-        <div className="glass-card p-5 bg-surface border border-outline-variant space-y-3">
-          <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
-            <span className="material-symbols-outlined text-rose-600 dark:text-rose-400">trending_down</span>
-            <h3 className="text-sm font-headline font-bold text-on-surface">Top 5 Maiores Reduções (LOA &lt; LDO)</h3>
-          </div>
-          <div className="space-y-2">
-            {filteredItems
-              .filter((i) => i.valLoa > 0 && i.valLoa < i.valLdo)
-              .map((i) => ({ ...i, diff: i.valLoa - i.valLdo }))
-              .sort((a, b) => a.diff - b.diff)
-              .slice(0, 5)
-              .map((item) => (
-                <div key={item.id} className="flex justify-between items-center text-xs p-2.5 bg-rose-50/50 rounded-lg border border-rose-100 dark:bg-rose-950/40 dark:border-rose-800/60">
-                  <div className="min-w-0 pr-2">
-                    <p className="text-[10px] font-bold text-rose-900 dark:text-rose-300 truncate mb-0.5" title={item.secretaria}>
-                      {item.secretaria}
-                    </p>
-                    <p className="font-bold text-on-surface truncate" title={item.acao}>{item.acao}</p>
-                    <p className="text-[10px] text-on-surface-variant font-mono truncate mt-0.5" title={item.natureza}>
-                      Despesa: {item.natureza} {item.subelemento ? `• ${item.subelemento}` : ""}
-                    </p>
-                  </div>
-                  <span className="font-mono font-bold text-rose-700 dark:text-rose-400 shrink-0">{currency.format(item.diff)}</span>
-                </div>
-              ))}
-          </div>
-        </div>
+        // Seção 7: Banco de Projetos
+        if (sectionId === "banco-projetos") {
+          return (
+            <BancoProjetosCard
+              key="banco-projetos"
+              filters={{ secretaria: filters.secretaria, natureza: filters.natureza, search: filters.search }}
+              allocatedKeys={rawItems.flatMap((item) => item.bancoProjetoKey ? [item.bancoProjetoKey] : [])}
+              onAllocate={handleAllocateBancoProjeto}
+            />
+          );
+        }
 
-        {/* Distribuição por Categoria Econômica */}
-        <div className="glass-card p-5 bg-surface border border-outline-variant space-y-3">
-          <div className="flex items-center gap-2 border-b border-outline-variant pb-2">
-            <span className="material-symbols-outlined text-primary">pie_chart</span>
-            <h3 className="text-sm font-headline font-bold text-on-surface">Resumo por Categoria Econômica</h3>
-          </div>
-          <div className="space-y-3 pt-2">
-            {["3.1", "3.3", "4.4", "4.6"].map((code) => {
-              const val = filteredItems
-                .filter((i) => i.natureza.includes(code))
-                .reduce((s, i) => s + i.valLoa, 0);
-              const share = metrics.valLoaTotal > 0 ? (val / metrics.valLoaTotal) * 100 : 0;
-              const labels: Record<string, string> = {
-                "3.1": "3.1 — Pessoal e Encargos",
-                "3.3": "3.3 — Outras Despesas Correntes",
-                "4.4": "4.4 — Investimentos",
-                "4.6": "4.6 — Amortização da Dívida",
-              };
-              return (
-                <div key={code} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-on-surface">{labels[code]}</span>
-                    <span className="font-mono text-primary dark:text-tertiary-fixed-dim">{currency.format(val)} ({percent.format(share / 100)})</span>
-                  </div>
-                  <div className="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-primary dark:bg-tertiary-container h-full rounded-full" style={{ width: `${Math.min(100, share)}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+        return null;
+      })}
+
+
 
       {/* 6. Painel Drawer Lateral Inteligente (Insights) */}
       {drawerOpen && (
@@ -2137,7 +3369,8 @@ export function AnaliseLoaView() {
                 </div>
                 <button
                   onClick={() => setDrawerOpen(false)}
-                  className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+                  aria-label="Fechar painel de insights"
+                  className="min-h-11 min-w-11 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
                 >
                   <span className="material-symbols-outlined">close</span>
                 </button>
@@ -2202,125 +3435,380 @@ export function AnaliseLoaView() {
       )}
 
       {/* 7. POPUP MODAL: Justificativa de Ajustes ao Salvar */}
-      {saveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95">
-          <div className="w-full max-w-2xl bg-surface border border-outline-variant rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-outline-variant bg-surface-container/50 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-primary">
-                <span className="material-symbols-outlined">edit_note</span>
-                <div>
-                  <h3 className="text-base font-headline font-bold text-on-surface">Justificativa de Ajuste Orçamentário</h3>
-                  <p className="text-xs text-on-surface-variant">
-                    {modifiedItems.length} linha(s) com valor alterado em relação à planilha original
-                  </p>
+      {saveModalOpen && (() => {
+        const pendingItems = [
+          ...modifiedItems.map((item) => ({ item, isRemoved: false })),
+          ...removedRawItems.map((item) => ({ item, isRemoved: true })),
+        ];
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-justification-title"
+            onKeyDown={(event) => handleModalKeyDown(event, saveModalDialogRef, handleCancelSaveModal)}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) handleCancelSaveModal();
+            }}
+          >
+            <div
+              ref={saveModalDialogRef}
+              tabIndex={-1}
+              className="w-full max-w-2xl bg-surface border border-outline-variant rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] outline-none"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-outline-variant bg-surface-container/50 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-primary">
+                  <span className="material-symbols-outlined">edit_note</span>
+                  <div>
+                    <h3 id="save-justification-title" className="text-base font-headline font-bold text-on-surface">Justificativa de Ajuste / Exclusão Orçamentária</h3>
+                    <p className="text-xs text-on-surface-variant">
+                      {pendingItems.length} alteração(ões) ({modifiedItems.length} valor(es) alterado(s), {removedRawItems.length} subelemento(s) excluído(s))
+                    </p>
+                  </div>
                 </div>
+                <button
+                  onClick={handleCancelSaveModal}
+                  aria-label="Fechar justificativa de ajuste"
+                  className="min-h-11 min-w-11 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+                >
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
+
+              {/* Modal Body - Lista de Linhas Alteradas/Excluídas com Detalhes */}
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-amber-900 text-xs font-semibold">
+                  <span className="material-symbols-outlined text-amber-600 text-base shrink-0">info</span>
+                  <span>
+                    <strong>Atenção:</strong> O preenchimento da justificativa é obrigatório para manter as alterações e exclusões. Caso a justificativa não seja informada em alguma linha, a alteração/exclusão será cancelada e o item restaurado.
+                  </span>
+                </div>
+                {saveError && (
+                  <div className="rounded-lg border border-error/40 bg-error-container px-3 py-2 text-xs text-on-error-container" role="alert">
+                    Não foi possível salvar as alterações. {saveError}
+                  </div>
+                )}
+
+                {pendingItems.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-on-surface-variant bg-surface-container/30 rounded-xl">
+                    Nenhuma alteração ou exclusão pendente.
+                  </div>
+                ) : (
+                  pendingItems.map(({ item, isRemoved }) => {
+                    const origVal = originalValuesById.get(item.id) ?? item.valLdo;
+                    const diff = isRemoved ? -origVal : item.valLoa - origVal;
+                    const diffBadge = isRemoved
+                      ? "text-rose-700 bg-rose-50 border-rose-200 font-extrabold"
+                      : diff > 0
+                      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                      : "text-rose-700 bg-rose-50 border-rose-200";
+
+                    return (
+                      <div key={item.id} className="p-4 rounded-xl bg-surface-container/40 border border-outline-variant/60 space-y-3">
+                        {/* Informações da Linha */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-outline-variant/40 pb-2">
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-primary truncate" title={item.secretaria}>
+                              {item.secretaria}
+                            </p>
+                            <p className="text-xs font-bold text-on-surface truncate mt-0.5">
+                              Ação: {item.acao}
+                            </p>
+                            <p className="text-[10px] text-on-surface-variant font-mono truncate">
+                              Natureza: {item.natureza} • Subelemento: {item.subelemento || "—"}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0 font-mono text-xs">
+                            <div className="flex items-center gap-2 justify-end">
+                              <span className="text-on-surface-variant line-through">{currency.format(origVal)}</span>
+                              <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                              <span className={`font-extrabold ${isRemoved ? "text-rose-600 line-through" : "text-on-surface"}`}>
+                                {isRemoved ? "Excluído (R$ 0,00)" : currency.format(item.valLoa)}
+                              </span>
+                            </div>
+                            <span className={`inline-block mt-1 px-2 py-0.2 text-[10px] font-bold rounded border ${diffBadge}`}>
+                              {isRemoved ? "EXCLUSÃO DE SUBELEMENTO" : diff > 0 ? `+${currency.format(diff)}` : currency.format(diff)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Campo de Texto para a Justificativa */}
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-on-surface flex items-center justify-between">
+                            <span>
+                              {isRemoved ? "Justificativa da Exclusão" : "Justificativa do Ajuste"}{" "}
+                              <span className="text-rose-600">*</span>
+                            </span>
+                            <span className="text-[10px] text-on-surface-variant font-normal">
+                              {isRemoved ? "Descreva o motivo da exclusão deste subelemento" : "Descreva o motivo da alteração do valor"}
+                            </span>
+                          </label>
+                          <textarea
+                            rows={2}
+                            placeholder={
+                              isRemoved
+                                ? "Informe a motivação técnica/operacional para a exclusão deste subelemento..."
+                                : "Informe a motivação técnica para a alteração do valor da dotação..."
+                            }
+                            value={justifications[item.id] || ""}
+                            onChange={(e) =>
+                              setJustifications((prev) => ({ ...prev, [item.id]: e.target.value }))
+                            }
+                            className="w-full p-2.5 text-xs rounded-xl border border-outline-variant bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-on-surface-variant/50"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex flex-col-reverse gap-2 px-6 py-4 border-t border-outline-variant bg-surface-container/50 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={handleCancelSaveModal}
+                  className="min-h-11 w-full px-4 py-2 text-xs font-semibold rounded-xl bg-surface border border-outline-variant text-on-surface hover:bg-surface-container transition-colors sm:w-auto"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmSaveEdits}
+                  disabled={savingState === "saving"}
+                  className="min-h-11 w-full px-5 py-2 text-xs font-bold rounded-xl bg-primary text-on-primary hover:bg-primary/90 transition-colors shadow-sm flex items-center justify-center gap-1.5 sm:w-auto"
+                >
+                  <span className="material-symbols-outlined text-base">check_circle</span>
+                  <span>Confirmar e Salvar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {addElementContext && <AddElementExpenseDialog
+        actionLabel={addExpenseGroup?.acao ?? ""}
+        natureLabel={getNatureLabel(addElementContext.natureza, "")}
+        search={elementSearch}
+        setSearch={setElementSearch}
+        options={availableElements}
+        selected={selectedElement}
+        setSelected={setSelectedElement}
+        value={newExpenseValor}
+        setValue={setNewExpenseValor}
+        vinculo={newExpenseVinculo}
+        setVinculo={setNewExpenseVinculo}
+        processo={newExpenseProcesso}
+        setProcesso={setNewExpenseProcesso}
+        onClose={() => { setAddExpenseGroup(null); setAddElementContext(null); }}
+        onConfirm={handleAddExpense}
+        parseValue={parseBr}
+      />}
+      {!addElementContext && addExpenseGroup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-expense-title"
+          onKeyDown={(event) => handleModalKeyDown(event, addNatureDialogRef, () => setAddExpenseGroup(null))}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAddExpenseGroup(null);
+          }}
+        >
+          <div ref={addNatureDialogRef} tabIndex={-1} className="w-full max-w-lg rounded-2xl border border-outline-variant bg-surface shadow-2xl overflow-hidden outline-none">
+            <div className="flex items-start justify-between border-b border-outline-variant bg-surface-container/50 p-5">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Nova natureza de despesa</p>
+                <h2 id="add-expense-title" className="mt-1 text-lg font-bold text-on-surface">Adicionar Natureza da Despesa</h2>
+                <p className="mt-1 text-xs text-on-surface-variant">{addExpenseGroup.acao} · {addExpenseGroup.elemento}</p>
               </div>
               <button
-                onClick={handleCancelSaveModal}
-                className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+                type="button"
+                onClick={() => setAddExpenseGroup(null)}
+                aria-label="Fechar adicionar despesa"
+                className="min-h-10 min-w-10 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
             </div>
-
-            {/* Modal Body - Lista de Linhas Alteradas com Detalhes */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-amber-900 text-xs font-semibold">
-                <span className="material-symbols-outlined text-amber-600 text-base shrink-0">info</span>
-                <span>
-                  <strong>Atenção:</strong> O preenchimento da justificativa é obrigatório para manter a alteração. Caso a justificativa não seja informada em alguma linha, seu valor voltará automaticamente ao valor original.
-                </span>
-              </div>
-
-              {modifiedItems.length === 0 ? (
-                <div className="p-6 text-center text-xs text-on-surface-variant bg-surface-container/30 rounded-xl">
-                  Nenhum valor foi alterado nas dotações.
-                </div>
-              ) : (
-                modifiedItems.map((item) => {
-                  const origVal = originalRawItems.find((o) => o.id === item.id)?.valLoa || item.valLdo;
-                  const diff = item.valLoa - origVal;
-                  const diffBadge = diff > 0 ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-rose-700 bg-rose-50 border-rose-200";
-
-                  return (
-                    <div key={item.id} className="p-4 rounded-xl bg-surface-container/40 border border-outline-variant/60 space-y-3">
-                      {/* Informações da Linha */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-outline-variant/40 pb-2">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold text-primary truncate" title={item.secretaria}>
-                            {item.secretaria}
-                          </p>
-                          <p className="text-xs font-bold text-on-surface truncate mt-0.5">
-                            Ação: {item.acao}
-                          </p>
-                          <p className="text-[10px] text-on-surface-variant font-mono truncate">
-                            Natureza: {item.natureza} • Subelemento: {item.subelemento || "—"}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0 font-mono text-xs">
-                          <div className="flex items-center gap-2 justify-end">
-                            <span className="text-on-surface-variant line-through">{currency.format(origVal)}</span>
-                            <span className="material-symbols-outlined text-xs">arrow_forward</span>
-                            <span className="font-extrabold text-on-surface">{currency.format(item.valLoa)}</span>
-                          </div>
-                          <span className={`inline-block mt-1 px-2 py-0.2 text-[10px] font-bold rounded border ${diffBadge}`}>
-                            {diff > 0 ? `+${currency.format(diff)}` : currency.format(diff)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Campo de Texto para a Justificativa */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-on-surface flex items-center justify-between">
-                          <span>Justificativa do Ajuste <span className="text-rose-600">*</span></span>
-                          <span className="text-[10px] text-on-surface-variant font-normal">Descreva o motivo da alteração do valor</span>
-                        </label>
-                        <textarea
-                          rows={2}
-                          placeholder="Informe a motivação técnica para a alteração do valor da dotação..."
-                          value={justifications[item.id] || ""}
-                          onChange={(e) =>
-                            setJustifications((prev) => ({ ...prev, [item.id]: e.target.value }))
-                          }
-                          className="w-full p-2.5 text-xs rounded-xl border border-outline-variant bg-surface text-on-surface focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-on-surface-variant/50"
-                        />
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+            <div className="space-y-4 p-5">
+              <label className="block text-xs font-bold text-on-surface">
+                Natureza de despesa *
+                <select
+                  value={newExpenseNatureza}
+                  onChange={(event) => setNewExpenseNatureza(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-primary focus:outline-none"
+                >
+                  <option value="">Selecione a natureza</option>
+                  {naturezaOptions.map((item) => (
+                    <option key={`${item.codigo}-${item.nome}`} value={item.codigo}>{item.codigo} — {item.nome}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-on-surface">
+                Valor LOA *
+                <input
+                  value={newExpenseValor}
+                  onChange={(event) => setNewExpenseValor(event.target.value.replace(/-/g, ""))}
+                  inputMode="decimal"
+                  placeholder="Ex.: 25.000,00"
+                  className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-right font-mono text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+              </label>
+              <label className="block text-xs font-bold text-on-surface">
+                Vínculo
+                <select
+                  value={newExpenseVinculo}
+                  onChange={(event) => setNewExpenseVinculo(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-primary focus:outline-none"
+                >
+                  <option value="">Tesouro / Próprio</option>
+                  <option value="01">01 — Tesouro</option>
+                  <option value="02">02 — Transferências</option>
+                  <option value="05">05 — Operações de crédito</option>
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-on-surface">
+                Processo
+                <input
+                  value={newExpenseProcesso}
+                  onChange={(event) => setNewExpenseProcesso(event.target.value)}
+                  placeholder="Opcional"
+                  className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+              </label>
             </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-outline-variant bg-surface-container/50 flex items-center justify-between">
+            <div className="flex justify-end gap-2 border-t border-outline-variant bg-surface-container/40 p-4">
               <button
                 type="button"
-                onClick={handleCancelSaveModal}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-surface border border-outline-variant text-on-surface hover:bg-surface-container transition-colors"
+                onClick={() => setAddExpenseGroup(null)}
+                className="min-h-11 rounded-xl border border-outline-variant bg-surface px-4 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={confirmSaveEdits}
-                disabled={savingState === "saving"}
-                className="px-5 py-2 text-xs font-bold rounded-xl bg-primary text-on-primary hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-1.5"
+                onClick={handleAddExpense}
+                disabled={!newExpenseNatureza || parseBr(newExpenseValor) <= 0}
+                className="min-h-11 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-on-primary hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-sm"
               >
-                <span className="material-symbols-outlined text-base">check_circle</span>
-                <span>Confirmar e Salvar</span>
+                Adicionar despesa
               </button>
             </div>
           </div>
         </div>
       )}
-      {addExpenseGroup && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-labelledby="add-expense-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddExpenseGroup(null); }}>
-        <div className="w-full max-w-lg rounded-xl border border-outline-variant bg-surface shadow-2xl">
-          <div className="flex items-start justify-between border-b border-outline-variant p-5"><div><p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Nova despesa</p><h2 id="add-expense-title" className="mt-1 text-lg font-bold text-on-surface">Adicionar despesa ao item</h2><p className="mt-1 text-xs text-on-surface-variant">{addExpenseGroup.acao} · {addExpenseGroup.elemento}</p></div><button type="button" onClick={() => setAddExpenseGroup(null)} aria-label="Fechar adicionar despesa" className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container"><span className="material-symbols-outlined">close</span></button></div>
-          <div className="space-y-4 p-5"><label className="block text-xs font-bold text-on-surface">Natureza de despesa *<select value={newExpenseNatureza} onChange={(event) => setNewExpenseNatureza(event.target.value)} className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-normal"><option value="">Selecione a natureza</option>{naturezaOptions.map((item) => <option key={`${item.codigo}-${item.nome}`} value={item.codigo}>{item.codigo} — {item.nome}</option>)}</select></label><label className="block text-xs font-bold text-on-surface">Valor LOA *<input value={newExpenseValor} onChange={(event) => setNewExpenseValor(event.target.value.replace(/-/g, ""))} inputMode="decimal" placeholder="Ex.: 25.000,00" className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-right font-mono text-sm" /></label><label className="block text-xs font-bold text-on-surface">Vínculo<select value={newExpenseVinculo} onChange={(event) => setNewExpenseVinculo(event.target.value)} className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-normal"><option value="">Tesouro / Próprio</option><option value="01">01 — Tesouro</option><option value="02">02 — Transferências</option><option value="05">05 — Operações de crédito</option></select></label><label className="block text-xs font-bold text-on-surface">Processo<input value={newExpenseProcesso} onChange={(event) => setNewExpenseProcesso(event.target.value)} placeholder="Opcional" className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-sm font-normal" /></label></div>
-          <div className="flex justify-end gap-2 border-t border-outline-variant bg-surface-container/40 p-4"><button type="button" onClick={() => setAddExpenseGroup(null)} className="rounded-lg border border-outline-variant bg-surface px-4 py-2 text-xs font-semibold text-on-surface">Cancelar</button><button type="button" onClick={handleAddExpense} disabled={!newExpenseNatureza || parseBr(newExpenseValor) <= 0} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-on-primary disabled:opacity-50">Adicionar despesa</button></div>
+      {editingSubelementItem && (
+        <div
+          className="fixed inset-0 z-[52] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-subelement-title"
+          onKeyDown={(event) => handleModalKeyDown(event, editSubelementDialogRef, () => setEditingSubelementItem(null))}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setEditingSubelementItem(null);
+          }}
+        >
+          <div ref={editSubelementDialogRef} tabIndex={-1} className="w-full max-w-md rounded-2xl border border-outline-variant bg-surface shadow-2xl overflow-hidden outline-none">
+            <div className="flex items-start justify-between border-b border-outline-variant bg-surface-container/50 p-5">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Editar Subelemento</p>
+                <h2 id="edit-subelement-title" className="mt-1 text-base font-bold text-on-surface">
+                  {editingSubelementItem.acao}
+                </h2>
+                <p className="mt-1 text-xs font-semibold text-on-surface-variant">
+                  {getNatureLabel(editingSubelementItem.natureza, editingSubelementItem.elemento)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSubelementItem(null)}
+                aria-label="Fechar edição"
+                className="min-h-10 min-w-10 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <label className="block text-xs font-bold text-on-surface">
+                Nome / Descrição do Subelemento *
+                <input
+                  value={editSubelementName}
+                  onChange={(event) => setEditSubelementName(event.target.value)}
+                  placeholder="Descrição do subelemento"
+                  className="mt-1 w-full rounded-lg border border-primary bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Valor LOA *
+                <input
+                  value={editSubelementValor}
+                  onChange={(event) => setEditSubelementValor(event.target.value.replace(/-/g, ""))}
+                  inputMode="decimal"
+                  placeholder="Ex.: 25.000,00"
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-right font-mono text-sm"
+                />
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Processo Administrativo
+                <input
+                  value={editSubelementProcesso}
+                  onChange={(event) => setEditSubelementProcesso(event.target.value)}
+                  placeholder="Opcional (Ex.: 1234/2026)"
+                  className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-outline-variant bg-surface-container/40 p-4">
+              <button
+                type="button"
+                onClick={() => setEditingSubelementItem(null)}
+                className="min-h-11 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-xs font-semibold text-on-surface"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const newValor = parseBr(editSubelementValor);
+                  setRawItems((previous) =>
+                    previous.map((entry) =>
+                      entry.id === editingSubelementItem.id
+                        ? {
+                            ...entry,
+                            subelemento: editSubelementName.trim() || entry.subelemento,
+                            processo: editSubelementProcesso.trim() || "—",
+                            valLoa: newValor,
+                          }
+                        : entry
+                    )
+                  );
+                  setHasChanges(true);
+                  setEditingSubelementItem(null);
+                }}
+                className="min-h-11 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-on-primary"
+              >
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
         </div>
-      </div>}
+      )}
+
+      {/* 8. POPUP MODAL: Configuração e Ordenação dos Cards e Seções */}
+      <AnaliseLoaCardsConfigDialog
+        isOpen={cardsConfigModalOpen}
+        onClose={() => setCardsConfigModalOpen(false)}
+        config={layoutConfig}
+        onSaveConfig={handleSaveLayoutConfig}
+        onResetConfig={handleResetLayoutConfig}
+      />
     </div>
   );
 }

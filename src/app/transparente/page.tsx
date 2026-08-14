@@ -26,7 +26,7 @@ export default function TransparentePage() {
   const isReal = dataSource === "real" && dbData && dbData.records;
 
   // Total LOA
-  const totalLoa = isReal ? dbData.totals.loa : 6500000000;
+  const totalLoa = isReal ? dbData.totals.loa : 6233182504;
 
   // Investimento por Habitante
   const invPerHab = isReal ? Math.round(totalLoa / 760000) : 8552;

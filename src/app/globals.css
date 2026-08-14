@@ -70,20 +70,16 @@
 
 .glass-card {
   background-color: var(--color-surface) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
   border: 1px solid var(--color-outline-variant) !important;
-  box-shadow: var(--shadow) !important;
+  box-shadow: 0 1px 3px rgba(24, 28, 34, 0.06) !important;
   border-radius: var(--radius-xl) !important;
   transition: var(--transition);
 }
 .glass-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-hover) !important;
+  box-shadow: 0 2px 5px rgba(24, 28, 34, 0.08) !important;
 }
 .glass-card:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow) !important;
+  box-shadow: 0 1px 3px rgba(24, 28, 34, 0.06) !important;
 }
 .revenue-gradient {
   @apply bg-gradient-to-br from-tertiary-container/20 to-surface;
@@ -4354,4 +4350,3 @@ details.brutalist-accordion[open] summary {
 details.brutalist-accordion .accordion-content {
   padding: 16px;
 }
-

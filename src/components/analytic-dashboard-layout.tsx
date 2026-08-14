@@ -60,7 +60,6 @@ export function AnalyticDashboardLayout({
   const investmentVal = data.spending.investment;
   const isRealData = dataSource === "real";
   const expenseTotal = isRealData ? totalVal : operatingVal + investmentVal;
-  const isBalanced = totalVal >= expenseTotal;
   const population = 723500;
 
   const askAssistant = async (question: string) => {
@@ -407,7 +406,7 @@ export function AnalyticDashboardLayout({
       </header>
 
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <article className="glass-card bg-emerald-50/60 dark:bg-emerald-950/20 border-l-4 border-l-emerald-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+        <article className="glass-card bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
             <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1">Despesa LDO (2027)</p>
             <h3 className="text-2xl font-headline font-bold text-emerald-900 dark:text-emerald-100">{formatCompactMoney(5868871609.91)}</h3>
@@ -415,7 +414,7 @@ export function AnalyticDashboardLayout({
           </div>
           <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-emerald-500/10">gavel</span>
         </article>
-        <article className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border-l-4 border-l-blue-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+        <article className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
             <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Despesa LOA (2027)</p>
             <h3 className="text-2xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
@@ -423,7 +422,7 @@ export function AnalyticDashboardLayout({
           </div>
           <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-blue-500/10">account_balance_wallet</span>
         </article>
-        <article className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border-l-4 border-l-orange-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+        <article className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
             <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Despesa Total Fixada"}</p>
             <h3 className="text-2xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(isRealData ? operatingVal : expenseTotal)}</h3>
@@ -431,7 +430,7 @@ export function AnalyticDashboardLayout({
           </div>
           <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-500/10">payments</span>
         </article>
-        <article className="glass-card bg-teal-50/60 dark:bg-teal-950/20 border-l-4 border-l-teal-500 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+        <article className="glass-card bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
             <p className="text-xs font-bold text-teal-700 dark:text-teal-300 uppercase tracking-wider mb-1">Investimentos (LOA)</p>
             <h3 className="text-2xl font-headline font-bold text-teal-900 dark:text-teal-100">{formatCompactMoney(investmentVal)}</h3>
@@ -439,7 +438,7 @@ export function AnalyticDashboardLayout({
           </div>
           <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-teal-500/10">engineering</span>
         </article>
-        <article className="glass-card bg-amber-50/60 dark:bg-amber-950/20 border-l-4 border-l-amber-500 p-5 flex flex-col justify-center h-32">
+        <article className="glass-card bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-5 flex flex-col justify-center h-32">
           <div>
             <p className="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1">Conformidade LOA</p>
             <h3 className="text-lg font-headline font-bold text-amber-900 dark:text-amber-100">{percent.format(data.quality.coverage)}</h3>
@@ -473,51 +472,6 @@ export function AnalyticDashboardLayout({
           <BarChart title="Classificação Econômica" subtitle="Naturezas com maior valor previsto" data={data.classifications.economic} changeable />
           <BarChart title="Subelementos" subtitle="Detalhamento informado na planilha" data={data.classifications.subelement} changeable />
         </div>
-      </section>
-
-      <section aria-labelledby="quality-title" className="rounded-xl border border-outline-variant bg-surface overflow-hidden">
-        <div className="flex flex-col gap-2 border-b border-outline-variant px-5 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h3 id="quality-title" className="text-lg font-headline font-bold text-on-surface">Qualidade dos dados importados</h3>
-            <p className="text-sm text-on-surface-variant">Registros com alerta continuam incluídos em todos os totais e gráficos.</p>
-          </div>
-          <span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${data.quality.warningRecords ? "bg-amber-100 text-amber-900" : "bg-green-100 text-green-900"}`}>
-            {data.quality.available ? `${percent.format(data.quality.coverage)} em conformidade` : "Disponível para dados reais"}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 divide-x divide-y divide-outline-variant md:grid-cols-4 md:divide-y-0">
-          {[
-            ["Registros analisados", integer.format(data.quality.totalRecords)],
-            ["Em conformidade", integer.format(data.quality.validRecords)],
-            ["Com alerta", integer.format(data.quality.warningRecords)],
-            ["Valor sinalizado", currency.format(data.quality.warningValue)],
-          ].map(([label, value]) => (
-            <div key={label} className="px-5 py-4">
-              <p className="text-xs text-on-surface-variant">{label}</p>
-              <p className="mt-1 text-lg font-bold text-on-surface">{value}</p>
-            </div>
-          ))}
-        </div>
-        {data.quality.issues.length > 0 && (
-          <div className="overflow-x-auto border-t border-outline-variant">
-            <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="bg-surface-container text-xs text-on-surface-variant">
-                <tr><th className="px-5 py-3">Código da Despesa</th><th className="px-5 py-3">Desc Sub</th><th className="px-5 py-3">Tipo do alerta</th><th className="px-5 py-3 text-right">Registros</th><th className="px-5 py-3 text-right">Valor mantido</th></tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/50">
-                {data.quality.issues.map((issue) => (
-                  <tr key={`${issue.type}-${issue.expenseCode}-${issue.subelementDescription}`}>
-                    <td className="whitespace-nowrap px-5 py-3 font-mono font-semibold text-on-surface">{issue.expenseCode}</td>
-                    <td className="max-w-md px-5 py-3 text-on-surface">{issue.subelementDescription}</td>
-                    <td className="px-5 py-3 text-on-surface-variant">{issue.type === "missing-nature" ? "Natureza ausente" : issue.type === "invalid-nature" ? "Código não cadastrado" : "Subelemento não localizado"}</td>
-                    <td className="px-5 py-3 text-right font-semibold">{integer.format(issue.count)}</td>
-                    <td className="px-5 py-3 text-right font-semibold">{currency.format(issue.value)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </section>
 
       <SecretariasMenu data={data} filters={filters} onChange={onChange} totalVal={totalVal} />
@@ -685,7 +639,7 @@ export function AnalyticDashboardLayout({
               <h4 className="text-sm font-bold uppercase">Insights de Despesa (IA)</h4>
             </div>
             <div className="space-y-3">
-              <div className="p-3 bg-orange-50 rounded text-sm text-on-surface-variant border-l-4 border-l-orange-400">
+              <div className="p-3 bg-orange-50 rounded text-sm text-on-surface-variant border border-orange-200">
                 Investimentos representam {expenseTotal ? `${Math.round((investmentVal / expenseTotal) * 100)}%` : "0%"} do orçamento, com maior peso nos projetos de expansão.
               </div>
               <div className="p-3 bg-surface-container rounded text-sm text-on-surface-variant">
@@ -848,6 +802,7 @@ export function AnalyticDashboardLayout({
           <p className="text-xs text-on-surface-variant mt-2">{topInfrastructureFunction?.label || "Carteira estratégica"}</p>
         </article>
       </section>
+
     </div>
   );
 }
