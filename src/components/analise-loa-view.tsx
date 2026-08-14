@@ -239,10 +239,9 @@ export function AnaliseLoaView() {
   const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
   const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
-  const [elementSearch, setElementSearch] = useState("");
-  const [selectedElement, setSelectedElement] = useState<{ code: string; label: string } | null>(null);
   const originalValuesById = useMemo(() => new Map(originalRawItems.map((item) => [item.id, item.valLoa])), [originalRawItems]);
-  const [newExpenseVinculo, setNewExpenseVinculo] = useState("");
+  const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
+  const [newExpenseCodigoAplicacao, setNewExpenseCodigoAplicacao] = useState("");
   const [newExpenseProcesso, setNewExpenseProcesso] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
   // Estado para Edição de Subelemento via Modal
@@ -784,6 +783,18 @@ export function AnaliseLoaView() {
     setSaveModalOpen(true);
   };
 
+  const openAddExpense = (group: EditableGroup, natureza?: string) => {
+    setAddExpenseGroup(group);
+    const nat = natureza || group.children[0]?.natureza || group.children[0]?.elemento || "";
+    setAddElementContext(natureza ? { group, natureza } : null);
+    setNewExpenseNatureza(nat);
+    setNewExpenseSubelemento("");
+    setNewExpenseVinculo("01");
+    setNewExpenseCodigoAplicacao("");
+    setNewExpenseProcesso("");
+    setNewExpenseValor("");
+  };
+
   // Cancelar a edição e reverter todos os campos editados ao valor anterior (antes de abrir o modal)
   const handleCancelSaveModal = () => {
     setRawItems(JSON.parse(JSON.stringify(savedRawItems)));
@@ -793,36 +804,43 @@ export function AnaliseLoaView() {
   };
 
   const handleAddExpense = () => {
-    if (!addExpenseGroup || !newExpenseNatureza || parseBr(newExpenseValor) <= 0) return;
-    if (addElementContext && !selectedElement) return;
-    const option = naturezaOptions.find((item) => item.codigo === newExpenseNatureza);
-    const natureza = addElementContext?.natureza || (option ? `${option.codigo} - ${option.nome}` : newExpenseNatureza);
-    const naturezaCodigo = newExpenseNatureza.split("-")[0].trim();
-    const elemento = naturezaCodigo.split(".").slice(0, 4).join(".");
-    const item: RawBudgetItem = {
-      id: `added-expense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      progKey: `${addExpenseGroup.acao}|${elemento}|${newExpenseSubelemento}`,
+    if (!addExpenseGroup) return;
+    const value = parseBr(newExpenseValor);
+    if (value <= 0) return;
+
+    const naturezaFinal = addElementContext ? addElementContext.natureza : newExpenseNatureza;
+    if (!naturezaFinal) return;
+
+    const subelementoFinal = newExpenseSubelemento.trim() || "Subelemento Adicional";
+    const template = addExpenseGroup.children[0];
+    const naturezaCodigo = naturezaFinal.split("-")[0].trim();
+    const elemento = template?.elemento || naturezaCodigo.split(".").slice(0, 4).join(".");
+
+    const newItem: RawBudgetItem = {
+      id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      progKey: `${addExpenseGroup.acao}|${elemento}|${subelementoFinal}`,
       secretaria: addExpenseGroup.secretaria,
-      orgao: addExpenseGroup.secretaria,
-      unidade: "",
+      orgao: template?.orgao || addExpenseGroup.secretaria,
+      unidade: template?.unidade || "01",
       programa: addExpenseGroup.programa,
       acao: addExpenseGroup.acao,
-      natureza,
-      fonteVinculo: newExpenseVinculo.trim() || "Tesouro / Próprio",
-      categoriaEconomica: naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES",
-      grupoNatureza: naturezaCodigo,
+      natureza: naturezaFinal,
+      fonteVinculo: newExpenseVinculo || "01",
+      categoriaEconomica: template?.categoriaEconomica || (naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES"),
+      grupoNatureza: template?.grupoNatureza || naturezaCodigo,
       elemento,
-      subelemento: addElementContext ? `${selectedElement?.code ? `${selectedElement.code} - ` : ""}${selectedElement?.label ?? ""}` : newExpenseSubelemento.trim(),
-      processo: newExpenseProcesso.trim() || "—",
+      subelemento: subelementoFinal,
+      processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
       valLdo: 0,
-      valLoa: parseBr(newExpenseValor),
+      valLoa: value,
     };
-    setRawItems((previous) => [...previous, item]);
+
+    setRawItems((previous) => [...previous, newItem]);
     try {
       const saved = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([...saved, item]));
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([...saved, newItem]));
     } catch {
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([item]));
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([newItem]));
     }
     setExpandedEditGroups((previous) => new Set(previous).add(addExpenseGroup.id));
     setHasChanges(true);
@@ -830,9 +848,8 @@ export function AnaliseLoaView() {
     setAddElementContext(null);
     setNewExpenseNatureza("");
     setNewExpenseSubelemento("");
-    setElementSearch("");
-    setSelectedElement(null);
-    setNewExpenseVinculo("");
+    setNewExpenseVinculo("01");
+    setNewExpenseCodigoAplicacao("");
     setNewExpenseProcesso("");
     setNewExpenseValor("");
   };
@@ -1445,9 +1462,8 @@ export function AnaliseLoaView() {
         const key = `${code}|${description}`;
         if (description && !elements.has(key)) elements.set(key, { code, label: description });
       });
-    const query = elementSearch.trim().toLowerCase();
-    return [...elements.values()].filter((element) => !query || element.code.toLowerCase().startsWith(query));
-  }, [addElementContext, elementSearch]);
+    return [...elements.values()];
+  }, [addElementContext]);
 
   const removeSubelement = (item: RawBudgetItem) => {
     if (!window.confirm("Remover este subelemento da Natureza da Despesa?")) return;
@@ -3591,18 +3607,25 @@ export function AnaliseLoaView() {
       {addElementContext && <AddElementExpenseDialog
         actionLabel={addExpenseGroup?.acao ?? ""}
         natureLabel={getNatureLabel(addElementContext.natureza, "")}
-        search={elementSearch}
-        setSearch={setElementSearch}
+        subelemento={newExpenseSubelemento}
+        setSubelemento={setNewExpenseSubelemento}
         options={availableElements}
-        selected={selectedElement}
-        setSelected={setSelectedElement}
         value={newExpenseValor}
         setValue={setNewExpenseValor}
         vinculo={newExpenseVinculo}
         setVinculo={setNewExpenseVinculo}
+        codigoAplicacao={newExpenseCodigoAplicacao}
+        setCodigoAplicacao={setNewExpenseCodigoAplicacao}
         processo={newExpenseProcesso}
         setProcesso={setNewExpenseProcesso}
-        onClose={() => { setAddExpenseGroup(null); setAddElementContext(null); }}
+        onClose={() => {
+          setAddExpenseGroup(null);
+          setAddElementContext(null);
+          setNewExpenseSubelemento("");
+          setNewExpenseValor("");
+          setNewExpenseCodigoAplicacao("");
+          setNewExpenseProcesso("");
+        }}
         onConfirm={handleAddExpense}
         parseValue={parseBr}
       />}
