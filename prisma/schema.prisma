@@ -309,3 +309,13 @@ model EnquadramentoLdoLoa {
   @@index([fonteRecursoId])
   @@index([codigoAplicacaoId])
 }
+
+model PainelConfig {
+  id           String   @id
+  chave        String   @unique
+  valor        Json
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([chave])
+}

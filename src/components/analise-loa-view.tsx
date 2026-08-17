@@ -239,10 +239,9 @@ export function AnaliseLoaView() {
   const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
   const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
-  const [elementSearch, setElementSearch] = useState("");
-  const [selectedElement, setSelectedElement] = useState<{ code: string; label: string } | null>(null);
   const originalValuesById = useMemo(() => new Map(originalRawItems.map((item) => [item.id, item.valLoa])), [originalRawItems]);
-  const [newExpenseVinculo, setNewExpenseVinculo] = useState("");
+  const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
+  const [newExpenseCodigoAplicacao, setNewExpenseCodigoAplicacao] = useState("");
   const [newExpenseProcesso, setNewExpenseProcesso] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
   // Estado para Edição de Subelemento via Modal
@@ -258,6 +257,48 @@ export function AnaliseLoaView() {
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
   // Estados para o Planejamento LDO - 2027 (Indicador, Meta Física, Custo Físico 2027)
   const [ldoPlanningMap, setLdoPlanningMap] = useState<Record<string, LdoPlanningData>>({});
+  const handleSaveLdoPlanning = async (group: EditableGroup) => {
+    const custoFisicoNum = parseBr(editLdoCustoFisico);
+    const custoFinNum = parseBr(editLdoCustoFinanceiro);
+
+    const updatedMap: Record<string, LdoPlanningData> = {
+      ...ldoPlanningMap,
+      [group.id]: {
+        indicador: editLdoIndicador.trim() || "Gestão dos compromissos e execução das atividades da ação",
+        unidadeMedida: editLdoUnidadeMedida.trim() || "Percentual (%)",
+        custoFisico2027: custoFisicoNum,
+        produto: editLdoIndicador.trim(),
+        custoFinanceiro2027: custoFinNum,
+      },
+      [group.acao]: {
+        indicador: editLdoIndicador.trim() || "Gestão dos compromissos e execução das atividades da ação",
+        unidadeMedida: editLdoUnidadeMedida.trim() || "Percentual (%)",
+        custoFisico2027: custoFisicoNum,
+        produto: editLdoIndicador.trim(),
+        custoFinanceiro2027: custoFinNum,
+      },
+    };
+
+    setLdoPlanningMap(updatedMap);
+    try {
+      localStorage.setItem("painel_loa_ldo_planning_v1", JSON.stringify(updatedMap));
+    } catch {}
+
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "painel_loa_ldo_planning",
+          valor: updatedMap,
+        }),
+      });
+    } catch (err) {
+      console.error("Erro ao persistir LDO planning no banco:", err);
+    }
+
+    setEditingLdoPlanningGroupKey(null);
+  };
   const [editingLdoPlanningGroupKey, setEditingLdoPlanningGroupKey] = useState<string | null>(null);
   const [tempLdoPlanning, setTempLdoPlanning] = useState<LdoPlanningData>({
     indicador: "",
@@ -269,49 +310,125 @@ export function AnaliseLoaView() {
   const [layoutConfig, setLayoutConfig] = useState<AnaliseLoaLayoutConfig>(DEFAULT_LAYOUT_CONFIG);
   const [cardsConfigModalOpen, setCardsConfigModalOpen] = useState(false);
 
+  // Carregar configuração de cards do Banco de Dados (com fallback no localStorage)
   useEffect(() => {
-    try {
-      const savedLayout = localStorage.getItem("painel_loa_cards_config_v1");
-      if (savedLayout) {
-        const parsed = JSON.parse(savedLayout);
-        // Garantir retrocompatibilidade caso novas chaves sejam adicionadas
-        setLayoutConfig({
-          sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-            ? parsed.sectionsOrder
-            : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
-          receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
-            ? parsed.receitaKpisOrder
-            : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
-          despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
-            ? parsed.despesaKpisOrder
-            : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
-          visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
-        });
+    let isMounted = true;
+    const loadLayout = async () => {
+      try {
+        const res = await fetch("/api/configuracoes/layout?chave=analise_loa_cards_layout");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.valor && isMounted) {
+            const parsed = data.valor;
+            setLayoutConfig({
+              sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+                ? parsed.sectionsOrder
+                : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+              receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
+                ? parsed.receitaKpisOrder
+                : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
+              despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
+                ? parsed.despesaKpisOrder
+                : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+              visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Falha ao carregar layout do banco, tentando localStorage:", err);
       }
-    } catch {}
+
+      // Fallback localstorage
+      try {
+        const savedLayout = localStorage.getItem("painel_loa_cards_config_v1");
+        if (savedLayout && isMounted) {
+          const parsed = JSON.parse(savedLayout);
+          setLayoutConfig({
+            sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+              ? parsed.sectionsOrder
+              : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+            receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
+              ? parsed.receitaKpisOrder
+              : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
+            despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
+              ? parsed.despesaKpisOrder
+              : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+            visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+          });
+        }
+      } catch {}
+    };
+
+    loadLayout();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const handleSaveLayoutConfig = (newConfig: AnaliseLoaLayoutConfig) => {
+  const handleSaveLayoutConfig = async (newConfig: AnaliseLoaLayoutConfig) => {
     setLayoutConfig(newConfig);
+    // Salva no localStorage imediatamente para UX instantânea
     try {
       localStorage.setItem("painel_loa_cards_config_v1", JSON.stringify(newConfig));
     } catch {}
+
+    // Salva no Banco de Dados
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "analise_loa_cards_layout",
+          valor: newConfig,
+        }),
+      });
+    } catch (err) {
+      console.error("Erro ao persistir configuração no banco:", err);
+    }
   };
 
-  const handleResetLayoutConfig = () => {
+  const handleResetLayoutConfig = async () => {
     setLayoutConfig(DEFAULT_LAYOUT_CONFIG);
     try {
       localStorage.removeItem("painel_loa_cards_config_v1");
     } catch {}
+
+    try {
+      await fetch("/api/configuracoes/layout?chave=analise_loa_cards_layout", {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.error("Erro ao resetar configuração no banco:", err);
+    }
   };
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("painel_loa_ldo_planning_v1");
-      if (saved) {
-        setLdoPlanningMap(JSON.parse(saved));
-      }
-    } catch {}
+    let isMounted = true;
+    const loadLdoPlanning = async () => {
+      try {
+        const res = await fetch("/api/configuracoes/layout?chave=painel_loa_ldo_planning");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.valor && isMounted) {
+            setLdoPlanningMap(data.valor);
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        const saved = localStorage.getItem("painel_loa_ldo_planning_v1");
+        if (saved && isMounted) {
+          setLdoPlanningMap(JSON.parse(saved));
+        }
+      } catch {}
+    };
+
+    loadLdoPlanning();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const getLdoPlanningForGroup = (group: EditableGroup): LdoPlanningData => {
@@ -784,6 +901,18 @@ export function AnaliseLoaView() {
     setSaveModalOpen(true);
   };
 
+  const openAddExpense = (group: EditableGroup, natureza?: string) => {
+    setAddExpenseGroup(group);
+    const nat = natureza || group.children[0]?.natureza || group.children[0]?.elemento || "";
+    setAddElementContext(natureza ? { group, natureza } : null);
+    setNewExpenseNatureza(nat);
+    setNewExpenseSubelemento("");
+    setNewExpenseVinculo("01");
+    setNewExpenseCodigoAplicacao("");
+    setNewExpenseProcesso("");
+    setNewExpenseValor("");
+  };
+
   // Cancelar a edição e reverter todos os campos editados ao valor anterior (antes de abrir o modal)
   const handleCancelSaveModal = () => {
     setRawItems(JSON.parse(JSON.stringify(savedRawItems)));
@@ -793,36 +922,43 @@ export function AnaliseLoaView() {
   };
 
   const handleAddExpense = () => {
-    if (!addExpenseGroup || !newExpenseNatureza || parseBr(newExpenseValor) <= 0) return;
-    if (addElementContext && !selectedElement) return;
-    const option = naturezaOptions.find((item) => item.codigo === newExpenseNatureza);
-    const natureza = addElementContext?.natureza || (option ? `${option.codigo} - ${option.nome}` : newExpenseNatureza);
-    const naturezaCodigo = newExpenseNatureza.split("-")[0].trim();
-    const elemento = naturezaCodigo.split(".").slice(0, 4).join(".");
-    const item: RawBudgetItem = {
-      id: `added-expense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      progKey: `${addExpenseGroup.acao}|${elemento}|${newExpenseSubelemento}`,
+    if (!addExpenseGroup) return;
+    const value = parseBr(newExpenseValor);
+    if (value <= 0) return;
+
+    const naturezaFinal = addElementContext ? addElementContext.natureza : newExpenseNatureza;
+    if (!naturezaFinal) return;
+
+    const subelementoFinal = newExpenseSubelemento.trim() || "Subelemento Adicional";
+    const template = addExpenseGroup.children[0];
+    const naturezaCodigo = naturezaFinal.split("-")[0].trim();
+    const elemento = template?.elemento || naturezaCodigo.split(".").slice(0, 4).join(".");
+
+    const newItem: RawBudgetItem = {
+      id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      progKey: `${addExpenseGroup.acao}|${elemento}|${subelementoFinal}`,
       secretaria: addExpenseGroup.secretaria,
-      orgao: addExpenseGroup.secretaria,
-      unidade: "",
+      orgao: template?.orgao || addExpenseGroup.secretaria,
+      unidade: template?.unidade || "01",
       programa: addExpenseGroup.programa,
       acao: addExpenseGroup.acao,
-      natureza,
-      fonteVinculo: newExpenseVinculo.trim() || "Tesouro / Próprio",
-      categoriaEconomica: naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES",
-      grupoNatureza: naturezaCodigo,
+      natureza: naturezaFinal,
+      fonteVinculo: newExpenseVinculo || "01",
+      categoriaEconomica: template?.categoriaEconomica || (naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES"),
+      grupoNatureza: template?.grupoNatureza || naturezaCodigo,
       elemento,
-      subelemento: addElementContext ? `${selectedElement?.code ? `${selectedElement.code} - ` : ""}${selectedElement?.label ?? ""}` : newExpenseSubelemento.trim(),
-      processo: newExpenseProcesso.trim() || "—",
+      subelemento: subelementoFinal,
+      processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
       valLdo: 0,
-      valLoa: parseBr(newExpenseValor),
+      valLoa: value,
     };
-    setRawItems((previous) => [...previous, item]);
+
+    setRawItems((previous) => [...previous, newItem]);
     try {
       const saved = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([...saved, item]));
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([...saved, newItem]));
     } catch {
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([item]));
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([newItem]));
     }
     setExpandedEditGroups((previous) => new Set(previous).add(addExpenseGroup.id));
     setHasChanges(true);
@@ -830,9 +966,8 @@ export function AnaliseLoaView() {
     setAddElementContext(null);
     setNewExpenseNatureza("");
     setNewExpenseSubelemento("");
-    setElementSearch("");
-    setSelectedElement(null);
-    setNewExpenseVinculo("");
+    setNewExpenseVinculo("01");
+    setNewExpenseCodigoAplicacao("");
     setNewExpenseProcesso("");
     setNewExpenseValor("");
   };
@@ -1445,9 +1580,8 @@ export function AnaliseLoaView() {
         const key = `${code}|${description}`;
         if (description && !elements.has(key)) elements.set(key, { code, label: description });
       });
-    const query = elementSearch.trim().toLowerCase();
-    return [...elements.values()].filter((element) => !query || element.code.toLowerCase().startsWith(query));
-  }, [addElementContext, elementSearch]);
+    return [...elements.values()];
+  }, [addElementContext]);
 
   const removeSubelement = (item: RawBudgetItem) => {
     if (!window.confirm("Remover este subelemento da Natureza da Despesa?")) return;
@@ -3591,18 +3725,25 @@ export function AnaliseLoaView() {
       {addElementContext && <AddElementExpenseDialog
         actionLabel={addExpenseGroup?.acao ?? ""}
         natureLabel={getNatureLabel(addElementContext.natureza, "")}
-        search={elementSearch}
-        setSearch={setElementSearch}
+        subelemento={newExpenseSubelemento}
+        setSubelemento={setNewExpenseSubelemento}
         options={availableElements}
-        selected={selectedElement}
-        setSelected={setSelectedElement}
         value={newExpenseValor}
         setValue={setNewExpenseValor}
         vinculo={newExpenseVinculo}
         setVinculo={setNewExpenseVinculo}
+        codigoAplicacao={newExpenseCodigoAplicacao}
+        setCodigoAplicacao={setNewExpenseCodigoAplicacao}
         processo={newExpenseProcesso}
         setProcesso={setNewExpenseProcesso}
-        onClose={() => { setAddExpenseGroup(null); setAddElementContext(null); }}
+        onClose={() => {
+          setAddExpenseGroup(null);
+          setAddElementContext(null);
+          setNewExpenseSubelemento("");
+          setNewExpenseValor("");
+          setNewExpenseCodigoAplicacao("");
+          setNewExpenseProcesso("");
+        }}
         onConfirm={handleAddExpense}
         parseValue={parseBr}
       />}
