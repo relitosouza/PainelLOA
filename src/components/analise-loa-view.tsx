@@ -255,6 +255,35 @@ export function AnaliseLoaView() {
   const editSubelementDialogRef = useRef<HTMLDivElement>(null);
   const addNatureTriggerRef = useRef<HTMLElement | null>(null);
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
+  // Estado para Rastrear Linhas Validadas pelo Usuário (sem alteração)
+  const [validatedRows, setValidatedRows] = useState<Record<string, boolean>>({});
+
+  const toggleValidateRow = async (rowId: string) => {
+    const nextState = !validatedRows[rowId];
+    const updated = { ...validatedRows, [rowId]: nextState };
+    if (!nextState) {
+      delete updated[rowId];
+    }
+    setValidatedRows(updated);
+
+    try {
+      localStorage.setItem("painel_loa_validated_rows_v1", JSON.stringify(updated));
+    } catch {}
+
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "painel_loa_validated_rows",
+          valor: updated,
+        }),
+      });
+    } catch (err) {
+      console.error("Erro ao persistir validações no banco:", err);
+    }
+  };
+
   // Estados para o Planejamento LDO - 2027 (Indicador, Meta Física, Custo Físico 2027)
   const [ldoPlanningMap, setLdoPlanningMap] = useState<Record<string, LdoPlanningData>>({});
   const handleSaveLdoPlanning = async (group: EditableGroup) => {
@@ -898,6 +927,23 @@ export function AnaliseLoaView() {
         } catch (e) {
           console.warn("Erro ao carregar edições salvas:", e);
         }
+
+        // 4. Carregar linhas validadas pelo usuário
+        try {
+          let loadedValidated: Record<string, boolean> = {};
+          const resVal = await fetch("/api/configuracoes/layout?chave=painel_loa_validated_rows");
+          if (resVal.ok) {
+            const data = await resVal.json();
+            if (data.success && data.valor) loadedValidated = data.valor;
+          }
+          if (!Object.keys(loadedValidated).length) {
+            const savedVal = localStorage.getItem("painel_loa_validated_rows_v1");
+            if (savedVal) loadedValidated = JSON.parse(savedVal);
+          }
+          if (Object.keys(loadedValidated).length > 0) {
+            setValidatedRows(loadedValidated);
+          }
+        } catch {}
 
         setRawItems(itemsArray);
         setSavedRawItems(JSON.parse(JSON.stringify(itemsArray)));
@@ -2737,7 +2783,7 @@ export function AnaliseLoaView() {
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Editável)", "text-right")}</th>
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Ajustado", "text-center")}</th>
+                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Ajustado / Validado", "text-center")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
@@ -2874,7 +2920,29 @@ export function AnaliseLoaView() {
                           <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
                         </td>
                         <td className="p-3 text-center">
-                          {groupAdjusted ? <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400">Sim</span> : <span className="text-[11px] text-gray-400 font-sans">—</span>}
+                          {groupAdjusted ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
+                              <span className="material-symbols-outlined text-[12px]">edit</span>
+                              <span>Ajustado</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => toggleValidateRow(group.id)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                validatedRows[group.id]
+                                  ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                  : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                              }`}
+                              title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada (sem alterações necessárias)"}
+                              aria-label={`Validar ação ${group.acao}`}
+                            >
+                              <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
+                              </span>
+                              <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
+                            </button>
+                          )}
                         </td>
                       </tr>
                       {isExpanded && (
@@ -3280,14 +3348,15 @@ export function AnaliseLoaView() {
 
                                   return (
                                     <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
-                                      <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans truncate text-xs" title={getSubelementLabel(item)}>
-                                        <div className="flex items-center gap-1.5">
+                                      <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className="text-outline-variant/80 font-mono text-xs select-none">│   └──</span>
-                                          <div className="min-w-0 flex-1 truncate">
+                                          <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
                                             <span className="text-on-surface font-medium text-xs">{getSubelementLabel(item)}</span>
                                             {item.processo && item.processo !== "—" && (
-                                              <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-on-surface-variant font-mono bg-surface-container px-1 rounded">
-                                                Proc: {item.processo}
+                                              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-xs">
+                                                <span className="material-symbols-outlined text-[12px]">folder</span>
+                                                <span>Processo: {item.processo}</span>
                                               </span>
                                             )}
                                           </div>
@@ -3313,7 +3382,7 @@ export function AnaliseLoaView() {
                                             title="Remover subelemento"
                                             aria-label={`Remover ${getSubelementLabel(item)}`}
                                           >
-                                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                                            <span className="material-symbols-outlined text-[15px]">delete</span>
                                           </button>
                                         </div>
                                       </td>
@@ -3342,7 +3411,29 @@ export function AnaliseLoaView() {
                                         <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
                                       </td>
                                       <td className="p-2 text-center">
-                                        {childAdjusted ? <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">Sim</span> : <span className="text-[10px] text-gray-400 font-sans">—</span>}
+                                        {childAdjusted ? (
+                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9.5px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
+                                            <span className="material-symbols-outlined text-[11px]">edit</span>
+                                            <span>Ajustado</span>
+                                          </span>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleValidateRow(item.id)}
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                              validatedRows[item.id]
+                                                ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                                : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                            }`}
+                                            title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento (sem alterações)"}
+                                            aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
+                                          >
+                                            <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                              {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
+                                            </span>
+                                            <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
+                                          </button>
+                                        )}
                                       </td>
                                     </tr>
                                   );
