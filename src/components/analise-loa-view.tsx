@@ -829,18 +829,60 @@ export function AnaliseLoaView() {
         // Guardar cópia original inalterada para comparação em modificações
         setOriginalRawItems(JSON.parse(JSON.stringify([...loaMap.values()])));
 
-        // Carregar alterações de LOA salvas no localStorage (se existirem)
+        // Carregar alterações de LOA salvas no Banco de Dados / localStorage (se existirem)
         let itemsArray = [...loaMap.values()];
+
+        // 1. Carregar despesas adicionadas manualmente
         try {
-          const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
-          if (savedAddedExpenses) itemsArray = [...itemsArray, ...(JSON.parse(savedAddedExpenses) as RawBudgetItem[])];
+          let addedList: RawBudgetItem[] = [];
+          const resAdded = await fetch("/api/configuracoes/layout?chave=painel_loa_added_expenses");
+          if (resAdded.ok) {
+            const data = await resAdded.json();
+            if (data.success && Array.isArray(data.valor)) addedList = data.valor;
+          }
+          if (!addedList.length) {
+            const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
+            if (savedAddedExpenses) addedList = JSON.parse(savedAddedExpenses) as RawBudgetItem[];
+          }
+          if (addedList.length) {
+            itemsArray = [...itemsArray, ...addedList];
+          }
         } catch {
           // Registros adicionais inválidos não impedem o carregamento da análise.
         }
+
+        // 2. Carregar e aplicar exclusões permanentes
         try {
-          const savedCustomLoa = localStorage.getItem("painel_loa_custom_edits_v1");
-          if (savedCustomLoa) {
-            const customMap: Record<string, number> = JSON.parse(savedCustomLoa);
+          let removedIds: string[] = [];
+          const resRemoved = await fetch("/api/configuracoes/layout?chave=painel_loa_removed_expenses");
+          if (resRemoved.ok) {
+            const data = await resRemoved.json();
+            if (data.success && Array.isArray(data.valor)) removedIds = data.valor;
+          }
+          if (!removedIds.length) {
+            const savedRemoved = localStorage.getItem("painel_loa_removed_expenses_v1");
+            if (savedRemoved) removedIds = JSON.parse(savedRemoved) as string[];
+          }
+          if (removedIds.length > 0) {
+            const removedSet = new Set(removedIds);
+            itemsArray = itemsArray.filter((item) => !removedSet.has(item.id));
+          }
+        } catch {}
+
+        // 3. Carregar e aplicar edições de valores
+        try {
+          let customMap: Record<string, number> = {};
+          const resCustom = await fetch("/api/configuracoes/layout?chave=painel_loa_custom_edits");
+          if (resCustom.ok) {
+            const data = await resCustom.json();
+            if (data.success && data.valor) customMap = data.valor;
+          }
+          if (!Object.keys(customMap).length) {
+            const savedCustomLoa = localStorage.getItem("painel_loa_custom_edits_v1");
+            if (savedCustomLoa) customMap = JSON.parse(savedCustomLoa);
+          }
+
+          if (Object.keys(customMap).length > 0) {
             itemsArray = itemsArray.map((item) => {
               if (customMap[item.id] !== undefined) {
                 return { ...item, valLoa: customMap[item.id] };
@@ -854,7 +896,7 @@ export function AnaliseLoaView() {
             setJustifications(JSON.parse(savedJustifications));
           }
         } catch (e) {
-          console.warn("Erro ao carregar edições salvas do localStorage:", e);
+          console.warn("Erro ao carregar edições salvas:", e);
         }
 
         setRawItems(itemsArray);
@@ -1004,7 +1046,7 @@ export function AnaliseLoaView() {
   };
 
   // Confirmar e Gravar Alterações + Justificativas no localStorage
-  const confirmSaveEdits = () => {
+  const confirmSaveEdits = async () => {
     try {
       // Separar os itens modificados em: com justificativa e sem justificativa
       const savedMap = new Map(savedRawItems.map((item) => [item.id, item.valLoa]));
@@ -1051,7 +1093,7 @@ export function AnaliseLoaView() {
 
       setSavingState("saving");
 
-      // Gravar no localStorage
+      // Gravar no localStorage e Banco de Dados
       const customMap: Record<string, number> = {};
       finalItems.forEach((item) => {
         customMap[item.id] = item.valLoa;
@@ -1060,6 +1102,20 @@ export function AnaliseLoaView() {
       localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
       localStorage.setItem("painel_loa_justifications_v1", JSON.stringify(validJustifications));
       setJustifications(validJustifications);
+
+      // Persistir no Banco de Dados
+      try {
+        await fetch("/api/configuracoes/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chave: "painel_loa_custom_edits",
+            valor: customMap,
+          }),
+        });
+      } catch (err) {
+        console.error("Erro ao persistir edições no banco:", err);
+      }
 
       setHasChanges(false);
       setSaveModalOpen(false);
@@ -1583,11 +1639,68 @@ export function AnaliseLoaView() {
     return [...elements.values()];
   }, [addElementContext]);
 
-  const removeSubelement = (item: RawBudgetItem) => {
+  const removeSubelement = async (item: RawBudgetItem) => {
     if (!window.confirm("Remover este subelemento da Natureza da Despesa?")) return;
-    setRemovedRawItems((prev) => [...prev.filter((entry) => entry.id !== item.id), item]);
+
+    // 1. Atualizar o estado da tela removendo o item
     setRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
-    setHasChanges(true);
+    setSavedRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+
+    // 2. Se for um item adicionado manualmente, remover do storage de adicionados
+    try {
+      const savedAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
+        .filter((entry) => entry.id !== item.id);
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(savedAdded));
+
+      // Sincronizar com o banco de dados
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "painel_loa_added_expenses",
+          valor: savedAdded,
+        }),
+      });
+    } catch {}
+
+    // 3. Registrar o item na lista de itens removidos permanentemente
+    try {
+      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
+      if (!savedRemoved.includes(item.id)) {
+        const nextRemoved = [...savedRemoved, item.id];
+        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
+
+        // Sincronizar com o banco de dados
+        await fetch("/api/configuracoes/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chave: "painel_loa_removed_expenses",
+            valor: nextRemoved,
+          }),
+        });
+      }
+    } catch {}
+
+    // 4. Se tiver edição de valor gravada para esse ID, limpar
+    try {
+      const customMap = JSON.parse(localStorage.getItem("painel_loa_custom_edits_v1") || "{}");
+      if (customMap[item.id] !== undefined) {
+        delete customMap[item.id];
+        localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
+        await fetch("/api/configuracoes/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chave: "painel_loa_custom_edits",
+            valor: customMap,
+          }),
+        });
+      }
+    } catch {}
+
+    setRemovedRawItems((prev) => [...prev.filter((entry) => entry.id !== item.id), item]);
+    setHasChanges(false);
   };
 
   const handleModalKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, dialogRef: RefObject<HTMLDivElement | null>, onClose: () => void) => {
