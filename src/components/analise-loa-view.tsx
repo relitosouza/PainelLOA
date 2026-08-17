@@ -257,6 +257,48 @@ export function AnaliseLoaView() {
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
   // Estados para o Planejamento LDO - 2027 (Indicador, Meta Física, Custo Físico 2027)
   const [ldoPlanningMap, setLdoPlanningMap] = useState<Record<string, LdoPlanningData>>({});
+  const handleSaveLdoPlanning = async (group: EditableGroup) => {
+    const custoFisicoNum = parseBr(editLdoCustoFisico);
+    const custoFinNum = parseBr(editLdoCustoFinanceiro);
+
+    const updatedMap: Record<string, LdoPlanningData> = {
+      ...ldoPlanningMap,
+      [group.id]: {
+        indicador: editLdoIndicador.trim() || "Gestão dos compromissos e execução das atividades da ação",
+        unidadeMedida: editLdoUnidadeMedida.trim() || "Percentual (%)",
+        custoFisico2027: custoFisicoNum,
+        produto: editLdoIndicador.trim(),
+        custoFinanceiro2027: custoFinNum,
+      },
+      [group.acao]: {
+        indicador: editLdoIndicador.trim() || "Gestão dos compromissos e execução das atividades da ação",
+        unidadeMedida: editLdoUnidadeMedida.trim() || "Percentual (%)",
+        custoFisico2027: custoFisicoNum,
+        produto: editLdoIndicador.trim(),
+        custoFinanceiro2027: custoFinNum,
+      },
+    };
+
+    setLdoPlanningMap(updatedMap);
+    try {
+      localStorage.setItem("painel_loa_ldo_planning_v1", JSON.stringify(updatedMap));
+    } catch {}
+
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "painel_loa_ldo_planning",
+          valor: updatedMap,
+        }),
+      });
+    } catch (err) {
+      console.error("Erro ao persistir LDO planning no banco:", err);
+    }
+
+    setEditingLdoPlanningGroupKey(null);
+  };
   const [editingLdoPlanningGroupKey, setEditingLdoPlanningGroupKey] = useState<string | null>(null);
   const [tempLdoPlanning, setTempLdoPlanning] = useState<LdoPlanningData>({
     indicador: "",
@@ -268,49 +310,125 @@ export function AnaliseLoaView() {
   const [layoutConfig, setLayoutConfig] = useState<AnaliseLoaLayoutConfig>(DEFAULT_LAYOUT_CONFIG);
   const [cardsConfigModalOpen, setCardsConfigModalOpen] = useState(false);
 
+  // Carregar configuração de cards do Banco de Dados (com fallback no localStorage)
   useEffect(() => {
-    try {
-      const savedLayout = localStorage.getItem("painel_loa_cards_config_v1");
-      if (savedLayout) {
-        const parsed = JSON.parse(savedLayout);
-        // Garantir retrocompatibilidade caso novas chaves sejam adicionadas
-        setLayoutConfig({
-          sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-            ? parsed.sectionsOrder
-            : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
-          receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
-            ? parsed.receitaKpisOrder
-            : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
-          despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
-            ? parsed.despesaKpisOrder
-            : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
-          visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
-        });
+    let isMounted = true;
+    const loadLayout = async () => {
+      try {
+        const res = await fetch("/api/configuracoes/layout?chave=analise_loa_cards_layout");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.valor && isMounted) {
+            const parsed = data.valor;
+            setLayoutConfig({
+              sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+                ? parsed.sectionsOrder
+                : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+              receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
+                ? parsed.receitaKpisOrder
+                : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
+              despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
+                ? parsed.despesaKpisOrder
+                : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+              visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Falha ao carregar layout do banco, tentando localStorage:", err);
       }
-    } catch {}
+
+      // Fallback localstorage
+      try {
+        const savedLayout = localStorage.getItem("painel_loa_cards_config_v1");
+        if (savedLayout && isMounted) {
+          const parsed = JSON.parse(savedLayout);
+          setLayoutConfig({
+            sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+              ? parsed.sectionsOrder
+              : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+            receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
+              ? parsed.receitaKpisOrder
+              : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
+            despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
+              ? parsed.despesaKpisOrder
+              : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+            visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+          });
+        }
+      } catch {}
+    };
+
+    loadLayout();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const handleSaveLayoutConfig = (newConfig: AnaliseLoaLayoutConfig) => {
+  const handleSaveLayoutConfig = async (newConfig: AnaliseLoaLayoutConfig) => {
     setLayoutConfig(newConfig);
+    // Salva no localStorage imediatamente para UX instantânea
     try {
       localStorage.setItem("painel_loa_cards_config_v1", JSON.stringify(newConfig));
     } catch {}
+
+    // Salva no Banco de Dados
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "analise_loa_cards_layout",
+          valor: newConfig,
+        }),
+      });
+    } catch (err) {
+      console.error("Erro ao persistir configuração no banco:", err);
+    }
   };
 
-  const handleResetLayoutConfig = () => {
+  const handleResetLayoutConfig = async () => {
     setLayoutConfig(DEFAULT_LAYOUT_CONFIG);
     try {
       localStorage.removeItem("painel_loa_cards_config_v1");
     } catch {}
+
+    try {
+      await fetch("/api/configuracoes/layout?chave=analise_loa_cards_layout", {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.error("Erro ao resetar configuração no banco:", err);
+    }
   };
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("painel_loa_ldo_planning_v1");
-      if (saved) {
-        setLdoPlanningMap(JSON.parse(saved));
-      }
-    } catch {}
+    let isMounted = true;
+    const loadLdoPlanning = async () => {
+      try {
+        const res = await fetch("/api/configuracoes/layout?chave=painel_loa_ldo_planning");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.valor && isMounted) {
+            setLdoPlanningMap(data.valor);
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        const saved = localStorage.getItem("painel_loa_ldo_planning_v1");
+        if (saved && isMounted) {
+          setLdoPlanningMap(JSON.parse(saved));
+        }
+      } catch {}
+    };
+
+    loadLdoPlanning();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const getLdoPlanningForGroup = (group: EditableGroup): LdoPlanningData => {
