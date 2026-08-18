@@ -268,7 +268,7 @@ export function AnaliseLoaView() {
 
     try {
       localStorage.setItem("painel_loa_validated_rows_v1", JSON.stringify(updated));
-    } catch {}
+    } catch { }
 
     try {
       await fetch("/api/configuracoes/layout", {
@@ -311,7 +311,7 @@ export function AnaliseLoaView() {
     setLdoPlanningMap(updatedMap);
     try {
       localStorage.setItem("painel_loa_ldo_planning_v1", JSON.stringify(updatedMap));
-    } catch {}
+    } catch { }
 
     try {
       await fetch("/api/configuracoes/layout", {
@@ -386,7 +386,7 @@ export function AnaliseLoaView() {
             visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
           });
         }
-      } catch {}
+      } catch { }
     };
 
     loadLayout();
@@ -400,7 +400,7 @@ export function AnaliseLoaView() {
     // Salva no localStorage imediatamente para UX instantânea
     try {
       localStorage.setItem("painel_loa_cards_config_v1", JSON.stringify(newConfig));
-    } catch {}
+    } catch { }
 
     // Salva no Banco de Dados
     try {
@@ -421,7 +421,7 @@ export function AnaliseLoaView() {
     setLayoutConfig(DEFAULT_LAYOUT_CONFIG);
     try {
       localStorage.removeItem("painel_loa_cards_config_v1");
-    } catch {}
+    } catch { }
 
     try {
       await fetch("/api/configuracoes/layout?chave=analise_loa_cards_layout", {
@@ -444,14 +444,14 @@ export function AnaliseLoaView() {
             return;
           }
         }
-      } catch {}
+      } catch { }
 
       try {
         const saved = localStorage.getItem("painel_loa_ldo_planning_v1");
         if (saved && isMounted) {
           setLdoPlanningMap(JSON.parse(saved));
         }
-      } catch {}
+      } catch { }
     };
 
     loadLdoPlanning();
@@ -896,7 +896,7 @@ export function AnaliseLoaView() {
             const removedSet = new Set(removedIds);
             itemsArray = itemsArray.filter((item) => !removedSet.has(item.id));
           }
-        } catch {}
+        } catch { }
 
         // 3. Carregar e aplicar edições de valores
         try {
@@ -943,7 +943,7 @@ export function AnaliseLoaView() {
           if (Object.keys(loadedValidated).length > 0) {
             setValidatedRows(loadedValidated);
           }
-        } catch {}
+        } catch { }
 
         setRawItems(itemsArray);
         setSavedRawItems(JSON.parse(JSON.stringify(itemsArray)));
@@ -1080,7 +1080,7 @@ export function AnaliseLoaView() {
       valLdo: 0,
       valLoa: project.valor,
       origem: "Banco de Projetos",
-      bancoProjetoKey: [project.secretaria, project.objeto, project.natureza, project.valor].join("|") ,
+      bancoProjetoKey: [project.secretaria, project.objeto, project.natureza, project.valor].join("|"),
     };
     setRawItems((previous) => [...previous, item]);
     setHasChanges(true);
@@ -1707,7 +1707,7 @@ export function AnaliseLoaView() {
           valor: savedAdded,
         }),
       });
-    } catch {}
+    } catch { }
 
     // 3. Registrar o item na lista de itens removidos permanentemente
     try {
@@ -1726,7 +1726,7 @@ export function AnaliseLoaView() {
           }),
         });
       }
-    } catch {}
+    } catch { }
 
     // 4. Se tiver edição de valor gravada para esse ID, limpar
     try {
@@ -1743,7 +1743,7 @@ export function AnaliseLoaView() {
           }),
         });
       }
-    } catch {}
+    } catch { }
 
     setRemovedRawItems((prev) => [...prev.filter((entry) => entry.id !== item.id), item]);
     setHasChanges(false);
@@ -1883,7 +1883,7 @@ export function AnaliseLoaView() {
       if (img.complete && img.naturalWidth > 0) {
         doc.addImage(img, "PNG", margin, 6, 20, 20);
       }
-    } catch {}
+    } catch { }
 
     const programs = Array.from(editableGroups.reduce((map, group) => {
       const key = group.programa || "Programa não informado";
@@ -2098,13 +2098,12 @@ export function AnaliseLoaView() {
           )}
           <div
             onClick={(e) => handleNodeSelect(node, e)}
-            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all ${
-              isSelected
+            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all ${isSelected
                 ? "bg-primary/15 font-bold text-primary border border-primary/30 shadow-sm"
                 : isExpanded
-                ? "bg-surface-container/60 font-semibold"
-                : "hover:bg-surface-container/50"
-            }`}
+                  ? "bg-surface-container/60 font-semibold"
+                  : "hover:bg-surface-container/50"
+              }`}
           >
             <div className="flex items-center gap-2 min-w-0 pr-2">
               {hasChildren ? (
@@ -2475,18 +2474,17 @@ export function AnaliseLoaView() {
                         <button
                           type="button"
                           onClick={() => setOpenFilterKey(isOpen ? null : key)}
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${
-                            selectedCount
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${selectedCount
                               ? "bg-primary/10 border-primary font-bold text-primary"
                               : "bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container/60"
-                          }`}
+                            }`}
                         >
                           <span className="truncate">
                             {selectedCount === 0
                               ? "Todos"
                               : selectedCount === 1
-                              ? selectedValues[0]
-                              : `${selectedCount} sel.`}
+                                ? selectedValues[0]
+                                : `${selectedCount} sel.`}
                           </span>
                           <span className="material-symbols-outlined text-xs shrink-0">
                             {isOpen ? "expand_less" : "expand_more"}
@@ -2534,11 +2532,10 @@ export function AnaliseLoaView() {
                                     return (
                                       <label
                                         key={opt}
-                                        className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors ${
-                                          isChecked
+                                        className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors ${isChecked
                                             ? "bg-primary/10 text-primary font-semibold"
                                             : "hover:bg-surface-container/60 text-on-surface"
-                                        }`}
+                                          }`}
                                       >
                                         <input
                                           type="checkbox"
@@ -2642,19 +2639,18 @@ export function AnaliseLoaView() {
                     <button
                       type="button"
                       onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                      className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${
-                        statusFilters.length > 0
+                      className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${statusFilters.length > 0
                           ? "border-primary text-primary bg-primary/5 font-bold"
                           : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
-                      }`}
+                        }`}
                     >
                       <span className="material-symbols-outlined text-sm">filter_alt</span>
                       <span>
                         {statusFilters.length === 0
                           ? "Status/Ajustado"
                           : statusFilters.length === 1
-                          ? statusFilters[0]
-                          : `${statusFilters.length} status sel.`}
+                            ? statusFilters[0]
+                            : `${statusFilters.length} status sel.`}
                       </span>
                       <span className="material-symbols-outlined text-xs">
                         {statusDropdownOpen ? "expand_less" : "expand_more"}
@@ -2692,9 +2688,8 @@ export function AnaliseLoaView() {
                             return (
                               <label
                                 key={st.label}
-                                className={`flex items-center justify-between p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                                  checked ? "bg-primary/10 font-bold text-primary" : "hover:bg-surface-container text-on-surface"
-                                }`}
+                                className={`flex items-center justify-between p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${checked ? "bg-primary/10 font-bold text-primary" : "hover:bg-surface-container text-on-surface"
+                                  }`}
                               >
                                 <div className="flex items-center gap-2">
                                   <input
@@ -2732,13 +2727,12 @@ export function AnaliseLoaView() {
                   <button
                     onClick={handleSaveEdits}
                     disabled={savingState === "saving"}
-                    className={`min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${
-                      hasChanges
+                    className={`min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${hasChanges
                         ? "bg-primary text-on-primary ring-2 ring-primary/40 hover:bg-primary/90"
                         : savingState === "saved"
-                        ? "bg-emerald-600 text-white"
-                        : "bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high"
-                    }`}
+                          ? "bg-emerald-600 text-white"
+                          : "bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high"
+                      }`}
                   >
                     <span className="material-symbols-outlined text-sm">
                       {savingState === "saving" ? "sync" : savingState === "saved" ? "check_circle" : "save"}
@@ -2825,698 +2819,693 @@ export function AnaliseLoaView() {
                         return natureSort.direction === "asc" ? res : -res;
                       });
 
-                  return (
-                    <Fragment key={group.id}>
-                      {/* NÍVEL 1: LINHA DA AÇÃO (PAI) - AZUL MAIS CLARO E SUAVE */}
-                      <tr className={`border-t border-sky-200/60 dark:border-sky-900/40 transition-colors ${
-                        isExpanded
-                          ? "bg-sky-100/50 dark:bg-sky-950/60 border-b border-sky-200/80 shadow-xs"
-                          : "bg-sky-50/40 hover:bg-sky-50/90 dark:bg-sky-950/25 dark:hover:bg-sky-950/40"
-                      }`}>
-                        <td className="p-3 font-sans font-bold text-on-surface w-[320px] min-w-[280px] sm:w-[450px] sm:min-w-[350px]">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedEditGroups((previous) => {
-                                const next = new Set(previous);
-                                if (next.has(group.id)) next.delete(group.id);
-                                else next.add(group.id);
-                                return next;
-                              })}
-                              className={`min-h-9 min-w-9 rounded-lg flex items-center justify-center shrink-0 transition-all font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${
-                                isExpanded
-                                  ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/40"
-                                  : "border border-sky-300 bg-white text-sky-700 hover:bg-sky-100 dark:bg-slate-900 dark:text-sky-300 dark:border-sky-700"
-                              }`}
-                              aria-label={isExpanded ? "Recolher subelementos" : "Expandir subelementos"}
-                            >
-                              <span className="material-symbols-outlined text-base">{isExpanded ? "expand_less" : "expand_more"}</span>
-                            </button>
-                            <div className="min-w-0 flex-1 truncate" title={`${group.programa} · ${group.acao}`}>
-                              <span className="block text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
-                                {group.programa || "Programa não informado"}
-                              </span>
-                              <span className="block whitespace-normal text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
-                                {group.acao || "Sem Ação"}
-                              </span>
-                              {group.children.some((item) => item.origem === "Banco de Projetos") && (
-                                <span className="mt-1 inline-flex rounded-full bg-secondary-container px-2 py-0.5 text-[9px] font-bold text-on-secondary-container">
-                                  Banco de Projetos
-                                </span>
-                              )}
-                            </div>
-                            {group.children.filter((item) => item.origem === "Banco de Projetos").map((item) => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => handleRemoveBancoProjeto(item)}
-                                className="ml-auto shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                                title="Remover este projeto da LOA"
-                              >
-                                Remover
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => { setAddElementContext(null); setAddExpenseGroup(group); }}
-                              aria-label={`Adicionar Natureza da Despesa em ${group.acao}`}
-                              title="Adicionar Natureza da Despesa"
-                              className="ml-auto flex min-h-8 px-2 items-center gap-1 rounded-lg border border-primary/30 bg-surface text-primary hover:bg-primary/10 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary shrink-0"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">add_circle</span>
-                              <span className="hidden sm:inline">Natureza</span>
-                            </button>
-                          </div>
-                        </td>
-                        <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
-                          {group.elemento}
-                        </td>
-                        <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
-                          {formatBr(group.valLdo)}
-                        </td>
-                        <td className="p-2 border border-outline-variant/20 bg-surface text-right">
-                          <input
-                            type="text"
-                            value={editingCell?.id === group.id && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(group.valLoa)}
-                            onFocus={() => {
-                              setEditingCell({ id: group.id, field: "groupValLoa" });
-                              setTempInputValue(group.valLoa.toFixed(2).replace(".", ","));
-                            }}
-                            onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                            onBlur={() => {
-                              applyGroupLoa(group, parseBr(tempInputValue));
-                              setEditingCell(null);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") event.currentTarget.blur();
-                            }}
-                            className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
-                          />
-                        </td>
-                        <td className={`p-3 text-right font-semibold ${diffColor}`}>
-                          {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
-                        </td>
-                        <td className="p-3 text-center">
-                          <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
-                        </td>
-                        <td className="p-3 text-center">
-                          {groupAdjusted ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
-                              <span className="material-symbols-outlined text-[12px]">edit</span>
-                              <span>Ajustado</span>
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => toggleValidateRow(group.id)}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
-                                validatedRows[group.id]
-                                  ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                  : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                              }`}
-                              title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada (sem alterações necessárias)"}
-                              aria-label={`Validar ação ${group.acao}`}
-                            >
-                              <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
-                              </span>
-                              <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <Fragment>
-                          {/* BLOCO PLANEJAMENTO LDO - 2027 */}
-                          <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/30">
-                            <td colSpan={7} className="p-3 pl-8 sm:pl-12">
-                              <div className="rounded-xl border border-primary/20 bg-surface p-4 shadow-sm space-y-3 dark:bg-surface-container-low">
-                                {/* Header do Bloco */}
-                                <div className="flex items-center justify-between border-b border-outline-variant/30 pb-2">
-                                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
-                                    Planejamento LDO — 2027
+                      return (
+                        <Fragment key={group.id}>
+                          {/* NÍVEL 1: LINHA DA AÇÃO (PAI) - AZUL MAIS CLARO E SUAVE */}
+                          <tr className={`border-t border-sky-200/60 dark:border-sky-900/40 transition-colors ${isExpanded
+                              ? "bg-sky-100/50 dark:bg-sky-950/60 border-b border-sky-200/80 shadow-xs"
+                              : "bg-sky-50/40 hover:bg-sky-50/90 dark:bg-sky-950/25 dark:hover:bg-sky-950/40"
+                            }`}>
+                            <td className="p-3 font-sans font-bold text-on-surface w-[320px] min-w-[280px] sm:w-[450px] sm:min-w-[350px]">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedEditGroups((previous) => {
+                                    const next = new Set(previous);
+                                    if (next.has(group.id)) next.delete(group.id);
+                                    else next.add(group.id);
+                                    return next;
+                                  })}
+                                  className={`min-h-9 min-w-9 rounded-lg flex items-center justify-center shrink-0 transition-all font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${isExpanded
+                                      ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/40"
+                                      : "border border-sky-300 bg-white text-sky-700 hover:bg-sky-100 dark:bg-slate-900 dark:text-sky-300 dark:border-sky-700"
+                                    }`}
+                                  aria-label={isExpanded ? "Recolher subelementos" : "Expandir subelementos"}
+                                >
+                                  <span className="material-symbols-outlined text-base">{isExpanded ? "expand_less" : "expand_more"}</span>
+                                </button>
+                                <div className="min-w-0 flex-1 truncate" title={`${group.programa} · ${group.acao}`}>
+                                  <span className="block text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                                    {group.programa || "Programa não informado"}
                                   </span>
-                                  {editingLdoPlanningGroupKey === group.id ? (
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditingLdoPlanningGroupKey(null)}
-                                        className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
-                                      >
-                                        Cancelar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSaveLdoPlanning(group)}
-                                        className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm"
-                                      >
-                                        Salvar LDO
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStartEditLdoPlanning(group)}
-                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                                    >
-                                      <span className="material-symbols-outlined text-xs">edit</span>
-                                      Editar LDO
-                                    </button>
+                                  <span className="block whitespace-normal text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                                    {group.acao || "Sem Ação"}
+                                  </span>
+                                  {group.children.some((item) => item.origem === "Banco de Projetos") && (
+                                    <span className="mt-1 inline-flex rounded-full bg-secondary-container px-2 py-0.5 text-[9px] font-bold text-on-secondary-container">
+                                      Banco de Projetos
+                                    </span>
                                   )}
                                 </div>
-
-                                {editingLdoPlanningGroupKey === group.id ? (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                                    {/* Card 1: Indicador (Edição) */}
-                                    <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
-                                      <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
-                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                          <span className="material-symbols-outlined text-xs">analytics</span>
+                                {group.children.filter((item) => item.origem === "Banco de Projetos").map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => handleRemoveBancoProjeto(item)}
+                                    className="ml-auto shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                    title="Remover este projeto da LOA"
+                                  >
+                                    Remover
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => { setAddElementContext(null); setAddExpenseGroup(group); }}
+                                  aria-label={`Adicionar Natureza da Despesa em ${group.acao}`}
+                                  title="Adicionar Natureza da Despesa"
+                                  className="ml-auto flex min-h-8 px-2 items-center gap-1 rounded-lg border border-primary/30 bg-surface text-primary hover:bg-primary/10 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary shrink-0"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">add_circle</span>
+                                  <span className="hidden sm:inline">Natureza</span>
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
+                              {group.elemento}
+                            </td>
+                            <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
+                              {formatBr(group.valLdo)}
+                            </td>
+                            <td className="p-2 border border-outline-variant/20 bg-surface text-right">
+                              <input
+                                type="text"
+                                value={editingCell?.id === group.id && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(group.valLoa)}
+                                onFocus={() => {
+                                  setEditingCell({ id: group.id, field: "groupValLoa" });
+                                  setTempInputValue(group.valLoa.toFixed(2).replace(".", ","));
+                                }}
+                                onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                onBlur={() => {
+                                  applyGroupLoa(group, parseBr(tempInputValue));
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") event.currentTarget.blur();
+                                }}
+                                className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
+                              />
+                            </td>
+                            <td className={`p-3 text-right font-semibold ${diffColor}`}>
+                              {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
+                            </td>
+                            <td className="p-3 text-center">
+                              {groupAdjusted ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
+                                  <span className="material-symbols-outlined text-[12px]">edit</span>
+                                  <span>Ajustado</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleValidateRow(group.id)}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[group.id]
+                                      ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                      : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                    }`}
+                                  title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada (sem alterações necessárias)"}
+                                  aria-label={`Validar ação ${group.acao}`}
+                                >
+                                  <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                    {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
+                                  </span>
+                                  <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <Fragment>
+                              {/* BLOCO PLANEJAMENTO LDO - 2027 */}
+                              <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/30">
+                                <td colSpan={7} className="p-3 pl-8 sm:pl-12">
+                                  <div className="rounded-xl border border-primary/20 bg-surface p-4 shadow-sm space-y-3 dark:bg-surface-container-low">
+                                    {/* Header do Bloco */}
+                                    <div className="flex items-center justify-between border-b border-outline-variant/30 pb-2">
+                                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
+                                        Planejamento LDO — 2027
+                                      </span>
+                                      {editingLdoPlanningGroupKey === group.id ? (
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingLdoPlanningGroupKey(null)}
+                                            className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                                          >
+                                            Cancelar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSaveLdoPlanning(group)}
+                                            className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm"
+                                          >
+                                            Salvar LDO
+                                          </button>
                                         </div>
-                                        <span>Indicador</span>
-                                      </label>
-                                      <input
-                                        id="edit-ldo-indicador"
-                                        type="text"
-                                        value={editLdoIndicador}
-                                        onChange={(e) => setEditLdoIndicador(e.target.value)}
-                                        placeholder="Ex: Taxa de atendimento..."
-                                        className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                      />
-                                      <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditLdoPlanning(group)}
+                                          className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                                        >
+                                          <span className="material-symbols-outlined text-xs">edit</span>
+                                          Editar LDO
+                                        </button>
+                                      )}
                                     </div>
 
-                                    {/* Card 2: Unidade de Medida (Edição) */}
-                                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
-                                      <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                          <span className="material-symbols-outlined text-xs">straighten</span>
-                                        </div>
-                                        <span>Unidade de Medida</span>
-                                      </label>
-                                      <input
-                                        id="edit-ldo-unidade"
-                                        type="text"
-                                        value={editLdoUnidadeMedida}
-                                        onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
-                                        placeholder="Ex: %, Unidade, Alunos..."
-                                        className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                      />
-                                      <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
-                                    </div>
-
-                                    {/* Card 3: Custo Físico 2027 (Edição) */}
-                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
-                                      <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
-                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                                          <span className="material-symbols-outlined text-xs">pie_chart</span>
-                                        </div>
-                                        <span>Custo Físico 2027</span>
-                                      </label>
-                                      <input
-                                        id="edit-ldo-custo-fisico"
-                                        type="text"
-                                        value={editLdoCustoFisico}
-                                        onChange={(e) => setEditLdoCustoFisico(e.target.value)}
-                                        placeholder="0,00"
-                                        className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                      />
-                                      <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
-                                    </div>
-
-                                    {/* Card 4: Custo Financeiro LOA (Edição) */}
-                                    {(() => {
-                                      const valorCustoFin = group.valLoa;
-                                      const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
-                                      const diffValor = valorCustoFin - totalNaturezas;
-                                      const hasDiff = Math.abs(diffValor) > 0.01;
-                                      return (
-                                        <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
-                                          <div className="flex items-center justify-between">
-                                            <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-                                              <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
-                                                <span className="material-symbols-outlined text-xs">payments</span>
-                                              </div>
-                                              <span>Custo Financeiro LOA</span>
-                                            </label>
-                                            {hasDiff && (
-                                              <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
-                                                <span className="material-symbols-outlined text-[10px]">warning</span>
-                                                Divergente
-                                              </span>
-                                            )}
-                                          </div>
+                                    {editingLdoPlanningGroupKey === group.id ? (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                        {/* Card 1: Indicador (Edição) */}
+                                        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
+                                          <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                              <span className="material-symbols-outlined text-xs">analytics</span>
+                                            </div>
+                                            <span>Indicador</span>
+                                          </label>
                                           <input
-                                            id="edit-ldo-custo-fin"
+                                            id="edit-ldo-indicador"
                                             type="text"
-                                            value={editLdoCustoFinanceiro}
-                                            onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
-                                            placeholder={formatBr(group.valLoa)}
-                                            className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                            value={editLdoIndicador}
+                                            onChange={(e) => setEditLdoIndicador(e.target.value)}
+                                            placeholder="Ex: Taxa de atendimento..."
+                                            className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                           />
-                                          {hasDiff ? (
-                                            <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
-                                              Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
-                                            </p>
-                                          ) : (
-                                            <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
-                                          )}
+                                          <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
                                         </div>
-                                      );
-                                    })()}
-                                  </div>
-                                ) : (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                                    {(() => {
-                                      const data = getLdoPlanningForGroup(group);
-                                      const formattedCustoFisico = data.custoFisico2027 != null
-                                        ? data.custoFisico2027.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                        : "0,00";
-                                      const valorCustoFin = group.valLoa;
-                                      const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
-                                      const diffValor = valorCustoFin - totalNaturezas;
-                                      const hasDiff = Math.abs(diffValor) > 0.01;
 
-                                      return (
-                                        <>
-                                          {/* Card 1: Indicador (Visualização) */}
-                                          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
-                                            <div>
-                                              <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
-                                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                                  <span className="material-symbols-outlined text-sm">analytics</span>
-                                                </div>
-                                                <span>Indicador</span>
-                                              </div>
-                                              <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
-                                                {data.indicador || "Não informado"}
-                                              </p>
+                                        {/* Card 2: Unidade de Medida (Edição) */}
+                                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                          <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                              <span className="material-symbols-outlined text-xs">straighten</span>
                                             </div>
-                                          </div>
+                                            <span>Unidade de Medida</span>
+                                          </label>
+                                          <input
+                                            id="edit-ldo-unidade"
+                                            type="text"
+                                            value={editLdoUnidadeMedida}
+                                            onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
+                                            placeholder="Ex: %, Unidade, Alunos..."
+                                            className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                          />
+                                          <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
+                                        </div>
 
-                                          {/* Card 2: Unidade de Medida (Visualização) */}
-                                          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
-                                            <div>
-                                              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-                                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                                  <span className="material-symbols-outlined text-sm">straighten</span>
-                                                </div>
-                                                <span>Unidade de Medida</span>
-                                              </div>
-                                              <p className="mt-2 text-base font-extrabold text-on-surface">
-                                                {data.unidadeMedida || "Não informado"}
-                                              </p>
+                                        {/* Card 3: Custo Físico 2027 (Edição) */}
+                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
+                                          <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                              <span className="material-symbols-outlined text-xs">pie_chart</span>
                                             </div>
-                                          </div>
+                                            <span>Custo Físico 2027</span>
+                                          </label>
+                                          <input
+                                            id="edit-ldo-custo-fisico"
+                                            type="text"
+                                            value={editLdoCustoFisico}
+                                            onChange={(e) => setEditLdoCustoFisico(e.target.value)}
+                                            placeholder="0"
+                                            className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                          />
+                                          <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
+                                        </div>
 
-                                          {/* Card 3: Custo Físico 2027 (Visualização) */}
-                                          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
-                                            <div>
-                                              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
-                                                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                                                  <span className="material-symbols-outlined text-sm">pie_chart</span>
-                                                </div>
-                                                <span>Custo Físico 2027</span>
-                                              </div>
-                                              <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
-                                                {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
-                                              </p>
-                                            </div>
-                                          </div>
-
-                                          {/* Card 4: Custo Financeiro LOA (Visualização) */}
-                                          <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
-                                            <div>
+                                        {/* Card 4: Custo Financeiro LOA (Edição) */}
+                                        {(() => {
+                                          const valorCustoFin = group.valLoa;
+                                          const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                          const diffValor = valorCustoFin - totalNaturezas;
+                                          const hasDiff = Math.abs(diffValor) > 0.01;
+                                          return (
+                                            <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
                                               <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-                                                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
-                                                    <span className="material-symbols-outlined text-sm">payments</span>
+                                                <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                    <span className="material-symbols-outlined text-xs">payments</span>
                                                   </div>
                                                   <span>Custo Financeiro LOA</span>
-                                                </div>
+                                                </label>
                                                 {hasDiff && (
-                                                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
-                                                    <span className="material-symbols-outlined text-[11px]">warning</span>
+                                                  <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                    <span className="material-symbols-outlined text-[10px]">warning</span>
                                                     Divergente
                                                   </span>
                                                 )}
                                               </div>
-                                              <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
-                                                {currency.format(valorCustoFin)}
-                                              </p>
+                                              <input
+                                                id="edit-ldo-custo-fin"
+                                                type="text"
+                                                value={editLdoCustoFinanceiro}
+                                                onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
+                                                placeholder={formatBr(group.valLoa)}
+                                                className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                              />
+                                              {hasDiff ? (
+                                                <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
+                                                  Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
+                                                </p>
+                                              ) : (
+                                                <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
+                                              )}
                                             </div>
-                                          </div>
-                                        </>
-                                      );
-                                    })()}
+                                          );
+                                        })()}
+                                      </div>
+                                    ) : (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                        {(() => {
+                                          const data = getLdoPlanningForGroup(group);
+                                          const formattedCustoFisico = data.custoFisico2027 != null
+                                            ? data.custoFisico2027.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+                                            : "0";
+                                          const valorCustoFin = group.valLoa;
+                                          const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                          const diffValor = valorCustoFin - totalNaturezas;
+                                          const hasDiff = Math.abs(diffValor) > 0.01;
+
+                                          return (
+                                            <>
+                                              {/* Card 1: Indicador (Visualização) */}
+                                              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
+                                                <div>
+                                                  <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                                      <span className="material-symbols-outlined text-sm">analytics</span>
+                                                    </div>
+                                                    <span>Indicador</span>
+                                                  </div>
+                                                  <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
+                                                    {data.indicador || "Não informado"}
+                                                  </p>
+                                                </div>
+                                              </div>
+
+                                              {/* Card 2: Unidade de Medida (Visualização) */}
+                                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
+                                                <div>
+                                                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                                      <span className="material-symbols-outlined text-sm">straighten</span>
+                                                    </div>
+                                                    <span>Unidade de Medida</span>
+                                                  </div>
+                                                  <p className="mt-2 text-base font-extrabold text-on-surface">
+                                                    {data.unidadeMedida || "Não informado"}
+                                                  </p>
+                                                </div>
+                                              </div>
+
+                                              {/* Card 3: Custo Físico 2027 (Visualização) */}
+                                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
+                                                <div>
+                                                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                      <span className="material-symbols-outlined text-sm">pie_chart</span>
+                                                    </div>
+                                                    <span>Custo Físico 2027</span>
+                                                  </div>
+                                                  <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                    {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
+                                                  </p>
+                                                </div>
+                                              </div>
+
+                                              {/* Card 4: Custo Financeiro LOA (Visualização) */}
+                                              <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
+                                                <div>
+                                                  <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                        <span className="material-symbols-outlined text-sm">payments</span>
+                                                      </div>
+                                                      <span>Custo Financeiro LOA</span>
+                                                    </div>
+                                                    {hasDiff && (
+                                                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                        <span className="material-symbols-outlined text-[11px]">warning</span>
+                                                        Divergente
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                    {currency.format(valorCustoFin)}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
+                                </td>
+                              </tr>
 
-                          {/* DETALHAMENTO ORÇAMENTÁRIO HEADER INTERATIVO COM ORDENAÇÃO */}
-                          <tr className="bg-sky-50/50 dark:bg-sky-950/30 border-y border-sky-100 dark:border-sky-900/40 text-[10px] font-extrabold uppercase tracking-wider text-sky-900 dark:text-sky-200">
-                            <th className="p-2 pl-12 text-left">
-                              <button
-                                type="button"
-                                onClick={() => setNatureSort((curr) => ({ column: "natureza", direction: curr.column === "natureza" && curr.direction === "asc" ? "desc" : "asc" }))}
-                                className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
-                                title="Ordenar por Natureza / Elemento"
-                              >
-                                <span>Natureza / Elemento</span>
-                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "natureza" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
-                                  {natureSort.column === "natureza" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
-                                </span>
-                              </button>
-                            </th>
-                            <th className="p-2 text-left">
-                              <button
-                                type="button"
-                                onClick={() => setNatureSort((curr) => ({ column: "subelementos", direction: curr.column === "subelementos" && curr.direction === "asc" ? "desc" : "asc" }))}
-                                className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
-                                title="Ordenar por Quantidade de Subelementos"
-                              >
-                                <span>Subelementos</span>
-                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "subelementos" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
-                                  {natureSort.column === "subelementos" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
-                                </span>
-                              </button>
-                            </th>
-                            <th className="p-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setNatureSort((curr) => ({ column: "valLdo", direction: curr.column === "valLdo" && curr.direction === "asc" ? "desc" : "asc" }))}
-                                className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
-                                title="Ordenar por Valor LDO"
-                              >
-                                <span>Valor LDO</span>
-                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLdo" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
-                                  {natureSort.column === "valLdo" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
-                                </span>
-                              </button>
-                            </th>
-                            <th className="p-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setNatureSort((curr) => ({ column: "valLoa", direction: curr.column === "valLoa" && curr.direction === "asc" ? "desc" : "asc" }))}
-                                className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
-                                title="Ordenar por Valor LOA"
-                              >
-                                <span>Valor LOA</span>
-                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLoa" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
-                                  {natureSort.column === "valLoa" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
-                                </span>
-                              </button>
-                            </th>
-                            <th className="p-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setNatureSort((curr) => ({ column: "diff", direction: curr.column === "diff" && curr.direction === "asc" ? "desc" : "asc" }))}
-                                className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
-                                title="Ordenar por Diferença"
-                              >
-                                <span>Diferença</span>
-                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "diff" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
-                                  {natureSort.column === "diff" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
-                                </span>
-                              </button>
-                            </th>
-                            <th className="p-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => setNatureSort((curr) => ({ column: "status", direction: curr.column === "status" && curr.direction === "asc" ? "desc" : "asc" }))}
-                                className="inline-flex items-center gap-1 mx-auto hover:text-sky-700 transition-colors cursor-pointer"
-                                title="Ordenar por Status"
-                              >
-                                <span>Status</span>
-                                <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "status" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
-                                  {natureSort.column === "status" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
-                                </span>
-                              </button>
-                            </th>
-                            <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Ajustado</th>
-                          </tr>
+                              {/* DETALHAMENTO ORÇAMENTÁRIO HEADER INTERATIVO COM ORDENAÇÃO */}
+                              <tr className="bg-sky-50/50 dark:bg-sky-950/30 border-y border-sky-100 dark:border-sky-900/40 text-[10px] font-extrabold uppercase tracking-wider text-sky-900 dark:text-sky-200">
+                                <th className="p-2 pl-12 text-left">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNatureSort((curr) => ({ column: "natureza", direction: curr.column === "natureza" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                    className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
+                                    title="Ordenar por Natureza / Elemento"
+                                  >
+                                    <span>Natureza / Elemento</span>
+                                    <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "natureza" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                      {natureSort.column === "natureza" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                    </span>
+                                  </button>
+                                </th>
+                                <th className="p-2 text-left">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNatureSort((curr) => ({ column: "subelementos", direction: curr.column === "subelementos" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                    className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
+                                    title="Ordenar por Quantidade de Subelementos"
+                                  >
+                                    <span>Subelementos</span>
+                                    <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "subelementos" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                      {natureSort.column === "subelementos" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                    </span>
+                                  </button>
+                                </th>
+                                <th className="p-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNatureSort((curr) => ({ column: "valLdo", direction: curr.column === "valLdo" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                    className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                    title="Ordenar por Valor LDO"
+                                  >
+                                    <span>Valor LDO</span>
+                                    <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLdo" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                      {natureSort.column === "valLdo" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                    </span>
+                                  </button>
+                                </th>
+                                <th className="p-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNatureSort((curr) => ({ column: "valLoa", direction: curr.column === "valLoa" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                    className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                    title="Ordenar por Valor LOA"
+                                  >
+                                    <span>Valor LOA</span>
+                                    <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLoa" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                      {natureSort.column === "valLoa" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                    </span>
+                                  </button>
+                                </th>
+                                <th className="p-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNatureSort((curr) => ({ column: "diff", direction: curr.column === "diff" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                    className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                    title="Ordenar por Diferença"
+                                  >
+                                    <span>Diferença</span>
+                                    <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "diff" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                      {natureSort.column === "diff" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                    </span>
+                                  </button>
+                                </th>
+                                <th className="p-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNatureSort((curr) => ({ column: "status", direction: curr.column === "status" && curr.direction === "asc" ? "desc" : "asc" }))}
+                                    className="inline-flex items-center gap-1 mx-auto hover:text-sky-700 transition-colors cursor-pointer"
+                                    title="Ordenar por Status"
+                                  >
+                                    <span>Status</span>
+                                    <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "status" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
+                                      {natureSort.column === "status" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                                    </span>
+                                  </button>
+                                </th>
+                                <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Ajustado</th>
+                              </tr>
 
-                          {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
-                          {natureGroups.map(([natureza, natureItems]) => {
-                            const natureKey = `${group.id}|${natureza}`;
-                            const natureExpanded = expandedNatureGroups.has(natureKey);
-                            const natureLdo = natureItems.reduce((sum, item) => sum + item.valLdo, 0);
-                            const natureLoa = natureItems.reduce((sum, item) => sum + item.valLoa, 0);
-                            const natureDiff = natureLoa - natureLdo;
-                            const natureStatus = getStatusInfo(natureLdo, natureLoa);
-                            return (
-                              <Fragment key={natureKey}>
-                                <tr className="bg-surface hover:bg-surface-container/60 transition-colors border-b border-outline-variant/20">
-                                  <td className="p-2.5 pl-8 sm:pl-12 font-sans font-medium text-on-surface" title={getNatureLabel(natureza, natureItems[0]?.elemento)}>
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      {/* Linha guia conectora da árvore */}
-                                      <span className="text-outline-variant/80 font-mono text-xs select-none">├──</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setExpandedNatureGroups((previous) => {
-                                          const next = new Set(previous);
-                                          if (next.has(natureKey)) next.delete(natureKey);
-                                          else next.add(natureKey);
-                                          return next;
-                                        })}
-                                        className={`flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-md border text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                                          natureExpanded
-                                            ? "border-primary/40 bg-primary/10 text-primary font-bold"
-                                            : "border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container"
-                                        }`}
-                                        aria-label={natureExpanded ? "Recolher subelementos da natureza" : "Expandir subelementos da natureza"}
-                                      >
-                                        <span className="material-symbols-outlined text-[14px]">{natureExpanded ? "expand_more" : "chevron_right"}</span>
-                                      </button>
-                                      <span className="truncate font-mono text-xs font-semibold text-on-surface">
-                                        {getNatureLabel(natureza, natureItems[0]?.elemento)}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setAddExpenseGroup(group);
-                                          setAddElementContext({ group, natureza });
-                                          setNewExpenseNatureza(natureza.split("-")[0].trim());
-                                        }}
-                                        className="ml-auto flex min-h-6 px-1.5 shrink-0 items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 text-amber-800 hover:bg-amber-100 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700/60"
-                                        title="Adicionar Elemento de Despesa"
-                                        aria-label={`Adicionar Elemento de Despesa em ${getNatureLabel(natureza, natureItems[0]?.elemento)}`}
-                                      >
-                                        <span className="material-symbols-outlined text-[13px]">add</span>
-                                        <span className="hidden sm:inline">Elemento</span>
-                                      </button>
-                                    </div>
-                                  </td>
-                                  <td className="p-2.5 text-on-surface-variant font-sans text-xs">
-                                    {natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}
-                                  </td>
-                                  <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>
-                                  <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                    <input
-                                      type="text"
-                                      value={editingCell?.id === natureKey && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(natureLoa)}
-                                      onFocus={() => {
-                                        setEditingCell({ id: natureKey, field: "groupValLoa" });
-                                        setTempInputValue(natureLoa.toFixed(2).replace(".", ","));
-                                      }}
-                                      onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                      onBlur={() => {
-                                        applyNatureLoa(natureItems, parseBr(tempInputValue));
-                                        setEditingCell(null);
-                                      }}
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter") event.currentTarget.blur();
-                                      }}
-                                      className="w-32 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                    />
-                                  </td>
-                                  <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
-                                    {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
-                                  </td>
-                                  <td className="p-2.5 text-center">
-                                    <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
-                                  </td>
-                                  <td className="p-2.5 text-center text-xs text-on-surface-variant/60">—</td>
-                                </tr>
-
-                                {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (NETOS) */}
-                                {natureExpanded && natureItems.map((item) => {
-                                  const original = originalValuesById.get(item.id) ?? item.valLdo;
-                                  const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
-
-                                  return (
-                                    <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
-                                      <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="text-outline-variant/80 font-mono text-xs select-none">│   └──</span>
-                                          <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-                                            <span className="text-on-surface font-medium text-xs">{getSubelementLabel(item)}</span>
-                                            {item.processo && item.processo !== "—" && (
-                                              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-xs">
-                                                <span className="material-symbols-outlined text-[12px]">folder</span>
-                                                <span>Processo: {item.processo}</span>
-                                              </span>
-                                            )}
-                                          </div>
+                              {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
+                              {natureGroups.map(([natureza, natureItems]) => {
+                                const natureKey = `${group.id}|${natureza}`;
+                                const natureExpanded = expandedNatureGroups.has(natureKey);
+                                const natureLdo = natureItems.reduce((sum, item) => sum + item.valLdo, 0);
+                                const natureLoa = natureItems.reduce((sum, item) => sum + item.valLoa, 0);
+                                const natureDiff = natureLoa - natureLdo;
+                                const natureStatus = getStatusInfo(natureLdo, natureLoa);
+                                return (
+                                  <Fragment key={natureKey}>
+                                    <tr className="bg-surface hover:bg-surface-container/60 transition-colors border-b border-outline-variant/20">
+                                      <td className="p-2.5 pl-8 sm:pl-12 font-sans font-medium text-on-surface" title={getNatureLabel(natureza, natureItems[0]?.elemento)}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          {/* Linha guia conectora da árvore */}
+                                          <span className="text-outline-variant/80 font-mono text-xs select-none">├──</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setExpandedNatureGroups((previous) => {
+                                              const next = new Set(previous);
+                                              if (next.has(natureKey)) next.delete(natureKey);
+                                              else next.add(natureKey);
+                                              return next;
+                                            })}
+                                            className={`flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-md border text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${natureExpanded
+                                                ? "border-primary/40 bg-primary/10 text-primary font-bold"
+                                                : "border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container"
+                                              }`}
+                                            aria-label={natureExpanded ? "Recolher subelementos da natureza" : "Expandir subelementos da natureza"}
+                                          >
+                                            <span className="material-symbols-outlined text-[14px]">{natureExpanded ? "expand_more" : "chevron_right"}</span>
+                                          </button>
+                                          <span className="truncate font-mono text-xs font-semibold text-on-surface">
+                                            {getNatureLabel(natureza, natureItems[0]?.elemento)}
+                                          </span>
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              setEditingSubelementItem(item);
-                                              setEditSubelementName(getSubelementLabel(item));
-                                              setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
-                                              setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
+                                              setAddExpenseGroup(group);
+                                              setAddElementContext({ group, natureza });
+                                              setNewExpenseNatureza(natureza.split("-")[0].trim());
                                             }}
-                                            className="ml-auto inline-flex items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary opacity-80 hover:bg-primary/10 hover:opacity-100 transition-all"
-                                            title="Editar subelemento"
-                                            aria-label={`Editar ${getSubelementLabel(item)}`}
+                                            className="ml-auto flex min-h-6 px-1.5 shrink-0 items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 text-amber-800 hover:bg-amber-100 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700/60"
+                                            title="Adicionar Elemento de Despesa"
+                                            aria-label={`Adicionar Elemento de Despesa em ${getNatureLabel(natureza, natureItems[0]?.elemento)}`}
                                           >
-                                            <span className="material-symbols-outlined text-[13px]">edit</span>
-                                            <span>Editar</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => removeSubelement(item)}
-                                            className="ml-1 rounded p-0.5 text-rose-600 opacity-60 hover:bg-rose-50 hover:opacity-100 transition-all"
-                                            title="Remover subelemento"
-                                            aria-label={`Remover ${getSubelementLabel(item)}`}
-                                          >
-                                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                                            <span className="material-symbols-outlined text-[13px]">add</span>
+                                            <span className="hidden sm:inline">Elemento</span>
                                           </button>
                                         </div>
                                       </td>
-                                      <td className="p-2 text-right font-mono text-on-surface-variant/60 text-xs">—</td>
+                                      <td className="p-2.5 text-on-surface-variant font-sans text-xs">
+                                        {natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}
+                                      </td>
+                                      <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>
                                       <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
                                         <input
                                           type="text"
-                                          value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
+                                          value={editingCell?.id === natureKey && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(natureLoa)}
                                           onFocus={() => {
-                                            setEditingCell({ id: item.id, field: "valLoa" });
-                                            setTempInputValue(item.valLoa.toFixed(2).replace(".", ","));
+                                            setEditingCell({ id: natureKey, field: "groupValLoa" });
+                                            setTempInputValue(natureLoa.toFixed(2).replace(".", ","));
                                           }}
-                                          onChange={(event) => {
-                                            const sanitizedValue = event.target.value.replace(/-/g, "");
-                                            setTempInputValue(sanitizedValue);
-                                            const value = parseBr(sanitizedValue);
-                                            setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valLoa: value } : entry));
-                                            setHasChanges(true);
+                                          onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                          onBlur={() => {
+                                            applyNatureLoa(natureItems, parseBr(tempInputValue));
+                                            setEditingCell(null);
                                           }}
-                                          onBlur={() => setEditingCell(null)}
-                                          className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Enter") event.currentTarget.blur();
+                                          }}
+                                          className="w-32 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
                                         />
                                       </td>
-                                      <td className="p-2 text-right text-on-surface-variant/60 text-xs">—</td>
-                                      <td className="p-2 text-center">
-                                        <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
+                                      <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                        {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
                                       </td>
-                                      <td className="p-2 text-center">
-                                        {childAdjusted ? (
-                                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9.5px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
-                                            <span className="material-symbols-outlined text-[11px]">edit</span>
-                                            <span>Ajustado</span>
-                                          </span>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => toggleValidateRow(item.id)}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${
-                                              validatedRows[item.id]
-                                                ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                                : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                            }`}
-                                            title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento (sem alterações)"}
-                                            aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
-                                          >
-                                            <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                              {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
-                                            </span>
-                                            <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
-                                          </button>
-                                        )}
+                                      <td className="p-2.5 text-center">
+                                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
                                       </td>
+                                      <td className="p-2.5 text-center text-xs text-on-surface-variant/60">—</td>
                                     </tr>
-                                  );
-                                })}
-                              </Fragment>
-                              );
-                            })}
-                          </Fragment>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              <tfoot className="bg-surface-container sticky bottom-0 z-10 font-mono font-bold text-xs border-t-2 border-outline-variant">
-                <tr>
-                  <td colSpan={2} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
-                    Total Geral Filtrado ({filteredItems.length} registros)
-                  </td>
-                  <td className="p-3 text-right text-on-surface-variant font-extrabold">
-                    {formatBr(metrics.valLdoTotal)}
-                  </td>
-                  <td className="p-3 text-right text-primary font-extrabold">
-                    {formatBr(metrics.valLoaTotal)}
-                  </td>
-                  <td className={`p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
-                    {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
-                  </td>
-                  <td className="p-3 text-center text-on-surface-variant text-[10px]">
-                    TOTALIZADOR
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
 
-          {/* Controles de Paginação (Padrão 10 linhas) */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 mt-2 border-t border-outline-variant text-xs">
-            <div className="flex items-center gap-2 text-on-surface-variant">
-              <span>
-                Exibindo <strong>{editableGroups.length > 0 ? (tablePage - 1) * tablePageSize + 1 : 0}</strong> a{" "}
-                <strong>{Math.min(tablePage * tablePageSize, editableGroups.length)}</strong> de <strong>{editableGroups.length}</strong> ações
-              </span>
-              <select
-                value={tablePageSize}
-                onChange={(e) => {
-                  setTablePageSize(Number(e.target.value));
-                  setTablePage(1);
-                }}
-                className="px-2 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface ml-2 font-medium"
-              >
-                <option value={10}>10 por página</option>
-                <option value={20}>20 por página</option>
-                <option value={50}>50 por página</option>
-                <option value={100}>100 por página</option>
-                <option value={editableGroups.length || 9999}>Todas</option>
-              </select>
-            </div>
+                                    {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (NETOS) */}
+                                    {natureExpanded && natureItems.map((item) => {
+                                      const original = originalValuesById.get(item.id) ?? item.valLdo;
+                                      const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
 
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={tablePage <= 1}
-                onClick={() => setTablePage((p) => Math.max(1, p - 1))}
-                className="px-2.5 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container font-semibold transition-colors"
-              >
-                Anterior
-              </button>
-              <span className="px-3 font-semibold text-on-surface text-xs">
-                Página {tablePage} de {totalTablePages}
-              </span>
-              <button
-                type="button"
-                disabled={tablePage >= totalTablePages}
-                onClick={() => setTablePage((p) => Math.min(totalTablePages, p + 1))}
-                className="px-2.5 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container font-semibold transition-colors"
-              >
-                Próxima
-              </button>
+                                      return (
+                                        <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
+                                          <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="text-outline-variant/80 font-mono text-xs select-none">│   └──</span>
+                                              <div className="min-w-0 flex-1 flex flex-col items-start gap-1">
+                                                <span className="text-on-surface font-medium text-xs">{getSubelementLabel(item)}</span>
+                                                {item.processo && item.processo !== "—" && (
+                                                  <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-xs">
+                                                    <span className="material-symbols-outlined text-[12px]">folder</span>
+                                                    <span>Processo: {item.processo}</span>
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEditingSubelementItem(item);
+                                                  setEditSubelementName(getSubelementLabel(item));
+                                                  setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
+                                                  setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
+                                                }}
+                                                className="ml-auto inline-flex items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary opacity-80 hover:bg-primary/10 hover:opacity-100 transition-all"
+                                                title="Editar subelemento"
+                                                aria-label={`Editar ${getSubelementLabel(item)}`}
+                                              >
+                                                <span className="material-symbols-outlined text-[13px]">edit</span>
+                                                <span>Editar</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => removeSubelement(item)}
+                                                className="ml-1 rounded p-0.5 text-rose-600 opacity-60 hover:bg-rose-50 hover:opacity-100 transition-all"
+                                                title="Remover subelemento"
+                                                aria-label={`Remover ${getSubelementLabel(item)}`}
+                                              >
+                                                <span className="material-symbols-outlined text-[15px]">delete</span>
+                                              </button>
+                                            </div>
+                                          </td>
+                                          <td className="p-2 text-right font-mono text-on-surface-variant/60 text-xs">—</td>
+                                          <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <input
+                                              type="text"
+                                              value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: item.id, field: "valLoa" });
+                                                setTempInputValue(item.valLoa.toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valLoa: value } : entry));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
+                                            />
+                                          </td>
+                                          <td className="p-2 text-right text-on-surface-variant/60 text-xs">—</td>
+                                          <td className="p-2 text-center">
+                                            <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
+                                          </td>
+                                          <td className="p-2 text-center">
+                                            {childAdjusted ? (
+                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9.5px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
+                                                <span className="material-symbols-outlined text-[11px]">edit</span>
+                                                <span>Ajustado</span>
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => toggleValidateRow(item.id)}
+                                                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[item.id]
+                                                    ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                                    : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                                  }`}
+                                                title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento (sem alterações)"}
+                                                aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
+                                              >
+                                                <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                                  {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
+                                                </span>
+                                                <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
+                                              </button>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </Fragment>
+                                );
+                              })}
+                            </Fragment>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-surface-container sticky bottom-0 z-10 font-mono font-bold text-xs border-t-2 border-outline-variant">
+                    <tr>
+                      <td colSpan={2} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
+                        Total Geral Filtrado ({filteredItems.length} registros)
+                      </td>
+                      <td className="p-3 text-right text-on-surface-variant font-extrabold">
+                        {formatBr(metrics.valLdoTotal)}
+                      </td>
+                      <td className="p-3 text-right text-primary font-extrabold">
+                        {formatBr(metrics.valLoaTotal)}
+                      </td>
+                      <td className={`p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
+                        {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
+                      </td>
+                      <td className="p-3 text-center text-on-surface-variant text-[10px]">
+                        TOTALIZADOR
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Controles de Paginação (Padrão 10 linhas) */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 mt-2 border-t border-outline-variant text-xs">
+                <div className="flex items-center gap-2 text-on-surface-variant">
+                  <span>
+                    Exibindo <strong>{editableGroups.length > 0 ? (tablePage - 1) * tablePageSize + 1 : 0}</strong> a{" "}
+                    <strong>{Math.min(tablePage * tablePageSize, editableGroups.length)}</strong> de <strong>{editableGroups.length}</strong> ações
+                  </span>
+                  <select
+                    value={tablePageSize}
+                    onChange={(e) => {
+                      setTablePageSize(Number(e.target.value));
+                      setTablePage(1);
+                    }}
+                    className="px-2 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface ml-2 font-medium"
+                  >
+                    <option value={10}>10 por página</option>
+                    <option value={20}>20 por página</option>
+                    <option value={50}>50 por página</option>
+                    <option value={100}>100 por página</option>
+                    <option value={editableGroups.length || 9999}>Todas</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={tablePage <= 1}
+                    onClick={() => setTablePage((p) => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container font-semibold transition-colors"
+                  >
+                    Anterior
+                  </button>
+                  <span className="px-3 font-semibold text-on-surface text-xs">
+                    Página {tablePage} de {totalTablePages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={tablePage >= totalTablePages}
+                    onClick={() => setTablePage((p) => Math.min(totalTablePages, p + 1))}
+                    className="px-2.5 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface disabled:opacity-40 disabled:cursor-not-allowed hover:bg-surface-container font-semibold transition-colors"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      );
-    }
+          );
+        }
 
         // Seção 6: Sub-elementos de Despesa & Iniciativas Estratégicas
         if (sectionId === "subelementos-iniciativas") {
@@ -3840,8 +3829,8 @@ export function AnaliseLoaView() {
                     const diffBadge = isRemoved
                       ? "text-rose-700 bg-rose-50 border-rose-200 font-extrabold"
                       : diff > 0
-                      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                      : "text-rose-700 bg-rose-50 border-rose-200";
+                        ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                        : "text-rose-700 bg-rose-50 border-rose-200";
 
                     return (
                       <div key={item.id} className="p-4 rounded-xl bg-surface-container/40 border border-outline-variant/60 space-y-3">
@@ -4126,11 +4115,11 @@ export function AnaliseLoaView() {
                     previous.map((entry) =>
                       entry.id === editingSubelementItem.id
                         ? {
-                            ...entry,
-                            subelemento: editSubelementName.trim() || entry.subelemento,
-                            processo: editSubelementProcesso.trim() || "—",
-                            valLoa: newValor,
-                          }
+                          ...entry,
+                          subelemento: editSubelementName.trim() || entry.subelemento,
+                          processo: editSubelementProcesso.trim() || "—",
+                          valLoa: newValor,
+                        }
                         : entry
                     )
                   );
