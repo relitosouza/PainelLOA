@@ -6,14 +6,14 @@ import { EMPTY_DASHBOARD_FILTERS, type DashboardFilterState } from "@/lib/dashbo
 
 export const FIELD_LABELS: Record<FieldKey, string> = {
   organ: "Secretaria",
-  budgetUnit: "Unidade Orçamentária",
+  budgetUnit: "Unidade",
   functionName: "Função",
   subfunction: "Subfunção",
   program: "Programa",
   action: "Ação",
-  expenseNature: "Natureza da Despesa",
+  expenseNature: "Natureza",
   subelement: "Subelemento",
-  administrativeProcess: "Processo Administrativo",
+  administrativeProcess: "Processo",
 };
 
 export type FilterState = DashboardFilterState;
@@ -33,6 +33,8 @@ export function Filters({
   onClear(): void;
 }) {
   const [showRange, setShowRange] = useState(false);
+  const [openFilterKey, setOpenFilterKey] = useState<FieldKey | null>(null);
+  const [filterSearchQuery, setFilterSearchQuery] = useState<Partial<Record<FieldKey, string>>>({});
 
   const activeCount =
     FIELDS.reduce((sum, field) => sum + (filters[field]?.length || 0), 0) +
@@ -71,7 +73,7 @@ export function Filters({
               placeholder="Buscar por código, ação, palavra-chave..."
               value={filters.search || ""}
               onChange={(e) => onChange({ ...filters, search: e.target.value })}
-              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-60"
+              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
               data-testid="filters-search"
             />
             {filters.search && (
@@ -154,50 +156,125 @@ export function Filters({
         </div>
       )}
 
-      {/* Grade de Select Chips (idêntico à página Analise LOA) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-        {FIELDS.map((field) => {
-          const selected = filters[field] || [];
-          const selectedCount = selected.length;
-          const rawOptions = options[field] || [];
-          // Filtrar números de 4 dígitos ou formato XX.YY das opções de Natureza/Subelemento se houver
-          const filteredOpts = rawOptions
+      {/* Grade de Filtros Popover Multi-Select (Idêntico ao da página Análise LOA) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-3">
+        {FIELDS.map((key) => {
+          const fieldLabel = FIELD_LABELS[key] || key;
+          const selectedValues = (filters[key] || []) as string[];
+          const selectedCount = selectedValues.length;
+          const rawOptions = options[key] || [];
+          const allOptions = rawOptions
             .filter((opt) => {
               const trimmed = opt.trim();
               return !/^\d{4}$/.test(trimmed) && !/^\d{2}\.\d{2}$/.test(trimmed);
             })
             .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
 
+          const searchQ = (filterSearchQuery[key] || "").toLowerCase();
+          const visibleOptions = allOptions.filter((opt) => opt.toLowerCase().includes(searchQ));
+          const isOpen = openFilterKey === key;
+
           return (
-            <div key={field} className="flex flex-col gap-1" data-testid={`filter-${field}-select`}>
+            <div key={key} className="relative flex flex-col gap-1" data-testid={`filter-${key}-select`}>
               <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
-                <span>{FIELD_LABELS[field]}</span>
+                <span>{fieldLabel}</span>
+                {selectedCount > 0 && (
+                  <span className="text-[10px] text-primary font-extrabold">{selectedCount}</span>
+                )}
               </label>
-              <select
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (!val) return;
-                  const alreadySelected = selected.includes(val);
-                  const nextValues = alreadySelected
-                    ? selected.filter((v) => v !== val)
-                    : [...selected, val];
-                  onChange({ ...filters, [field]: nextValues });
-                }}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+              <button
+                type="button"
+                onClick={() => setOpenFilterKey(isOpen ? null : key)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${
                   selectedCount
-                    ? "bg-primary/5 border-primary font-bold text-primary cursor-pointer"
-                    : "bg-surface border-outline-variant text-on-surface-variant cursor-pointer hover:bg-surface-container/50"
+                    ? "bg-primary/10 border-primary font-bold text-primary"
+                    : "bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container/60"
                 }`}
-                value=""
-                data-testid={`filter-${field}-summary`}
+                data-testid={`filter-${key}-summary`}
               >
-                <option value="">{selectedCount ? `${selectedCount} sel.` : "Todos"}</option>
-                {filteredOpts.slice(0, 150).map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+                <span className="truncate">
+                  {selectedCount === 0
+                    ? "Todos"
+                    : selectedCount === 1
+                    ? selectedValues[0]
+                    : `${selectedCount} sel.`}
+                </span>
+                <span className="material-symbols-outlined text-xs shrink-0">
+                  {isOpen ? "expand_less" : "expand_more"}
+                </span>
+              </button>
+
+              {isOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-30"
+                    onClick={() => setOpenFilterKey(null)}
+                  />
+                  <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
+                    <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
+                      <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
+                      {selectedCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onChange({ ...filters, [key]: [] });
+                          }}
+                          className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder={`Buscar ${fieldLabel.toLowerCase()}...`}
+                      value={filterSearchQuery[key] || ""}
+                      onChange={(e) =>
+                        setFilterSearchQuery((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                      className="w-full px-2 py-1 text-xs rounded-md border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+
+                    <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+                      {visibleOptions.length === 0 ? (
+                        <p className="text-[11px] text-on-surface-variant p-2 text-center">Nenhuma opção encontrada</p>
+                      ) : (
+                        visibleOptions.map((opt) => {
+                          const isChecked = selectedValues.includes(opt);
+                          return (
+                            <label
+                              key={opt}
+                              className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors ${
+                                isChecked
+                                  ? "bg-primary/10 text-primary font-semibold"
+                                  : "hover:bg-surface-container/60 text-on-surface"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  const current = (filters[key] || []) as string[];
+                                  const next = isChecked
+                                    ? current.filter((v) => v !== opt)
+                                    : [...current, opt];
+                                  onChange({
+                                    ...filters,
+                                    [key]: next,
+                                  });
+                                }}
+                                className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
+                              />
+                              <span className="truncate min-w-0" title={opt}>{opt}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           );
         })}
@@ -247,3 +324,4 @@ export function Filters({
     </section>
   );
 }
+

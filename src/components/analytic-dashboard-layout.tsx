@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DataSourceToggle } from "./data-source-toggle";
 import { currency, integer, percent } from "@/lib/format";
 import type { DashboardData } from "@/types/loa";
@@ -10,6 +10,11 @@ import { Filters, EMPTY_FILTERS, type FilterState } from "./filters";
 import { BarChart } from "./bar-chart";
 import { AnalisesCombinadasSection } from "./analises-combinadas";
 import { SecretariasMenu } from "./secretarias-menu";
+import {
+  DashboardCardsConfigDialog,
+  type AnalyticDashboardLayoutConfig,
+  DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG,
+} from "./dashboard-cards-config-dialog";
 
 function normalizeText(value: string) {
   return value
@@ -349,6 +354,547 @@ export function AnalyticDashboardLayout({
   const importsForExercise = data.imports.filter((item) => item.exercise === exerciseYear);
   const primaryLinks = getPrimaryPageLinks("dashboard");
 
+  // Estado e persistência da personalização de cards e seções
+  const [cardsConfigModalOpen, setCardsConfigModalOpen] = useState(false);
+  const [layoutConfig, setLayoutConfig] = useState<AnalyticDashboardLayoutConfig>(DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadLayout = async () => {
+      try {
+        const res = await fetch("/api/configuracoes/layout?chave=analytic_dashboard_cards_layout");
+        if (res.ok) {
+          const result = await res.json();
+          if (result.success && result.valor && isMounted) {
+            const parsed = result.valor;
+            setLayoutConfig({
+              sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+                ? parsed.sectionsOrder
+                : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder,
+              topCardsOrder: Array.isArray(parsed.topCardsOrder) && parsed.topCardsOrder.length > 0
+                ? parsed.topCardsOrder
+                : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.topCardsOrder,
+              visibility: { ...DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Falha ao carregar layout da visão analítica do banco, tentando localStorage:", err);
+      }
+
+      try {
+        const saved = localStorage.getItem("analytic_dashboard_layout_config_v1");
+        if (saved && isMounted) {
+          const parsed = JSON.parse(saved);
+          setLayoutConfig({
+            sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
+              ? parsed.sectionsOrder
+              : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder,
+            topCardsOrder: Array.isArray(parsed.topCardsOrder) && parsed.topCardsOrder.length > 0
+              ? parsed.topCardsOrder
+              : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.topCardsOrder,
+            visibility: { ...DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
+          });
+        }
+      } catch { }
+    };
+
+    loadLayout();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSaveLayoutConfig = async (newConfig: AnalyticDashboardLayoutConfig) => {
+    setLayoutConfig(newConfig);
+    try {
+      localStorage.setItem("analytic_dashboard_layout_config_v1", JSON.stringify(newConfig));
+    } catch { }
+
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "analytic_dashboard_cards_layout",
+          valor: newConfig,
+        }),
+      });
+    } catch (err) {
+      console.error("Erro ao salvar layout da visão analítica:", err);
+    }
+  };
+
+  const handleResetLayoutConfig = async () => {
+    setLayoutConfig(DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG);
+    try {
+      localStorage.removeItem("analytic_dashboard_layout_config_v1");
+    } catch { }
+
+    try {
+      await fetch("/api/configuracoes/layout?chave=analytic_dashboard_cards_layout", {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.error("Erro ao resetar layout da visão analítica:", err);
+    }
+  };
+
+  const isVisible = (id: string) => layoutConfig.visibility[id] !== false;
+
+  const renderTopCard = (cardId: string) => {
+    if (!isVisible(cardId)) return null;
+
+    switch (cardId) {
+      case "card-ldo":
+        return (
+          <article key="card-ldo" className="glass-card bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+            <div className="z-10">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1">Despesa LDO (2027)</p>
+              <h3 className="text-2xl font-headline font-bold text-emerald-900 dark:text-emerald-100">{formatCompactMoney(5868871609.91)}</h3>
+              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">Previsão 1.142 registros</p>
+            </div>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-emerald-500/10">gavel</span>
+          </article>
+        );
+      case "card-loa":
+        return (
+          <article key="card-loa" className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+            <div className="z-10">
+              <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Despesa LOA (2027)</p>
+              <h3 className="text-2xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
+              <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1">{integer.format(data.quality.totalRecords)} registros fixados</p>
+            </div>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-blue-500/10">account_balance_wallet</span>
+          </article>
+        );
+      case "card-correntes":
+        return (
+          <article key="card-correntes" className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+            <div className="z-10">
+              <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Despesa Total Fixada"}</p>
+              <h3 className="text-2xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(isRealData ? operatingVal : expenseTotal)}</h3>
+              <p className="text-[11px] text-orange-600 dark:text-orange-400 mt-1">Pessoal e Custeio</p>
+            </div>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-500/10">payments</span>
+          </article>
+        );
+      case "card-investimentos":
+        return (
+          <article key="card-investimentos" className="glass-card bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+            <div className="z-10">
+              <p className="text-xs font-bold text-teal-700 dark:text-teal-300 uppercase tracking-wider mb-1">Investimentos (LOA)</p>
+              <h3 className="text-2xl font-headline font-bold text-teal-900 dark:text-teal-100">{formatCompactMoney(investmentVal)}</h3>
+              <p className="text-[11px] text-teal-600 dark:text-teal-400 mt-1">Obras e Capital</p>
+            </div>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-teal-500/10">engineering</span>
+          </article>
+        );
+      case "card-conformidade":
+        return (
+          <article key="card-conformidade" className="glass-card bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-5 flex flex-col justify-center h-32">
+            <div>
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1">Conformidade LOA</p>
+              <h3 className="text-lg font-headline font-bold text-amber-900 dark:text-amber-100">{percent.format(data.quality.coverage)}</h3>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{integer.format(data.quality.warningRecords)} alertas de cadastro</p>
+            </div>
+          </article>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderSection = (sectionId: string) => {
+    if (!isVisible(sectionId)) return null;
+
+    switch (sectionId) {
+      case "top-kpis": {
+        const renderedCards = layoutConfig.topCardsOrder.map(renderTopCard).filter(Boolean);
+        if (renderedCards.length === 0) return null;
+        return (
+          <section key="top-kpis" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            {renderedCards}
+          </section>
+        );
+      }
+      case "analises-combinadas":
+        return <AnalisesCombinadasSection key="analises-combinadas" />;
+      case "filtros":
+        return (
+          <Filters
+            key="filtros"
+            filters={filters}
+            options={data.filterOptions}
+            total={data.totals.filtered}
+            onChange={onChange}
+            onClear={() => onChange(EMPTY_FILTERS)}
+          />
+        );
+      case "classificacao-despesa":
+        return (
+          <section key="classificacao-despesa" aria-labelledby="classification-title" className="space-y-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 id="classification-title" className="text-xl font-headline font-bold text-on-surface">Classificação da Despesa</h3>
+                <p className="text-sm text-on-surface-variant">Categoria, grupo, modalidade, classificação econômica e subelemento no recorte selecionado.</p>
+              </div>
+              <span className="text-xs font-semibold text-on-surface-variant">{dataSource === "real" ? `Importação real · exercício ${exerciseYear ?? "não identificado"}` : "Base simulada preservada"}</span>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <BarChart title="Categoria da Despesa" subtitle="Participação no valor importado" data={data.classifications.category} changeable />
+              <BarChart title="Grupo de Despesa" subtitle="Distribuição por grupo orçamentário" data={data.classifications.expenseGroup} changeable />
+              <BarChart title="Modalidade de Aplicação" subtitle="Principais formas de aplicação" data={data.classifications.modality} changeable />
+              <BarChart title="Classificação Econômica" subtitle="Naturezas com maior valor previsto" data={data.classifications.economic} changeable />
+              <BarChart title="Subelementos" subtitle="Detalhamento informado na planilha" data={data.classifications.subelement} changeable />
+            </div>
+          </section>
+        );
+      case "menu-secretarias":
+        return <SecretariasMenu key="menu-secretarias" data={data} filters={filters} onChange={onChange} totalVal={totalVal} />;
+      case "composicao-analise":
+        return (
+          <div key="composicao-analise" className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-2 px-1">
+                <span className="material-symbols-outlined text-tertiary">trending_up</span>
+                <h3 className="text-xl font-headline font-bold text-on-surface">{isRealData ? "Composição Econômica da Despesa" : "Análise da Receita Pública"}</h3>
+              </div>
+
+              <section className="glass-card p-6">
+                <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Detalhamento por Categoria</h4>
+                <div className="space-y-4">
+                  <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/30">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">{isRealData ? "Despesas Correntes" : "Receita Corrente"}</span>
+                      <span className="text-sm font-bold text-tertiary">{formatCompactMoney(currentRevenue)}</span>
+                    </div>
+                    <div className="w-full bg-surface-variant rounded-full h-1.5">
+                      <div className="bg-tertiary h-1.5 rounded-full" style={{ width: `${totalVal > 0 ? (currentRevenue / totalVal) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                  <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/30">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">{isRealData ? "Despesas de Capital" : "Receita de Capital"}</span>
+                      <span className="text-sm font-bold text-tertiary">{formatCompactMoney(capitalRevenue)}</span>
+                    </div>
+                    <div className="w-full bg-surface-variant rounded-full h-1.5">
+                      <div className="bg-tertiary-container h-1.5 rounded-full" style={{ width: `${totalVal > 0 ? (capitalRevenue / totalVal) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <h5 className="text-xs font-bold uppercase text-on-surface-variant mb-3">{isRealData ? "Distribuição por Modalidade de Aplicação" : "Distribuição por Origem"}</h5>
+                  <div className="flex h-10 rounded-lg overflow-hidden shadow-inner mb-4">
+                    {originBlocks.map((block) => (
+                      <div key={block.label} className={`${block.tone} h-full flex items-center justify-center text-[10px] font-bold ${block.text}`} style={{ width: `${block.value}%` }}>
+                        {String(block.value).replace(".", ",")}%
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-medium text-on-surface-variant">
+                    {originBlocks.map((block) => (
+                      <div key={block.label} className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${block.tone}`} />
+                        {block.label} ({formatCompactMoney(totalVal * (block.value / 100))})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-card p-6">
+                <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">{isRealData ? "Métricas Per Capita (Despesa)" : "Métricas Per Capita (Receita)"}</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-surface rounded-lg border border-outline-variant/30">
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Total / Habitante</p>
+                    <p className="text-xl font-bold text-on-surface">{currency.format(totalVal / population)}</p>
+                  </div>
+                  <div className="p-4 bg-surface rounded-lg border border-outline-variant/30">
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">{isRealData ? "Capital / Habitante" : "Própria / Habitante"}</p>
+                    <p className="text-xl font-bold text-tertiary">{currency.format((isRealData ? investmentVal : totalVal * 0.41) / population)}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-card p-6">
+                <div className="flex items-center gap-2 mb-4 text-tertiary">
+                  <span className="material-symbols-outlined text-sm">lightbulb</span>
+                  <h4 className="text-sm font-bold uppercase">{isRealData ? "Leitura da Importação" : "Insights de Receita"}</h4>
+                </div>
+                <ul className="space-y-3">
+                  <li className="flex gap-3 items-start">
+                    <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
+                    <p className="text-sm text-on-surface-variant">{isRealData ? `${percent.format(totalVal ? operatingVal / totalVal : 0)} do valor importado corresponde a despesas correntes.` : "A arrecadação própria atingiu 41%, demonstrando robustez fiscal municipal."}</p>
+                  </li>
+                  <li className="flex gap-3 items-start">
+                    <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
+                    <p className="text-sm text-on-surface-variant">{isRealData ? `${integer.format(data.quality.warningRecords)} registros foram mantidos nos totais com sinalização cadastral.` : "Os grupos funcionais mais relevantes concentram a maior parcela dos recursos."}</p>
+                  </li>
+                </ul>
+              </section>
+            </div>
+
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-2 px-1">
+                <span className="material-symbols-outlined text-orange-600">trending_down</span>
+                <h3 className="text-xl font-headline font-bold text-on-surface">Análise da Despesa Pública</h3>
+              </div>
+
+              <section className="glass-card p-6 border-t-4 border-t-orange-500">
+                <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Estrutura do Orçamento de Despesa</h4>
+                <div className="space-y-4">
+                  {expenseBlocks.map((block) => (
+                    <div
+                      key={block.label}
+                      className={`bg-surface-container rounded-lg p-3 border border-outline-variant/30 flex justify-between items-center ${
+                        block.highlight ? "ring-2 ring-orange-500/20" : ""
+                      }`}
+                    >
+                      <div>
+                        <p className={`text-[10px] uppercase font-bold ${block.highlight ? "text-orange-700" : "text-on-surface-variant"}`}>{block.label}</p>
+                        <p className={`text-lg font-bold ${block.highlight ? "text-orange-700" : "text-on-surface"}`}>
+                          {formatCompactMoney(block.value)} <span className={`text-xs font-normal ml-2 ${block.highlight ? "text-orange-600" : "text-on-surface-variant"}`}>({block.share}%)</span>
+                        </p>
+                      </div>
+                      {block.highlight ? (
+                        <span className="material-symbols-outlined text-orange-600">rocket_launch</span>
+                      ) : (
+                        <div className="w-12 h-1.5 bg-orange-200 rounded-full overflow-hidden">
+                          <div className="bg-orange-500 h-full" style={{ width: `${block.share}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  <div className="p-3 bg-surface rounded border border-outline-variant/30">
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Amortização Dívida</p>
+                    <p className="text-md font-bold text-on-surface">{formatCompactMoney(amortizationValue)}</p>
+                  </div>
+                  <div className="p-3 bg-surface rounded border border-outline-variant/30">
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Reserva Contingência</p>
+                    <p className="text-md font-bold text-on-surface">{formatCompactMoney(contingencyValue)}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-card p-6">
+                <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Concentração e Rankings</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-orange-600">medical_services</span>
+                      <div className="text-sm">
+                        <p className="font-bold text-on-surface">{organLeader?.label || "Saúde"}</p>
+                        <p className="text-xs text-on-surface-variant">Maior Órgão Executor</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-on-surface">{formatCompactMoney(organLeader?.value ?? 0)}</p>
+                      <p className="text-[10px] text-orange-600 font-bold">{totalVal ? `${Math.round(((organLeader?.value ?? 0) / totalVal) * 100)}% do Total` : "0% do Total"}</p>
+                    </div>
+                  </div>
+                  <div className="p-3 border border-outline-variant/30 rounded-lg">
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-2">Top Programas e Ações</p>
+                    <div className="space-y-2">
+                      {topPrograms.map((item) => (
+                        <div key={item.label} className="flex justify-between text-sm gap-4">
+                          <span className="text-on-surface-variant truncate pr-4">{item.label}</span>
+                          <span className="font-bold shrink-0">{formatCompactMoney(item.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-[10px] text-on-surface-variant italic">As maiores estruturas concentram a maior parte da despesa total.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-card p-6">
+                <div className="flex items-center gap-2 mb-4 text-orange-600">
+                  <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                  <h4 className="text-sm font-bold uppercase">Insights de Despesa (IA)</h4>
+                </div>
+                <div className="space-y-3">
+                  <div className="p-3 bg-orange-50 rounded text-sm text-on-surface-variant border border-orange-200">
+                    Investimentos representam {expenseTotal ? `${Math.round((investmentVal / expenseTotal) * 100)}%` : "0%"} do orçamento, com maior peso nos projetos de expansão.
+                  </div>
+                  <div className="p-3 bg-surface-container rounded text-sm text-on-surface-variant">
+                    Identificadas {data.counts.actions} ações vinculadas ao plano, indicando boa granularidade de execução.
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        );
+      case "pergunte-orcamento":
+        return (
+          <section key="pergunte-orcamento" className="glass-card p-6 bg-surface">
+            <div className="flex items-center gap-2 mb-4 text-primary">
+              <span className="material-symbols-outlined text-xl">help_outline</span>
+              <h4 className="text-sm font-bold uppercase tracking-wider text-on-surface">Pergunte ao orçamento</h4>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {questions.map((q) => (
+                <button
+                  key={q.id}
+                  onClick={() => {
+                    handleQuestionClick(q.id);
+                    void askAssistant(q.label);
+                  }}
+                  className={`inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] cursor-pointer ${q.colorClass}`}
+                >
+                  <span className={`material-symbols-outlined text-[16px] ${q.iconColorClass}`}>{q.icon}</span>
+                  {q.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 rounded-2xl border border-outline-variant bg-surface-container-low p-4">
+              <form
+                className="flex flex-col gap-2 md:flex-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void askAssistant(assistantQuestion);
+                }}
+              >
+                <label htmlFor="analytic-assistant-question" className="sr-only">Pergunte ao orçamento</label>
+                <input
+                  id="analytic-assistant-question"
+                  value={assistantQuestion}
+                  onChange={(event) => setAssistantQuestion(event.target.value)}
+                  placeholder="Ou escreva uma pergunta sobre os dados selecionados..."
+                  maxLength={500}
+                  className="min-h-11 flex-1 rounded-xl border border-outline-variant bg-surface px-4 text-sm text-on-surface outline-none focus:border-tertiary"
+                />
+                <button
+                  type="submit"
+                  disabled={assistantLoading || !assistantQuestion.trim()}
+                  className="rounded-xl bg-tertiary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-tertiary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {assistantLoading ? "Consultando..." : "Perguntar"}
+                </button>
+              </form>
+              {assistantError && <p role="alert" className="mt-3 rounded-xl bg-error-container px-3 py-2 text-xs text-on-error-container">{assistantError}</p>}
+              {assistantAnswer && (
+                <div className="mt-4 rounded-2xl border border-tertiary/30 bg-surface p-4">
+                  <p className="text-sm leading-6 text-on-surface">{assistantAnswer.answer}</p>
+                  {assistantAnswer.details && assistantAnswer.details.length > 0 && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      {assistantAnswer.details.map((detail) => (
+                        <div key={detail.label} className="rounded-xl bg-surface-container-low p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">{detail.label}</p>
+                          <p className="mt-1 text-sm font-bold text-tertiary">{detail.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {assistantAnswer.warning && <p className="mt-3 text-[11px] text-on-surface-variant">{assistantAnswer.warning}</p>}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      case "fluxo-recursos":
+        return (
+          <section key="fluxo-recursos" className="glass-card p-8">
+            <div className="text-center mb-8">
+              <h4 className="text-lg font-headline font-bold text-on-surface">Fluxo de Aplicação de Recursos</h4>
+              <p className="text-sm text-on-surface-variant">Como {isRealData ? "o valor importado" : "a receita"} de {formatCompactMoney(totalVal)} é distribuído entre as principais naturezas de despesa.</p>
+            </div>
+            <div className="relative flex flex-col md:flex-row items-center justify-between gap-8 max-w-4xl mx-auto">
+              <div className="w-full md:w-48 p-6 bg-tertiary text-on-tertiary rounded-xl text-center shadow-lg z-10">
+                <p className="text-[10px] uppercase font-bold opacity-80 mb-1">{isRealData ? "Valor Importado" : "Receita Total"}</p>
+                <p className="text-2xl font-extrabold">{formatCompactMoney(totalVal)}</p>
+              </div>
+              <div className="hidden md:block absolute left-48 right-48 top-1/2 -translate-y-1/2 h-40 opacity-20 pointer-events-none">
+                <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
+                  <path className="text-tertiary" d="M0,50 C50,50 50,20 100,20" fill="none" stroke="currentColor" strokeWidth="2" />
+                  <path className="text-tertiary" d="M0,50 C50,50 50,50 100,50" fill="none" stroke="currentColor" strokeWidth="2" />
+                  <path className="text-tertiary" d="M0,50 C50,50 50,80 100,80" fill="none" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              </div>
+              <div className="flex flex-col gap-4 w-full md:w-48">
+                <div className="p-3 bg-surface border border-orange-200 rounded-lg shadow-sm text-center">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase">Pessoal</p>
+                  <p className="font-bold text-on-surface">{formatCompactMoney(expenseBlocks[0]?.value ?? 0)}</p>
+                </div>
+                <div className="p-3 bg-surface border border-orange-200 rounded-lg shadow-sm text-center">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase">Custeio</p>
+                  <p className="font-bold text-on-surface">{formatCompactMoney(expenseBlocks[1]?.value ?? 0)}</p>
+                </div>
+                <div className="p-3 bg-orange-100 border border-orange-300 rounded-lg shadow-sm text-center">
+                  <p className="text-[10px] font-bold text-orange-800 uppercase">Investimentos</p>
+                  <p className="font-bold text-orange-800">{formatCompactMoney(expenseBlocks[2]?.value ?? 0)}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      case "despesa-habitante":
+        return (
+          <section key="despesa-habitante" className="glass-card overflow-hidden">
+            <div className="p-6 border-b border-outline-variant bg-surface">
+              <h4 className="text-sm font-semibold text-on-surface">Indicadores de Despesa por Habitante</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr className="bg-surface-container border-b border-outline-variant text-on-surface-variant font-semibold text-xs tracking-wider">
+                    <th className="px-6 py-4">Indicador</th>
+                    <th className="px-6 py-4">Valor Total</th>
+                    <th className="px-6 py-4">Valor por Habitante</th>
+                    <th className="px-6 py-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/30">
+                  {perCapitaRows.map((row) => (
+                    <tr key={row.label} className="hover:bg-surface-container-low/30">
+                      <td className="px-6 py-4 font-semibold text-on-surface">{row.label}</td>
+                      <td className="px-6 py-4 text-on-surface font-medium">{formatCompactMoney(row.total)}</td>
+                      <td className="px-6 py-4 font-semibold text-on-surface">{currency.format(row.perCapita)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                          row.tone === "green" 
+                            ? "bg-green-100 text-green-800" 
+                            : "bg-blue-100 text-blue-800"
+                        }`}>
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      case "destaques-finais":
+        return (
+          <section key="destaques-finais" className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <article className="glass-card bg-surface p-5">
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Receita Corrente"}</p>
+              <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(currentRevenue)}</h4>
+              <p className="text-xs text-on-surface-variant mt-2">{topHealthFunction?.label || "Maior função"}</p>
+            </article>
+            <article className="glass-card bg-surface p-5">
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Educação</p>
+              <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(educationValue || totalVal * 0.2)}</h4>
+              <p className="text-xs text-on-surface-variant mt-2">{topEducationFunction?.label || "Segundo maior eixo"}</p>
+            </article>
+            <article className="glass-card bg-surface p-5">
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Obras e Infraestrutura</p>
+              <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(infrastructureValue || totalVal * 0.08)}</h4>
+              <p className="text-xs text-on-surface-variant mt-2">{topInfrastructureFunction?.label || "Carteira estratégica"}</p>
+            </article>
+          </section>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="animate-fade-in space-y-8">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -359,7 +905,7 @@ export function AnalyticDashboardLayout({
           <p className="text-on-surface-variant mt-1">
             {isRealData ? "Valores, classificações e alertas da importação selecionada." : "Gestão orçamentária integrada: análise de fontes e aplicações de recursos."}
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             {primaryLinks.map((link) => (
               <Link
                 key={link.key}
@@ -370,6 +916,16 @@ export function AnalyticDashboardLayout({
                 {link.label}
               </Link>
             ))}
+
+            <button
+              type="button"
+              onClick={() => setCardsConfigModalOpen(true)}
+              className="inline-flex items-center gap-2 bg-surface border border-primary/40 text-primary hover:bg-primary/10 px-4 py-2 text-sm font-semibold rounded-lg shadow-sm transition-all cursor-pointer ml-auto"
+              title="Personalizar cards e seções da Visão Analítica"
+            >
+              <span className="material-symbols-outlined text-[18px]">dashboard_customize</span>
+              Personalizar Cards
+            </button>
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-3 bg-surface px-4 py-3 border border-outline-variant rounded-lg text-sm font-medium text-on-surface">
@@ -405,404 +961,19 @@ export function AnalyticDashboardLayout({
         </div>
       </header>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <article className="glass-card bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
-          <div className="z-10">
-            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1">Despesa LDO (2027)</p>
-            <h3 className="text-2xl font-headline font-bold text-emerald-900 dark:text-emerald-100">{formatCompactMoney(5868871609.91)}</h3>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">Previsão 1.142 registros</p>
-          </div>
-          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-emerald-500/10">gavel</span>
-        </article>
-        <article className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
-          <div className="z-10">
-            <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Despesa LOA (2027)</p>
-            <h3 className="text-2xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
-            <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1">{integer.format(data.quality.totalRecords)} registros fixados</p>
-          </div>
-          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-blue-500/10">account_balance_wallet</span>
-        </article>
-        <article className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
-          <div className="z-10">
-            <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Despesa Total Fixada"}</p>
-            <h3 className="text-2xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(isRealData ? operatingVal : expenseTotal)}</h3>
-            <p className="text-[11px] text-orange-600 dark:text-orange-400 mt-1">Pessoal e Custeio</p>
-          </div>
-          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-500/10">payments</span>
-        </article>
-        <article className="glass-card bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
-          <div className="z-10">
-            <p className="text-xs font-bold text-teal-700 dark:text-teal-300 uppercase tracking-wider mb-1">Investimentos (LOA)</p>
-            <h3 className="text-2xl font-headline font-bold text-teal-900 dark:text-teal-100">{formatCompactMoney(investmentVal)}</h3>
-            <p className="text-[11px] text-teal-600 dark:text-teal-400 mt-1">Obras e Capital</p>
-          </div>
-          <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-teal-500/10">engineering</span>
-        </article>
-        <article className="glass-card bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-5 flex flex-col justify-center h-32">
-          <div>
-            <p className="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1">Conformidade LOA</p>
-            <h3 className="text-lg font-headline font-bold text-amber-900 dark:text-amber-100">{percent.format(data.quality.coverage)}</h3>
-            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{integer.format(data.quality.warningRecords)} alertas de cadastro</p>
-          </div>
-        </article>
-      </section>
+      {/* Renderização dinâmica das seções ordenadas e configuradas */}
+      {layoutConfig.sectionsOrder.map(renderSection)}
 
-      <AnalisesCombinadasSection />
-
-      <Filters
-        filters={filters}
-        options={data.filterOptions}
-        total={data.totals.filtered}
-        onChange={onChange}
-        onClear={() => onChange(EMPTY_FILTERS)}
+      {/* Diálogo de Personalização */}
+      <DashboardCardsConfigDialog
+        isOpen={cardsConfigModalOpen}
+        onClose={() => setCardsConfigModalOpen(false)}
+        config={layoutConfig}
+        onSaveConfig={handleSaveLayoutConfig}
+        onResetConfig={handleResetLayoutConfig}
       />
-
-      <section aria-labelledby="classification-title" className="space-y-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 id="classification-title" className="text-xl font-headline font-bold text-on-surface">Classificação da Despesa</h3>
-            <p className="text-sm text-on-surface-variant">Categoria, grupo, modalidade, classificação econômica e subelemento no recorte selecionado.</p>
-          </div>
-          <span className="text-xs font-semibold text-on-surface-variant">{dataSource === "real" ? `Importação real · exercício ${exerciseYear ?? "não identificado"}` : "Base simulada preservada"}</span>
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <BarChart title="Categoria da Despesa" subtitle="Participação no valor importado" data={data.classifications.category} changeable />
-          <BarChart title="Grupo de Despesa" subtitle="Distribuição por grupo orçamentário" data={data.classifications.expenseGroup} changeable />
-          <BarChart title="Modalidade de Aplicação" subtitle="Principais formas de aplicação" data={data.classifications.modality} changeable />
-          <BarChart title="Classificação Econômica" subtitle="Naturezas com maior valor previsto" data={data.classifications.economic} changeable />
-          <BarChart title="Subelementos" subtitle="Detalhamento informado na planilha" data={data.classifications.subelement} changeable />
-        </div>
-      </section>
-
-      <SecretariasMenu data={data} filters={filters} onChange={onChange} totalVal={totalVal} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center gap-2 px-1">
-            <span className="material-symbols-outlined text-tertiary">trending_up</span>
-            <h3 className="text-xl font-headline font-bold text-on-surface">{isRealData ? "Composição Econômica da Despesa" : "Análise da Receita Pública"}</h3>
-          </div>
-
-          <section className="glass-card p-6">
-            <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Detalhamento por Categoria</h4>
-            <div className="space-y-4">
-              <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/30">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">{isRealData ? "Despesas Correntes" : "Receita Corrente"}</span>
-                  <span className="text-sm font-bold text-tertiary">{formatCompactMoney(currentRevenue)}</span>
-                </div>
-                <div className="w-full bg-surface-variant rounded-full h-1.5">
-                  <div className="bg-tertiary h-1.5 rounded-full" style={{ width: `${totalVal > 0 ? (currentRevenue / totalVal) * 100 : 0}%` }} />
-                </div>
-              </div>
-              <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/30">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">{isRealData ? "Despesas de Capital" : "Receita de Capital"}</span>
-                  <span className="text-sm font-bold text-tertiary">{formatCompactMoney(capitalRevenue)}</span>
-                </div>
-                <div className="w-full bg-surface-variant rounded-full h-1.5">
-                  <div className="bg-tertiary-container h-1.5 rounded-full" style={{ width: `${totalVal > 0 ? (capitalRevenue / totalVal) * 100 : 0}%` }} />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <h5 className="text-xs font-bold uppercase text-on-surface-variant mb-3">{isRealData ? "Distribuição por Modalidade de Aplicação" : "Distribuição por Origem"}</h5>
-              <div className="flex h-10 rounded-lg overflow-hidden shadow-inner mb-4">
-                {originBlocks.map((block) => (
-                  <div key={block.label} className={`${block.tone} h-full flex items-center justify-center text-[10px] font-bold ${block.text}`} style={{ width: `${block.value}%` }}>
-                    {String(block.value).replace(".", ",")}%
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-medium text-on-surface-variant">
-                {originBlocks.map((block) => (
-                  <div key={block.label} className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${block.tone}`} />
-                    {block.label} ({formatCompactMoney(totalVal * (block.value / 100))})
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="glass-card p-6">
-            <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">{isRealData ? "Métricas Per Capita (Despesa)" : "Métricas Per Capita (Receita)"}</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 bg-surface rounded-lg border border-outline-variant/30">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Total / Habitante</p>
-                <p className="text-xl font-bold text-on-surface">{currency.format(totalVal / population)}</p>
-              </div>
-              <div className="p-4 bg-surface rounded-lg border border-outline-variant/30">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">{isRealData ? "Capital / Habitante" : "Própria / Habitante"}</p>
-                <p className="text-xl font-bold text-tertiary">{currency.format((isRealData ? investmentVal : totalVal * 0.41) / population)}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="glass-card p-6">
-            <div className="flex items-center gap-2 mb-4 text-tertiary">
-              <span className="material-symbols-outlined text-sm">lightbulb</span>
-              <h4 className="text-sm font-bold uppercase">{isRealData ? "Leitura da Importação" : "Insights de Receita"}</h4>
-            </div>
-            <ul className="space-y-3">
-              <li className="flex gap-3 items-start">
-                <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
-                <p className="text-sm text-on-surface-variant">{isRealData ? `${percent.format(totalVal ? operatingVal / totalVal : 0)} do valor importado corresponde a despesas correntes.` : "A arrecadação própria atingiu 41%, demonstrando robustez fiscal municipal."}</p>
-              </li>
-              <li className="flex gap-3 items-start">
-                <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
-                <p className="text-sm text-on-surface-variant">{isRealData ? `${integer.format(data.quality.warningRecords)} registros foram mantidos nos totais com sinalização cadastral.` : "Os grupos funcionais mais relevantes concentram a maior parcela dos recursos."}</p>
-              </li>
-            </ul>
-          </section>
-        </div>
-
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center gap-2 px-1">
-            <span className="material-symbols-outlined text-orange-600">trending_down</span>
-            <h3 className="text-xl font-headline font-bold text-on-surface">Análise da Despesa Pública</h3>
-          </div>
-
-          <section className="glass-card p-6 border-t-4 border-t-orange-500">
-            <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Estrutura do Orçamento de Despesa</h4>
-            <div className="space-y-4">
-              {expenseBlocks.map((block) => (
-                <div
-                  key={block.label}
-                  className={`bg-surface-container rounded-lg p-3 border border-outline-variant/30 flex justify-between items-center ${
-                    block.highlight ? "ring-2 ring-orange-500/20" : ""
-                  }`}
-                >
-                  <div>
-                    <p className={`text-[10px] uppercase font-bold ${block.highlight ? "text-orange-700" : "text-on-surface-variant"}`}>{block.label}</p>
-                    <p className={`text-lg font-bold ${block.highlight ? "text-orange-700" : "text-on-surface"}`}>
-                      {formatCompactMoney(block.value)} <span className={`text-xs font-normal ml-2 ${block.highlight ? "text-orange-600" : "text-on-surface-variant"}`}>({block.share}%)</span>
-                    </p>
-                  </div>
-                  {block.highlight ? (
-                    <span className="material-symbols-outlined text-orange-600">rocket_launch</span>
-                  ) : (
-                    <div className="w-12 h-1.5 bg-orange-200 rounded-full overflow-hidden">
-                      <div className="bg-orange-500 h-full" style={{ width: `${block.share}%` }} />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <div className="p-3 bg-surface rounded border border-outline-variant/30">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Amortização Dívida</p>
-                <p className="text-md font-bold text-on-surface">{formatCompactMoney(amortizationValue)}</p>
-              </div>
-              <div className="p-3 bg-surface rounded border border-outline-variant/30">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-1">Reserva Contingência</p>
-                <p className="text-md font-bold text-on-surface">{formatCompactMoney(contingencyValue)}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="glass-card p-6">
-            <h4 className="text-sm font-bold uppercase text-on-surface-variant mb-4">Concentração e Rankings</h4>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-orange-600">medical_services</span>
-                  <div className="text-sm">
-                    <p className="font-bold text-on-surface">{organLeader?.label || "Saúde"}</p>
-                    <p className="text-xs text-on-surface-variant">Maior Órgão Executor</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-on-surface">{formatCompactMoney(organLeader?.value ?? 0)}</p>
-                  <p className="text-[10px] text-orange-600 font-bold">{totalVal ? `${Math.round(((organLeader?.value ?? 0) / totalVal) * 100)}% do Total` : "0% do Total"}</p>
-                </div>
-              </div>
-              <div className="p-3 border border-outline-variant/30 rounded-lg">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant mb-2">Top Programas e Ações</p>
-                <div className="space-y-2">
-                  {topPrograms.map((item) => (
-                    <div key={item.label} className="flex justify-between text-sm gap-4">
-                      <span className="text-on-surface-variant truncate pr-4">{item.label}</span>
-                      <span className="font-bold shrink-0">{formatCompactMoney(item.value)}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-3 text-[10px] text-on-surface-variant italic">As maiores estruturas concentram a maior parte da despesa total.</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="glass-card p-6">
-            <div className="flex items-center gap-2 mb-4 text-orange-600">
-              <span className="material-symbols-outlined text-sm">auto_awesome</span>
-              <h4 className="text-sm font-bold uppercase">Insights de Despesa (IA)</h4>
-            </div>
-            <div className="space-y-3">
-              <div className="p-3 bg-orange-50 rounded text-sm text-on-surface-variant border border-orange-200">
-                Investimentos representam {expenseTotal ? `${Math.round((investmentVal / expenseTotal) * 100)}%` : "0%"} do orçamento, com maior peso nos projetos de expansão.
-              </div>
-              <div className="p-3 bg-surface-container rounded text-sm text-on-surface-variant">
-                Identificadas {data.counts.actions} ações vinculadas ao plano, indicando boa granularidade de execução.
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <section className="glass-card p-6 bg-surface">
-        <div className="flex items-center gap-2 mb-4 text-primary">
-          <span className="material-symbols-outlined text-xl">help_outline</span>
-          <h4 className="text-sm font-bold uppercase tracking-wider text-on-surface">Pergunte ao orçamento</h4>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {questions.map((q) => (
-            <button
-              key={q.id}
-              onClick={() => {
-                handleQuestionClick(q.id);
-                void askAssistant(q.label);
-              }}
-              className={`inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] cursor-pointer ${q.colorClass}`}
-            >
-              <span className={`material-symbols-outlined text-[16px] ${q.iconColorClass}`}>{q.icon}</span>
-              {q.label}
-            </button>
-          ))}
-        </div>
-        <div className="mt-5 rounded-2xl border border-outline-variant bg-surface-container-low p-4">
-          <form
-            className="flex flex-col gap-2 md:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void askAssistant(assistantQuestion);
-            }}
-          >
-            <label htmlFor="analytic-assistant-question" className="sr-only">Pergunte ao orçamento</label>
-            <input
-              id="analytic-assistant-question"
-              value={assistantQuestion}
-              onChange={(event) => setAssistantQuestion(event.target.value)}
-              placeholder="Ou escreva uma pergunta sobre os dados selecionados..."
-              maxLength={500}
-              className="min-h-11 flex-1 rounded-xl border border-outline-variant bg-surface px-4 text-sm text-on-surface outline-none focus:border-tertiary"
-            />
-            <button
-              type="submit"
-              disabled={assistantLoading || !assistantQuestion.trim()}
-              className="rounded-xl bg-tertiary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-tertiary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {assistantLoading ? "Consultando..." : "Perguntar"}
-            </button>
-          </form>
-          {assistantError && <p role="alert" className="mt-3 rounded-xl bg-error-container px-3 py-2 text-xs text-on-error-container">{assistantError}</p>}
-          {assistantAnswer && (
-            <div className="mt-4 rounded-2xl border border-tertiary/30 bg-surface p-4">
-              <p className="text-sm leading-6 text-on-surface">{assistantAnswer.answer}</p>
-              {assistantAnswer.details && assistantAnswer.details.length > 0 && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  {assistantAnswer.details.map((detail) => (
-                    <div key={detail.label} className="rounded-xl bg-surface-container-low p-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">{detail.label}</p>
-                      <p className="mt-1 text-sm font-bold text-tertiary">{detail.value}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {assistantAnswer.warning && <p className="mt-3 text-[11px] text-on-surface-variant">{assistantAnswer.warning}</p>}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="glass-card p-8">
-        <div className="text-center mb-8">
-          <h4 className="text-lg font-headline font-bold text-on-surface">Fluxo de Aplicação de Recursos</h4>
-          <p className="text-sm text-on-surface-variant">Como {isRealData ? "o valor importado" : "a receita"} de {formatCompactMoney(totalVal)} é distribuído entre as principais naturezas de despesa.</p>
-        </div>
-        <div className="relative flex flex-col md:flex-row items-center justify-between gap-8 max-w-4xl mx-auto">
-          <div className="w-full md:w-48 p-6 bg-tertiary text-on-tertiary rounded-xl text-center shadow-lg z-10">
-            <p className="text-[10px] uppercase font-bold opacity-80 mb-1">{isRealData ? "Valor Importado" : "Receita Total"}</p>
-            <p className="text-2xl font-extrabold">{formatCompactMoney(totalVal)}</p>
-          </div>
-          <div className="hidden md:block absolute left-48 right-48 top-1/2 -translate-y-1/2 h-40 opacity-20 pointer-events-none">
-            <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
-              <path className="text-tertiary" d="M0,50 C50,50 50,20 100,20" fill="none" stroke="currentColor" strokeWidth="2" />
-              <path className="text-tertiary" d="M0,50 C50,50 50,50 100,50" fill="none" stroke="currentColor" strokeWidth="2" />
-              <path className="text-tertiary" d="M0,50 C50,50 50,80 100,80" fill="none" stroke="currentColor" strokeWidth="2" />
-            </svg>
-          </div>
-          <div className="flex flex-col gap-4 w-full md:w-48">
-            <div className="p-3 bg-surface border border-orange-200 rounded-lg shadow-sm text-center">
-              <p className="text-[10px] font-bold text-on-surface-variant uppercase">Pessoal</p>
-              <p className="font-bold text-on-surface">{formatCompactMoney(expenseBlocks[0]?.value ?? 0)}</p>
-            </div>
-            <div className="p-3 bg-surface border border-orange-200 rounded-lg shadow-sm text-center">
-              <p className="text-[10px] font-bold text-on-surface-variant uppercase">Custeio</p>
-              <p className="font-bold text-on-surface">{formatCompactMoney(expenseBlocks[1]?.value ?? 0)}</p>
-            </div>
-            <div className="p-3 bg-orange-100 border border-orange-300 rounded-lg shadow-sm text-center">
-              <p className="text-[10px] font-bold text-orange-800 uppercase">Investimentos</p>
-              <p className="font-bold text-orange-800">{formatCompactMoney(expenseBlocks[2]?.value ?? 0)}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="glass-card overflow-hidden">
-        <div className="p-6 border-b border-outline-variant bg-surface">
-          <h4 className="text-sm font-semibold text-on-surface">Indicadores de Despesa por Habitante</h4>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="bg-surface-container border-b border-outline-variant text-on-surface-variant font-semibold text-xs tracking-wider">
-                <th className="px-6 py-4">Indicador</th>
-                <th className="px-6 py-4">Valor Total</th>
-                <th className="px-6 py-4">Valor por Habitante</th>
-                <th className="px-6 py-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/30">
-              {perCapitaRows.map((row) => (
-                <tr key={row.label} className="hover:bg-surface-container-low/30">
-                  <td className="px-6 py-4 font-semibold text-on-surface">{row.label}</td>
-                  <td className="px-6 py-4 text-on-surface font-medium">{formatCompactMoney(row.total)}</td>
-                  <td className="px-6 py-4 font-semibold text-on-surface">{currency.format(row.perCapita)}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                      row.tone === "green" 
-                        ? "bg-green-100 text-green-800" 
-                        : "bg-blue-100 text-blue-800"
-                    }`}>
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <article className="glass-card bg-surface p-5">
-          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Receita Corrente"}</p>
-          <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(currentRevenue)}</h4>
-          <p className="text-xs text-on-surface-variant mt-2">{topHealthFunction?.label || "Maior função"}</p>
-        </article>
-        <article className="glass-card bg-surface p-5">
-          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Educação</p>
-          <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(educationValue || totalVal * 0.2)}</h4>
-          <p className="text-xs text-on-surface-variant mt-2">{topEducationFunction?.label || "Segundo maior eixo"}</p>
-        </article>
-        <article className="glass-card bg-surface p-5">
-          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Obras e Infraestrutura</p>
-          <h4 className="text-lg font-headline font-bold text-on-surface">{formatCompactMoney(infrastructureValue || totalVal * 0.08)}</h4>
-          <p className="text-xs text-on-surface-variant mt-2">{topInfrastructureFunction?.label || "Carteira estratégica"}</p>
-        </article>
-      </section>
-
     </div>
   );
 }
+
+
