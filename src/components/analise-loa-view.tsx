@@ -4,12 +4,13 @@ import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as R
 import { currency, integer, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
-import { AddElementExpenseDialog } from "./add-element-expense-dialog";
+import { AddElementExpenseDialog, VINCULO_OPTIONS } from "./add-element-expense-dialog";
 import {
   AnaliseLoaCardsConfigDialog,
   DEFAULT_LAYOUT_CONFIG,
   type AnaliseLoaLayoutConfig,
 } from "./analise-loa-cards-config-dialog";
+import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -62,6 +63,8 @@ export interface RawBudgetItem {
   elemento: string;
   subelemento: string;
   processo: string;
+  projetoIniciado?: string;
+  observacao?: string;
   valLdo: number;
   valLoa: number;
   origem?: "Banco de Projetos";
@@ -222,10 +225,20 @@ export function AnaliseLoaView() {
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(0);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
+  const loaExpectativaTotal = useMemo(() => {
+    if (filters.secretaria.length === 0) return LOA_EXPECTATIVA_TOTAL;
+    const selected = new Set(filters.secretaria.map(normalizeLoaExpectativaSecretaria));
+    return LOA_EXPECTATIVA.reduce((total, item) => {
+      const name = normalizeLoaExpectativaSecretaria(item.secretaria);
+      return total + (selected.has(name) ? item.valor : 0);
+    }, 0);
+  }, [filters.secretaria]);
+
   // Estados da Tree View, Tabela, Alterações e Justificativas
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [expandedEditGroups, setExpandedEditGroups] = useState<Set<string>>(new Set());
   const [expandedNatureGroups, setExpandedNatureGroups] = useState<Set<string>>(new Set());
+  const [collapsedLdoPlanningGroups, setCollapsedLdoPlanningGroups] = useState<Set<string>>(new Set());
   const [tableSearch, setTableSearch] = useState("");
   const [openFilterKey, setOpenFilterKey] = useState<string | null>(null);
   const [filterSearchQuery, setFilterSearchQuery] = useState<Record<string, string>>({});
@@ -254,11 +267,16 @@ export function AnaliseLoaView() {
   const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
   const [newExpenseCodigoAplicacao, setNewExpenseCodigoAplicacao] = useState("");
   const [newExpenseProcesso, setNewExpenseProcesso] = useState("");
+  const [newExpenseProjetoIniciado, setNewExpenseProjetoIniciado] = useState("");
+  const [newExpenseObservacao, setNewExpenseObservacao] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
   // Estado para Edição de Subelemento via Modal
   const [editingSubelementItem, setEditingSubelementItem] = useState<RawBudgetItem | null>(null);
   const [editSubelementName, setEditSubelementName] = useState("");
+  const [editSubelementVinculo, setEditSubelementVinculo] = useState("");
   const [editSubelementProcesso, setEditSubelementProcesso] = useState("");
+  const [editSubelementProjetoIniciado, setEditSubelementProjetoIniciado] = useState("");
+  const [editSubelementObservacao, setEditSubelementObservacao] = useState("");
   const [editSubelementValor, setEditSubelementValor] = useState("");
   // Estado para Rastrear Subelementos/Dotações Excluídos
   const [removedRawItems, setRemovedRawItems] = useState<RawBudgetItem[]>([]);
@@ -785,20 +803,30 @@ export function AnaliseLoaView() {
         const wb = XLSX.read(buffer, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-        const headers = rows[0] ?? [];
-        const columnIndex = (name: string) => headers.map((value, index) => String(value ?? "") === name ? index : -1).filter((index) => index >= 0).pop() ?? -1;
+        const headers = (rows[0] ?? []) as unknown[];
+        const findCol = (...aliases: string[]) => {
+          const targets = aliases.map((a) => a.toLowerCase().trim());
+          for (let idx = headers.length - 1; idx >= 0; idx--) {
+            const h = String(headers[idx] ?? "").toLowerCase().trim();
+            if (targets.includes(h)) return idx;
+          }
+          return -1;
+        };
+
         const columns = {
-          piece: columnIndex("Peça Orçamentária"),
-          programKey: columnIndex("Programática_LOA"),
-          organ: columnIndex("secretaria"),
-          unit: columnIndex("unidade"),
-          program: columnIndex("programa"),
-          action: columnIndex("acao"),
-          nature: columnIndex("natureza"),
-          subelement: columnIndex("desc_sub"),
-          process: columnIndex("processo"),
-          value: columnIndex("valor"),
-          link: columnIndex("Vínculo"),
+          piece: findCol("peça orçamentária", "peca orcamentaria", "peça", "peca"),
+          programKey: findCol("programática_loa", "programatica_loa", "programatica"),
+          organ: findCol("secretaria", "orgao", "órgão", "secretaria_nome"),
+          unit: findCol("unidade", "unid", "cd_unid.-ds_unid."),
+          program: findCol("programa", "cd_programa-ds_programa"),
+          action: findCol("acao", "ação", "cd_ação-ds_ação", "cd_acao-ds_acao"),
+          nature: findCol("natureza", "natureza de despesa", "natureza da despesa"),
+          subelement: findCol("desc_sub", "desc sub", "subelemento", "descrição subelemento", "descricao subelemento"),
+          process: findCol("processo", "processo administrativo", "proc.", "proc", "processo_administrativo"),
+          value: findCol("valor", "val_loa", "valor loa", "valor_loa"),
+          link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
+          obs: findCol("obs.", "obs", "observacao", "observação", "observacoes", "observações", "justificativa"),
+          iniciado: findCol("iniciado", "projeto iniciado", "projeto_iniciado"),
         };
 
         for (let i = 1; i < rows.length; i++) {
@@ -821,6 +849,11 @@ export function AnaliseLoaView() {
             .replace(/^4\.90\.52/, "4.4.90.52");
           const subelemStr = String(r[columns.subelement] || "").trim().replace(/^\.+/, "");
           const processStr = String(r[columns.process] || "").trim().replace(/^\.+/, "");
+          const obsStr = columns.obs >= 0 ? String(r[columns.obs] || "").trim() : "";
+          const iniciadoRaw = columns.iniciado >= 0 ? String(r[columns.iniciado] || "").trim().toUpperCase() : "";
+          const projetoIniciado = iniciadoRaw === "SIM" || iniciadoRaw === "NÃO" || iniciadoRaw === "NAO"
+            ? (iniciadoRaw === "NAO" ? "NÃO" : iniciadoRaw)
+            : undefined;
           const valor = Number(r[columns.value]) || 0;
           const realVinculoStr = String(r[columns.link] || "").trim();
 
@@ -875,6 +908,8 @@ export function AnaliseLoaView() {
               elemento: elem,
               subelemento: subelemStr,
               processo: processStr || "—",
+              projetoIniciado: projetoIniciado,
+              observacao: obsStr || undefined,
               valLdo: 0,
               valLoa: 0,
             });
@@ -1068,6 +1103,8 @@ export function AnaliseLoaView() {
       elemento,
       subelemento: subelementoFinal,
       processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
+      projetoIniciado: newExpenseProjetoIniciado || undefined,
+      observacao: newExpenseObservacao.trim() || undefined,
       valLdo: 0,
       valLoa: value,
     };
@@ -1415,11 +1452,13 @@ export function AnaliseLoaView() {
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
-    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; ldo: number; loa: number; diff: number; count: number }>();
+    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; fonteVinculo: string; processo: string; projetoIniciado: string; observacao: string; ldo: number; loa: number; diff: number; count: number }>();
 
     filteredItems.forEach((item) => {
       const name = item.subelemento && item.subelemento.trim() !== "" ? item.subelemento : item.natureza || "Outros / Sem Subelemento";
-      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${name}`;
+      const vinculo = item.fonteVinculo || "01";
+      const proc = item.processo && item.processo !== "—" ? item.processo : "";
+      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${vinculo}_${proc}_${name}`;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -1427,6 +1466,10 @@ export function AnaliseLoaView() {
           acao: item.acao || "",
           secretaria: item.secretaria || "",
           natureza: item.natureza || "",
+          fonteVinculo: vinculo,
+          processo: proc,
+          projetoIniciado: item.projetoIniciado || "",
+          observacao: item.observacao || "",
           ldo: 0,
           loa: 0,
           diff: 0,
@@ -1874,6 +1917,7 @@ export function AnaliseLoaView() {
         Ação: item.acao,
         "Natureza da Despesa": item.natureza || item.elemento,
         Subelemento: item.subelemento || "—",
+        "Fonte/Vínculo": item.fonteVinculo || "01",
         "Valor Original (R$)": origVal,
         "Novo Valor LOA (R$)": isRemoved ? 0 : item.valLoa,
         "Diferença (R$)": isRemoved ? -origVal : item.valLoa - origVal,
@@ -1982,7 +2026,7 @@ export function AnaliseLoaView() {
           const adjusted = Math.abs(item.valLoa - original) > 0.001;
           const diff = item.valLoa - original;
           reportBody.push([
-            `  ↳ ${item.subelemento || item.elemento || "Dotação"}`,
+            `  ↳ ${item.subelemento || item.elemento || "Dotação"}${item.fonteVinculo ? ` (Vínculo: ${item.fonteVinculo})` : ""}${item.processo && item.processo !== "—" ? ` [Proc: ${item.processo}]` : ""}`,
             item.natureza || item.elemento,
             currency.format(item.valLdo),
             currency.format(item.valLoa),
@@ -2405,7 +2449,7 @@ export function AnaliseLoaView() {
                       <div key="desp-expectativa" className="glass-card bg-surface p-4 border-t-2 border-t-purple-500 shadow-sm">
                         <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Expectativa LOA</p>
                         <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(metrics.valLoaTotal)}
+                          {currency.format(loaExpectativaTotal)}
                         </h3>
                         <p className="text-[10px] text-purple-700 font-semibold mt-1">Expectativa LOA Fixada</p>
                       </div>
@@ -2932,12 +2976,24 @@ export function AnaliseLoaView() {
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <button
                                   type="button"
-                                  onClick={() => setExpandedEditGroups((previous) => {
-                                    const next = new Set(previous);
-                                    if (next.has(group.id)) next.delete(group.id);
-                                    else next.add(group.id);
-                                    return next;
-                                  })}
+                                  onClick={() => {
+                                    const isExpanding = !expandedEditGroups.has(group.id);
+                                    setExpandedEditGroups((previous) => {
+                                      const next = new Set(previous);
+                                      if (next.has(group.id)) next.delete(group.id);
+                                      else next.add(group.id);
+                                      return next;
+                                    });
+                                    if (isExpanding) {
+                                      setExpandedNatureGroups((prev) => {
+                                        const next = new Set(prev);
+                                        natureGroups.forEach(([natureza]) => {
+                                          next.add(`${group.id}|${natureza}`);
+                                        });
+                                        return next;
+                                      });
+                                    }
+                                  }}
                                   className={`min-h-9 min-w-9 rounded-lg flex items-center justify-center shrink-0 transition-all font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${isExpanded
                                       ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/40"
                                       : "border border-sky-300 bg-white text-sky-700 hover:bg-sky-100 dark:bg-slate-900 dark:text-sky-300 dark:border-sky-700"
@@ -3043,228 +3099,269 @@ export function AnaliseLoaView() {
                               {/* BLOCO PLANEJAMENTO LDO - 2027 */}
                               <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/30">
                                 <td colSpan={7} className="p-3 pl-8 sm:pl-12">
-                                  <div className="rounded-xl border border-primary/20 bg-surface p-4 shadow-sm space-y-3 dark:bg-surface-container-low">
-                                    {/* Header do Bloco */}
-                                    <div className="flex items-center justify-between border-b border-outline-variant/30 pb-2">
-                                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
-                                        Planejamento LDO — 2027
-                                      </span>
-                                      {editingLdoPlanningGroupKey === group.id ? (
-                                        <div className="flex items-center gap-2">
+                                  {(() => {
+                                    const isLdoPlanningCollapsed = collapsedLdoPlanningGroups.has(group.id);
+                                    return (
+                                      <div className="rounded-xl border border-primary/20 bg-surface p-3.5 shadow-sm dark:bg-surface-container-low transition-all">
+                                        {/* Header do Accordion */}
+                                        <div className={`flex items-center justify-between ${isLdoPlanningCollapsed ? "" : "border-b border-outline-variant/30 pb-2.5 mb-3"}`}>
                                           <button
                                             type="button"
-                                            onClick={() => setEditingLdoPlanningGroupKey(null)}
-                                            className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                                            onClick={() => {
+                                              setCollapsedLdoPlanningGroups((prev) => {
+                                                const next = new Set(prev);
+                                                if (next.has(group.id)) next.delete(group.id);
+                                                else next.add(group.id);
+                                                return next;
+                                              });
+                                            }}
+                                            className="flex items-center gap-2 text-left group/accordion cursor-pointer hover:opacity-85 transition-all focus-visible:outline-none"
+                                            aria-expanded={!isLdoPlanningCollapsed}
                                           >
-                                            Cancelar
+                                            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary transition-transform">
+                                              <span className="material-symbols-outlined text-[16px] font-bold">
+                                                {isLdoPlanningCollapsed ? "expand_more" : "expand_less"}
+                                              </span>
+                                            </div>
+                                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
+                                              Planejamento LDO — 2027
+                                            </span>
+                                            <span className="text-[10px] text-on-surface-variant font-mono bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant/40">
+                                              {isLdoPlanningCollapsed ? "Clique para expandir" : "Recolher"}
+                                            </span>
                                           </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleSaveLdoPlanning(group)}
-                                            className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm"
-                                          >
-                                            Salvar LDO
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleStartEditLdoPlanning(group)}
-                                          className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                                        >
-                                          <span className="material-symbols-outlined text-xs">edit</span>
-                                          Editar LDO
-                                        </button>
-                                      )}
-                                    </div>
 
-                                    {editingLdoPlanningGroupKey === group.id ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                                        {/* Card 1: Indicador (Edição) */}
-                                        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
-                                          <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
-                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                              <span className="material-symbols-outlined text-xs">analytics</span>
-                                            </div>
-                                            <span>Indicador</span>
-                                          </label>
-                                          <input
-                                            id="edit-ldo-indicador"
-                                            type="text"
-                                            value={editLdoIndicador}
-                                            onChange={(e) => setEditLdoIndicador(e.target.value)}
-                                            placeholder="Ex: Taxa de atendimento..."
-                                            className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                          />
-                                          <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
-                                        </div>
-
-                                        {/* Card 2: Unidade de Medida (Edição) */}
-                                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
-                                          <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                              <span className="material-symbols-outlined text-xs">straighten</span>
-                                            </div>
-                                            <span>Unidade de Medida</span>
-                                          </label>
-                                          <input
-                                            id="edit-ldo-unidade"
-                                            type="text"
-                                            value={editLdoUnidadeMedida}
-                                            onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
-                                            placeholder="Ex: %, Unidade, Alunos..."
-                                            className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                          />
-                                          <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
+                                          {/* Ações de Edição */}
+                                          <div className="flex items-center gap-2">
+                                            {editingLdoPlanningGroupKey === group.id ? (
+                                              <div className="flex items-center gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setEditingLdoPlanningGroupKey(null)}
+                                                  className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+                                                >
+                                                  Cancelar
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleSaveLdoPlanning(group)}
+                                                  className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm cursor-pointer"
+                                                >
+                                                  Salvar LDO
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setCollapsedLdoPlanningGroups((prev) => {
+                                                    const next = new Set(prev);
+                                                    next.delete(group.id);
+                                                    return next;
+                                                  });
+                                                  handleStartEditLdoPlanning(group);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer"
+                                              >
+                                                <span className="material-symbols-outlined text-xs">edit</span>
+                                                Editar LDO
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
 
-                                        {/* Card 3: Custo Físico 2027 (Edição) */}
-                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
-                                          <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
-                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                                              <span className="material-symbols-outlined text-xs">pie_chart</span>
-                                            </div>
-                                            <span>Custo Físico 2027</span>
-                                          </label>
-                                          <input
-                                            id="edit-ldo-custo-fisico"
-                                            type="text"
-                                            value={editLdoCustoFisico}
-                                            onChange={(e) => setEditLdoCustoFisico(e.target.value)}
-                                            placeholder="0"
-                                            className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                          />
-                                          <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
-                                        </div>
-
-                                        {/* Card 4: Custo Financeiro LOA (Edição) */}
-                                        {(() => {
-                                          const valorCustoFin = group.valLoa;
-                                          const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
-                                          const diffValor = valorCustoFin - totalNaturezas;
-                                          const hasDiff = Math.abs(diffValor) > 0.01;
-                                          return (
-                                            <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
-                                              <div className="flex items-center justify-between">
-                                                <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
-                                                    <span className="material-symbols-outlined text-xs">payments</span>
+                                        {/* Conteúdo do Accordion */}
+                                        {!isLdoPlanningCollapsed && (
+                                          editingLdoPlanningGroupKey === group.id ? (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                              {/* Card 1: Indicador (Edição) */}
+                                              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
+                                                <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                                    <span className="material-symbols-outlined text-xs">analytics</span>
                                                   </div>
-                                                  <span>Custo Financeiro LOA</span>
+                                                  <span>Indicador</span>
                                                 </label>
-                                                {hasDiff && (
-                                                  <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
-                                                    <span className="material-symbols-outlined text-[10px]">warning</span>
-                                                    Divergente
-                                                  </span>
-                                                )}
+                                                <input
+                                                  id="edit-ldo-indicador"
+                                                  type="text"
+                                                  value={editLdoIndicador}
+                                                  onChange={(e) => setEditLdoIndicador(e.target.value)}
+                                                  placeholder="Ex: Taxa de atendimento..."
+                                                  className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                />
+                                                <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
                                               </div>
-                                              <input
-                                                id="edit-ldo-custo-fin"
-                                                type="text"
-                                                value={editLdoCustoFinanceiro}
-                                                onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
-                                                placeholder={formatBr(group.valLoa)}
-                                                className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
-                                              />
-                                              {hasDiff ? (
-                                                <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
-                                                  Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
-                                                </p>
-                                              ) : (
-                                                <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
-                                              )}
-                                            </div>
-                                          );
-                                        })()}
-                                      </div>
-                                    ) : (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                                        {(() => {
-                                          const data = getLdoPlanningForGroup(group);
-                                          const formattedCustoFisico = data.custoFisico2027 != null
-                                            ? data.custoFisico2027.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
-                                            : "0";
-                                          const valorCustoFin = group.valLoa;
-                                          const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
-                                          const diffValor = valorCustoFin - totalNaturezas;
-                                          const hasDiff = Math.abs(diffValor) > 0.01;
 
-                                          return (
-                                            <>
-                                              {/* Card 1: Indicador (Visualização) */}
-                                              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
-                                                <div>
-                                                  <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
-                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                                      <span className="material-symbols-outlined text-sm">analytics</span>
-                                                    </div>
-                                                    <span>Indicador</span>
+                                              {/* Card 2: Unidade de Medida (Edição) */}
+                                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                                <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                                    <span className="material-symbols-outlined text-xs">straighten</span>
                                                   </div>
-                                                  <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
-                                                    {data.indicador || "Não informado"}
-                                                  </p>
-                                                </div>
+                                                  <span>Unidade de Medida</span>
+                                                </label>
+                                                <input
+                                                  id="edit-ldo-unidade"
+                                                  type="text"
+                                                  value={editLdoUnidadeMedida}
+                                                  onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
+                                                  placeholder="Ex: %, Unidade, Alunos..."
+                                                  className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                                />
+                                                <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
                                               </div>
 
-                                              {/* Card 2: Unidade de Medida (Visualização) */}
-                                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
-                                                <div>
-                                                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                                      <span className="material-symbols-outlined text-sm">straighten</span>
-                                                    </div>
-                                                    <span>Unidade de Medida</span>
+                                              {/* Card 3: Custo Físico 2027 (Edição) */}
+                                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
+                                                <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                    <span className="material-symbols-outlined text-xs">pie_chart</span>
                                                   </div>
-                                                  <p className="mt-2 text-base font-extrabold text-on-surface">
-                                                    {data.unidadeMedida || "Não informado"}
-                                                  </p>
-                                                </div>
+                                                  <span>Custo Físico 2027</span>
+                                                </label>
+                                                <input
+                                                  id="edit-ldo-custo-fisico"
+                                                  type="text"
+                                                  value={editLdoCustoFisico}
+                                                  onChange={(e) => setEditLdoCustoFisico(e.target.value)}
+                                                  placeholder="0"
+                                                  className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                                />
+                                                <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
                                               </div>
 
-                                              {/* Card 3: Custo Físico 2027 (Visualização) */}
-                                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
-                                                <div>
-                                                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
-                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                                                      <span className="material-symbols-outlined text-sm">pie_chart</span>
+                                              {/* Card 4: Custo Financeiro LOA (Edição) */}
+                                              {(() => {
+                                                const valorCustoFin = group.valLoa;
+                                                const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                                const diffValor = valorCustoFin - totalNaturezas;
+                                                const hasDiff = Math.abs(diffValor) > 0.01;
+                                                return (
+                                                  <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
+                                                    <div className="flex items-center justify-between">
+                                                      <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                          <span className="material-symbols-outlined text-xs">payments</span>
+                                                        </div>
+                                                        <span>Custo Financeiro LOA</span>
+                                                      </label>
+                                                      {hasDiff && (
+                                                        <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                          <span className="material-symbols-outlined text-[10px]">warning</span>
+                                                          Divergente
+                                                        </span>
+                                                      )}
                                                     </div>
-                                                    <span>Custo Físico 2027</span>
-                                                  </div>
-                                                  <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
-                                                    {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
-                                                  </p>
-                                                </div>
-                                              </div>
-
-                                              {/* Card 4: Custo Financeiro LOA (Visualização) */}
-                                              <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
-                                                <div>
-                                                  <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-                                                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
-                                                        <span className="material-symbols-outlined text-sm">payments</span>
-                                                      </div>
-                                                      <span>Custo Financeiro LOA</span>
-                                                    </div>
-                                                    {hasDiff && (
-                                                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
-                                                        <span className="material-symbols-outlined text-[11px]">warning</span>
-                                                        Divergente
-                                                      </span>
+                                                    <input
+                                                      id="edit-ldo-custo-fin"
+                                                      type="text"
+                                                      value={editLdoCustoFinanceiro}
+                                                      onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
+                                                      placeholder={formatBr(group.valLoa)}
+                                                      className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                                    />
+                                                    {hasDiff ? (
+                                                      <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
+                                                        Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
+                                                      </p>
+                                                    ) : (
+                                                      <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
                                                     )}
                                                   </div>
-                                                  <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
-                                                    {currency.format(valorCustoFin)}
-                                                  </p>
-                                                </div>
-                                              </div>
-                                            </>
-                                          );
-                                        })()}
+                                                );
+                                              })()}
+                                            </div>
+                                          ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                              {(() => {
+                                                const data = getLdoPlanningForGroup(group);
+                                                const formattedCustoFisico = data.custoFisico2027 != null
+                                                  ? data.custoFisico2027.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+                                                  : "0";
+                                                const valorCustoFin = group.valLoa;
+                                                const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                                const diffValor = valorCustoFin - totalNaturezas;
+                                                const hasDiff = Math.abs(diffValor) > 0.01;
+
+                                                return (
+                                                  <>
+                                                    {/* Card 1: Indicador (Visualização) */}
+                                                    <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                                            <span className="material-symbols-outlined text-sm">analytics</span>
+                                                          </div>
+                                                          <span>Indicador</span>
+                                                        </div>
+                                                        <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
+                                                          {data.indicador || "Não informado"}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Card 2: Unidade de Medida (Visualização) */}
+                                                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                                            <span className="material-symbols-outlined text-sm">straighten</span>
+                                                          </div>
+                                                          <span>Unidade de Medida</span>
+                                                        </div>
+                                                        <p className="mt-2 text-base font-extrabold text-on-surface">
+                                                          {data.unidadeMedida || "Não informado"}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Card 3: Custo Físico 2027 (Visualização) */}
+                                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                            <span className="material-symbols-outlined text-sm">pie_chart</span>
+                                                          </div>
+                                                          <span>Custo Físico 2027</span>
+                                                        </div>
+                                                        <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                          {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
+                                                        </p>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Card 4: Custo Financeiro LOA (Visualização) */}
+                                                    <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
+                                                      <div>
+                                                        <div className="flex items-center justify-between">
+                                                          <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                              <span className="material-symbols-outlined text-sm">payments</span>
+                                                            </div>
+                                                            <span>Custo Financeiro LOA</span>
+                                                          </div>
+                                                          {hasDiff && (
+                                                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                              <span className="material-symbols-outlined text-[11px]">warning</span>
+                                                              Divergente
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                          {currency.format(valorCustoFin)}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  </>
+                                                );
+                                              })()}
+                                            </div>
+                                          )
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
 
@@ -3402,7 +3499,15 @@ export function AnaliseLoaView() {
                                         </div>
                                       </td>
                                       <td className="p-2.5 text-on-surface-variant font-sans text-xs">
-                                        {natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}
+                                        <div className="flex flex-col gap-1 items-start">
+                                          <span>{natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}</span>
+                                          {natureItems.some((i) => i.processo && i.processo !== "—") && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 dark:text-sky-200 bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-1.5 py-0.5 rounded shadow-2xs" title="Contém processos administrativos vinculados">
+                                              <span className="material-symbols-outlined text-[11px]">folder</span>
+                                              <span>Proc: {Array.from(new Set(natureItems.map((i) => i.processo).filter((p) => p && p !== "—"))).join(", ")}</span>
+                                            </span>
+                                          )}
+                                        </div>
                                       </td>
                                       <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>
                                       <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
@@ -3440,44 +3545,103 @@ export function AnaliseLoaView() {
 
                                       return (
                                         <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
-                                          <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="text-outline-variant/80 font-mono text-xs select-none">│   └──</span>
-                                              <div className="min-w-0 flex-1 flex flex-col items-start gap-1">
-                                                <span className="text-on-surface font-medium text-xs">{getSubelementLabel(item)}</span>
-                                                {item.processo && item.processo !== "—" && (
-                                                  <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-xs">
-                                                    <span className="material-symbols-outlined text-[12px]">folder</span>
-                                                    <span>Processo: {item.processo}</span>
-                                                  </span>
-                                                )}
+                                            <td colSpan={2} className="p-2.5 pl-12 sm:pl-16 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
+                                              <div className="flex items-start gap-2">
+                                                {/* Linha guia conectora da árvore */}
+                                                <span className="text-outline-variant/80 font-mono text-xs select-none mt-0.5 shrink-0">│   └──</span>
+                                                <div className="min-w-0 flex-1 flex flex-col items-start gap-1.5">
+                                                  {/* Cabeçalho do Subelemento com Botões de Ação alinhados à direita */}
+                                                  <div className="w-full flex items-center justify-between gap-2">
+                                                    <span className="text-on-surface font-semibold text-xs leading-snug break-words">
+                                                      {getSubelementLabel(item)}
+                                                    </span>
+                                                    <div className="flex items-center gap-1 shrink-0 ml-auto">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          setEditingSubelementItem(item);
+                                                          setEditSubelementName(getSubelementLabel(item));
+                                                          setEditSubelementVinculo(item.fonteVinculo || "01");
+                                                          setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
+                                                          setEditSubelementProjetoIniciado(item.projetoIniciado || "");
+                                                          setEditSubelementObservacao(item.observacao || justifications[item.id] || "");
+                                                          setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
+                                                        }}
+                                                        className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10 transition-all cursor-pointer"
+                                                        title="Editar subelemento"
+                                                        aria-label={`Editar ${getSubelementLabel(item)}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[13px]">edit</span>
+                                                        <span>Editar</span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => removeSubelement(item)}
+                                                        className="rounded p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer"
+                                                        title="Remover subelemento"
+                                                        aria-label={`Remover ${getSubelementLabel(item)}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                                                      </button>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Badges de Vínculo e Processo */}
+                                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                                    {item.fonteVinculo && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
+                                                        title={`Fonte / Vínculo: ${item.fonteVinculo}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                                                        <span>Vínculo: {item.fonteVinculo}</span>
+                                                      </span>
+                                                    )}
+                                                    {item.processo && item.processo !== "—" && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-2xs"
+                                                        title={`Processo Administrativo: ${item.processo}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[12px]">folder</span>
+                                                        <span>Processo: {item.processo}</span>
+                                                      </span>
+                                                    )}
+                                                  </div>
+
+                                                  {/* Bloco Enquadrado de Informações (Projeto Iniciado + Observação) */}
+                                                  {(item.projetoIniciado || item.observacao || justifications[item.id]) && (
+                                                    <div className="mt-2 w-full flex flex-col gap-2 rounded-lg border border-outline-variant/60 bg-surface-container-low/90 dark:bg-surface-container-high/50 p-3 shadow-2xs">
+                                                      {item.projetoIniciado && (
+                                                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                                                          <span className="font-bold text-on-surface">Projeto Iniciado:</span>
+                                                          <span
+                                                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md ${
+                                                              item.projetoIniciado === "SIM"
+                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                                                                : "bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800"
+                                                            }`}
+                                                          >
+                                                            <span className="material-symbols-outlined text-[12px]">
+                                                              {item.projetoIniciado === "SIM" ? "check_circle" : "cancel"}
+                                                            </span>
+                                                            {item.projetoIniciado}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {(item.observacao || justifications[item.id]) && (
+                                                        <div className="flex items-start gap-2 text-xs leading-relaxed text-on-surface-variant">
+                                                          <span className="material-symbols-outlined text-[15px] text-amber-700 dark:text-amber-400 shrink-0 mt-0.5">notes</span>
+                                                          <div className="min-w-0 flex-1 break-words">
+                                                            <strong className="font-semibold text-on-surface">Observação: </strong>
+                                                            <span className="text-on-surface/90">{item.observacao || justifications[item.id]}</span>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                </div>
                                               </div>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setEditingSubelementItem(item);
-                                                  setEditSubelementName(getSubelementLabel(item));
-                                                  setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
-                                                  setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
-                                                }}
-                                                className="ml-auto inline-flex items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary opacity-80 hover:bg-primary/10 hover:opacity-100 transition-all"
-                                                title="Editar subelemento"
-                                                aria-label={`Editar ${getSubelementLabel(item)}`}
-                                              >
-                                                <span className="material-symbols-outlined text-[13px]">edit</span>
-                                                <span>Editar</span>
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => removeSubelement(item)}
-                                                className="ml-1 rounded p-0.5 text-rose-600 opacity-60 hover:bg-rose-50 hover:opacity-100 transition-all"
-                                                title="Remover subelemento"
-                                                aria-label={`Remover ${getSubelementLabel(item)}`}
-                                              >
-                                                <span className="material-symbols-outlined text-[15px]">delete</span>
-                                              </button>
-                                            </div>
-                                          </td>
+                                            </td>
                                           <td className="p-2 text-right font-mono text-on-surface-variant/60 text-xs">—</td>
                                           <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <input
@@ -3664,6 +3828,25 @@ export function AnaliseLoaView() {
                             {item.natureza && (
                               <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
                                 Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
+                              </span>
+                            )}
+                            {item.fonteVinculo && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-teal-50 text-teal-800 border border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-700/60">
+                                Vínculo {item.fonteVinculo}
+                              </span>
+                            )}
+                            {item.processo && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-sky-50 text-sky-800 border border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-700/60" title={`Processo Administrativo: ${item.processo}`}>
+                                Proc: {item.processo}
+                              </span>
+                            )}
+                            {item.projetoIniciado && (
+                              <span className={`px-1.5 py-0.2 text-[9px] font-bold font-mono rounded border ${
+                                item.projetoIniciado === "SIM"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                  : "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300"
+                              }`}>
+                                Projeto Iniciado: {item.projetoIniciado}
                               </span>
                             )}
                             <span className="text-[10px] font-mono text-on-surface-variant truncate">
@@ -3946,7 +4129,7 @@ export function AnaliseLoaView() {
                               Ação: {item.acao}
                             </p>
                             <p className="text-[10px] text-on-surface-variant font-mono truncate">
-                              Natureza: {item.natureza} • Subelemento: {item.subelemento || "—"}
+                              Natureza: {item.natureza} • Subelemento: {item.subelemento || "—"} • Vínculo: {item.fonteVinculo || "01"}
                             </p>
                           </div>
                           <div className="text-right shrink-0 font-mono text-xs">
@@ -4031,6 +4214,10 @@ export function AnaliseLoaView() {
         setCodigoAplicacao={setNewExpenseCodigoAplicacao}
         processo={newExpenseProcesso}
         setProcesso={setNewExpenseProcesso}
+        projetoIniciado={newExpenseProjetoIniciado}
+        setProjetoIniciado={setNewExpenseProjetoIniciado}
+        observacao={newExpenseObservacao}
+        setObservacao={setNewExpenseObservacao}
         onClose={() => {
           setAddExpenseGroup(null);
           setAddElementContext(null);
@@ -4038,6 +4225,8 @@ export function AnaliseLoaView() {
           setNewExpenseValor("");
           setNewExpenseCodigoAplicacao("");
           setNewExpenseProcesso("");
+          setNewExpenseProjetoIniciado("");
+          setNewExpenseObservacao("");
         }}
         onConfirm={handleAddExpense}
         parseValue={parseBr}
@@ -4180,6 +4369,36 @@ export function AnaliseLoaView() {
               </label>
 
               <label className="block text-xs font-bold text-on-surface">
+                Fonte / Vínculo de Recursos *
+                <div className="mt-1 flex gap-2">
+                  <select
+                    value={VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) ? editSubelementVinculo : "custom"}
+                    onChange={(event) => {
+                      if (event.target.value !== "custom") {
+                        setEditSubelementVinculo(event.target.value);
+                      }
+                    }}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    {VINCULO_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                    <option value="custom">Outro Vínculo...</option>
+                  </select>
+                  {(!VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) || editSubelementVinculo === "custom") && (
+                    <input
+                      value={editSubelementVinculo === "custom" ? "" : editSubelementVinculo}
+                      onChange={(event) => setEditSubelementVinculo(event.target.value)}
+                      placeholder="Ex.: 01"
+                      className="w-24 rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs font-mono"
+                    />
+                  )}
+                </div>
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
                 Valor LOA *
                 <input
                   value={editSubelementValor}
@@ -4197,6 +4416,30 @@ export function AnaliseLoaView() {
                   onChange={(event) => setEditSubelementProcesso(event.target.value)}
                   placeholder="Opcional (Ex.: 1234/2026)"
                   className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Projeto Iniciado
+                <select
+                  value={editSubelementProjetoIniciado}
+                  onChange={(event) => setEditSubelementProjetoIniciado(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Não informado</option>
+                  <option value="SIM">SIM</option>
+                  <option value="NÃO">NÃO</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Observação
+                <textarea
+                  value={editSubelementObservacao}
+                  onChange={(event) => setEditSubelementObservacao(event.target.value)}
+                  placeholder="Observação ou justificativa do subelemento..."
+                  rows={2}
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary resize-y"
                 />
               </label>
             </div>
@@ -4219,12 +4462,21 @@ export function AnaliseLoaView() {
                         ? {
                           ...entry,
                           subelemento: editSubelementName.trim() || entry.subelemento,
+                          fonteVinculo: editSubelementVinculo.trim() || entry.fonteVinculo || "01",
                           processo: editSubelementProcesso.trim() || "—",
+                          projetoIniciado: editSubelementProjetoIniciado || undefined,
+                          observacao: editSubelementObservacao.trim() || undefined,
                           valLoa: newValor,
                         }
                         : entry
                     )
                   );
+                  if (editSubelementObservacao.trim()) {
+                    setJustifications((prev) => ({
+                      ...prev,
+                      [editingSubelementItem.id]: editSubelementObservacao.trim(),
+                    }));
+                  }
                   setHasChanges(true);
                   setEditingSubelementItem(null);
                 }}

@@ -18,6 +18,10 @@ type Props = {
   setCodigoAplicacao: (value: string) => void;
   processo: string;
   setProcesso: (value: string) => void;
+  projetoIniciado?: string;
+  setProjetoIniciado?: (value: string) => void;
+  observacao?: string;
+  setObservacao?: (value: string) => void;
   onClose: () => void;
   onConfirm: () => void;
   parseValue: (value: string) => number;
@@ -48,6 +52,10 @@ export function AddElementExpenseDialog({
   setCodigoAplicacao,
   processo,
   setProcesso,
+  projetoIniciado,
+  setProjetoIniciado,
+  observacao,
+  setObservacao,
   onClose,
   onConfirm,
   parseValue,
@@ -218,6 +226,36 @@ export function AddElementExpenseDialog({
               className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
             />
           </label>
+
+          {/* Projeto Iniciado */}
+          {setProjetoIniciado && (
+            <label className="block text-xs font-bold text-on-surface">
+              Projeto Iniciado
+              <select
+                value={projetoIniciado || ""}
+                onChange={(event) => setProjetoIniciado(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+              >
+                <option value="">Não informado</option>
+                <option value="SIM">SIM</option>
+                <option value="NÃO">NÃO</option>
+              </select>
+            </label>
+          )}
+
+          {/* Observação */}
+          {setObservacao && (
+            <label className="block text-xs font-bold text-on-surface">
+              Observação
+              <textarea
+                value={observacao || ""}
+                onChange={(event) => setObservacao(event.target.value)}
+                placeholder="Observação complementar (opcional)"
+                rows={2}
+                className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary focus:outline-none resize-y"
+              />
+            </label>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-outline-variant bg-surface-container/40 p-4">
