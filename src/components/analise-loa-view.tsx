@@ -17,6 +17,7 @@ export interface TechnicalFilterState {
   orgao: string[];
   unidade: string[];
   programa: string[];
+  tipoAcao: string[];
   acao: string[];
   natureza: string[];
   fonteVinculo: string[];
@@ -25,7 +26,6 @@ export interface TechnicalFilterState {
   elemento: string[];
   subelemento: string[];
   processo: string[];
-  exercicio: string[];
   search: string;
 }
 
@@ -34,6 +34,7 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   orgao: [],
   unidade: [],
   programa: [],
+  tipoAcao: [],
   acao: [],
   natureza: [],
   fonteVinculo: [],
@@ -42,7 +43,6 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   elemento: [],
   subelemento: [],
   processo: [],
-  exercicio: [],
   search: "",
 };
 
@@ -53,6 +53,7 @@ export interface RawBudgetItem {
   orgao: string;
   unidade: string;
   programa: string;
+  tipoAcao: string;
   acao: string;
   natureza: string;
   fonteVinculo: string;
@@ -166,6 +167,16 @@ function normalizeProgramLabel(value: string) {
   const program = value.trim();
   if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
   return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
+}
+
+function getActionTypeLabel(action: string): string {
+  if (!action) return "Outros";
+  const clean = action.trim();
+  const firstChar = clean.charAt(0);
+  if (firstChar === "0") return "0. Operação Especial";
+  if (firstChar === "1") return "1. Projeto";
+  if (firstChar === "2") return "2. Atividade";
+  return "Outros";
 }
 
 function getStatusLabel(valLdo: number, valLoa: number) {
@@ -750,6 +761,7 @@ export function AnaliseLoaView() {
                   orgao: organStr,
                   unidade: unitStr,
                   programa: programStr,
+                  tipoAcao: getActionTypeLabel(actionStr),
                   acao: actionStr,
                   natureza: natureStr,
                   fonteVinculo: vinculo,
@@ -854,6 +866,7 @@ export function AnaliseLoaView() {
               orgao: organStr,
               unidade: unitStr,
               programa: programStr,
+              tipoAcao: getActionTypeLabel(actionStr),
               acao: actionStr,
               natureza: natureStr,
               fonteVinculo: vinculo,
@@ -891,7 +904,7 @@ export function AnaliseLoaView() {
             if (savedAddedExpenses) addedList = JSON.parse(savedAddedExpenses) as RawBudgetItem[];
           }
           if (addedList.length) {
-            itemsArray = [...itemsArray, ...addedList];
+            itemsArray = [...itemsArray, ...addedList.map(item => ({ ...item, tipoAcao: item.tipoAcao || getActionTypeLabel(item.acao) }))];
           }
         } catch {
           // Registros adicionais inválidos não impedem o carregamento da análise.
@@ -1046,6 +1059,7 @@ export function AnaliseLoaView() {
       orgao: template?.orgao || addExpenseGroup.secretaria,
       unidade: template?.unidade || "01",
       programa: addExpenseGroup.programa,
+      tipoAcao: getActionTypeLabel(addExpenseGroup.acao),
       acao: addExpenseGroup.acao,
       natureza: naturezaFinal,
       fonteVinculo: newExpenseVinculo || "01",
@@ -1086,6 +1100,7 @@ export function AnaliseLoaView() {
       orgao: project.secretaria,
       unidade: "",
       programa: "Banco de Projetos",
+      tipoAcao: getActionTypeLabel(project.objeto),
       acao: project.objeto,
       natureza: project.natureza,
       fonteVinculo: "Tesouro / Próprio",
@@ -1212,6 +1227,7 @@ export function AnaliseLoaView() {
         if (fieldToIgnore !== "orgao" && !match(filters.orgao, item.orgao)) return false;
         if (fieldToIgnore !== "unidade" && !match(filters.unidade, item.unidade)) return false;
         if (fieldToIgnore !== "programa" && !match(filters.programa, item.programa)) return false;
+        if (fieldToIgnore !== "tipoAcao" && !match(filters.tipoAcao, item.tipoAcao)) return false;
         if (fieldToIgnore !== "acao" && !match(filters.acao, item.acao)) return false;
         if (fieldToIgnore !== "natureza" && !match(filters.natureza, item.natureza)) return false;
         if (fieldToIgnore !== "fonteVinculo" && !match(filters.fonteVinculo, item.fonteVinculo)) return false;
@@ -1230,6 +1246,7 @@ export function AnaliseLoaView() {
       orgao: getOptions("orgao", getItemsForField("orgao")),
       unidade: getOptions("unidade", getItemsForField("unidade")),
       programa: getOptions("programa", getItemsForField("programa")),
+      tipoAcao: ["0. Operação Especial", "1. Projeto", "2. Atividade"],
       acao: getOptions("acao", getItemsForField("acao")),
       natureza: getOptions("natureza", getItemsForField("natureza")),
       fonteVinculo: getOptions("fonteVinculo", getItemsForField("fonteVinculo")).filter(
@@ -1243,7 +1260,6 @@ export function AnaliseLoaView() {
       elemento: getOptions("elemento", getItemsForField("elemento")),
       subelemento: getOptions("subelemento", getItemsForField("subelemento")),
       processo: getOptions("processo", getItemsForField("processo")),
-      exercicio: ["2027", "2026"],
     };
   }, [rawItems, filters]);
 
@@ -1257,6 +1273,7 @@ export function AnaliseLoaView() {
       if (!match(filters.orgao, item.orgao)) return false;
       if (!match(filters.unidade, item.unidade)) return false;
       if (!match(filters.programa, item.programa)) return false;
+      if (!match(filters.tipoAcao, item.tipoAcao)) return false;
       if (!match(filters.acao, item.acao)) return false;
       if (!match(filters.natureza, item.natureza)) return false;
       if (!match(filters.fonteVinculo, item.fonteVinculo)) return false;
@@ -2461,6 +2478,7 @@ export function AnaliseLoaView() {
                       secretaria: "Secretaria",
                       unidade: "Unidade",
                       programa: "Programa",
+                      tipoAcao: "Tipo de Ação",
                       acao: "Ação",
                       natureza: "Natureza",
                       fonteVinculo: "Fonte / Vínculo",
@@ -2469,7 +2487,6 @@ export function AnaliseLoaView() {
                       elemento: "Mod. Aplicação",
                       subelemento: "Subelemento",
                       processo: "Processo",
-                      exercicio: "Exercício",
                     };
 
                     const fieldLabel = labels[key] || key;
@@ -2523,7 +2540,7 @@ export function AnaliseLoaView() {
                                     onClick={() => {
                                       setFilters((prev) => ({ ...prev, [key]: [] }));
                                     }}
-                                    className="text-[10px] font-bold text-rose-600 hover:underline"
+                                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
                                   >
                                     Limpar
                                   </button>
@@ -2583,6 +2600,74 @@ export function AnaliseLoaView() {
                     );
                   })}
               </div>
+
+              {/* Badges de Filtros Ativos */}
+              {(() => {
+                const activeFilterCount =
+                  Object.keys(filterOptions)
+                    .filter((k) => k !== "orgao")
+                    .reduce((sum, k) => sum + (filters[k as keyof TechnicalFilterState]?.length || 0), 0) +
+                  Number(Boolean(filters.search));
+
+                if (!activeFilterCount) return null;
+
+                const labelsMap: Record<string, string> = {
+                  secretaria: "Secretaria",
+                  unidade: "Unidade",
+                  programa: "Programa",
+                  tipoAcao: "Tipo de Ação",
+                  acao: "Ação",
+                  natureza: "Natureza",
+                  fonteVinculo: "Fonte / Vínculo",
+                  categoriaEconomica: "Cat. Despesa",
+                  grupoNatureza: "Grupo Despesa",
+                  elemento: "Mod. Aplicação",
+                  subelemento: "Subelemento",
+                  processo: "Processo",
+                };
+
+                return (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/40">
+                    <span className="text-[11px] font-bold text-on-surface-variant mr-1">Filtros ativos:</span>
+                    {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
+                      .filter((k) => k !== "orgao")
+                      .flatMap((k) =>
+                        ((filters[k] || []) as string[]).map((val) => (
+                          <span
+                            key={`${k}-${val}`}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20"
+                          >
+                            <strong>{labelsMap[k] || k}:</strong> {val}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  [k]: (prev[k] as string[]).filter((v) => v !== val),
+                                }));
+                              }}
+                              className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    {filters.search && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
+                        <strong>Busca:</strong> "{filters.search}"
+                        <button
+                          type="button"
+                          onClick={() => setFilters((prev) => ({ ...prev, search: "" }))}
+                          className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
           );
         }
