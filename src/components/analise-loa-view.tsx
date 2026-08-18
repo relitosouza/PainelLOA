@@ -286,6 +286,29 @@ export function AnaliseLoaView() {
 
   // Estados para o Planejamento LDO - 2027 (Indicador, Meta Física, Custo Físico 2027)
   const [ldoPlanningMap, setLdoPlanningMap] = useState<Record<string, LdoPlanningData>>({});
+  const [editingLdoPlanningGroupKey, setEditingLdoPlanningGroupKey] = useState<string | null>(null);
+  const [editLdoIndicador, setEditLdoIndicador] = useState("");
+  const [editLdoUnidadeMedida, setEditLdoUnidadeMedida] = useState("");
+  const [editLdoCustoFisico, setEditLdoCustoFisico] = useState("");
+  const [editLdoCustoFinanceiro, setEditLdoCustoFinanceiro] = useState("");
+
+  const handleStartEditLdoPlanning = (group: EditableGroup) => {
+    const currentData = getLdoPlanningForGroup(group);
+    setEditLdoIndicador(currentData.indicador || "");
+    setEditLdoUnidadeMedida(currentData.unidadeMedida || "Percentual (%)");
+    setEditLdoCustoFisico(
+      currentData.custoFisico2027 != null
+        ? currentData.custoFisico2027.toString().replace(".", ",")
+        : "0"
+    );
+    setEditLdoCustoFinanceiro(
+      currentData.custoFinanceiro2027 != null
+        ? formatBr(currentData.custoFinanceiro2027)
+        : formatBr(group.valLoa)
+    );
+    setEditingLdoPlanningGroupKey(group.id);
+  };
+
   const handleSaveLdoPlanning = async (group: EditableGroup) => {
     const custoFisicoNum = parseBr(editLdoCustoFisico);
     const custoFinNum = parseBr(editLdoCustoFinanceiro);
@@ -328,12 +351,6 @@ export function AnaliseLoaView() {
 
     setEditingLdoPlanningGroupKey(null);
   };
-  const [editingLdoPlanningGroupKey, setEditingLdoPlanningGroupKey] = useState<string | null>(null);
-  const [tempLdoPlanning, setTempLdoPlanning] = useState<LdoPlanningData>({
-    indicador: "",
-    unidadeMedida: "Percentual (%)",
-    custoFisico2027: "0,00",
-  });
 
   // Estado para Personalização de Cards e Ordenação do Layout
   const [layoutConfig, setLayoutConfig] = useState<AnaliseLoaLayoutConfig>(DEFAULT_LAYOUT_CONFIG);
