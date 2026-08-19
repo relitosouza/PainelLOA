@@ -38,6 +38,26 @@ export const VINCULO_OPTIONS = [
   { value: "08", label: "08 — Emendas Individuais" },
 ];
 
+export function formatVinculoComAplicacao(fonteVinculo?: string, codigoAplicacao?: string): string {
+  const fonte = (fonteVinculo || "01").trim();
+  const app = (codigoAplicacao || "").trim();
+  if (!app) return fonte;
+
+  if (fonte.includes(app) || fonte.includes(`.${app}`)) return fonte;
+
+  if (/^\d+$/.test(fonte)) {
+    return `${fonte}.${app}`;
+  }
+
+  if (fonte.includes("—") || fonte.includes("-")) {
+    const [code, ...rest] = fonte.split(/[—-]/);
+    const desc = rest.join("—").trim();
+    return `${code.trim()}.${app}${desc ? ` — ${desc}` : ""}`;
+  }
+
+  return `${fonte}.${app}`;
+}
+
 export function AddElementExpenseDialog({
   actionLabel,
   natureLabel,
@@ -188,33 +208,52 @@ export function AddElementExpenseDialog({
             />
           </label>
 
-          {/* Vínculo de Recursos */}
-          <label className="block text-xs font-bold text-on-surface">
-            Vínculo
-            <select
-              value={vinculo}
-              onChange={(event) => setVinculo(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
-            >
-              <option value="">Selecione o vínculo...</option>
-              {VINCULO_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Bloco Unificado: Vínculo & Código de Aplicação */}
+          <div className="rounded-xl border border-outline-variant/60 bg-surface-container-lowest/80 p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-on-surface">Vínculo & Aplicação</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 border border-teal-300 dark:border-teal-700 font-mono font-bold text-[11px]">
+                <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                <span>{formatVinculoComAplicacao(vinculo || "01", codigoAplicacao)}</span>
+              </span>
+            </div>
 
-          {/* Código de Aplicação (Campo Livre) */}
-          <label className="block text-xs font-bold text-on-surface">
-            Código de Aplicação
-            <input
-              value={codigoAplicacao}
-              onChange={(event) => setCodigoAplicacao(event.target.value)}
-              placeholder="Ex.: 110.0000, 300.0000, 100..."
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary focus:outline-none"
-            />
-          </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-bold text-on-surface mb-1">
+                  Fonte / Vínculo
+                </label>
+                <select
+                  value={vinculo}
+                  onChange={(event) => setVinculo(event.target.value)}
+                  className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-1.5 text-xs font-mono text-on-surface focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+                >
+                  <option value="">Selecione...</option>
+                  {VINCULO_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-on-surface mb-1">
+                  Código de Aplicação
+                </label>
+                <input
+                  value={codigoAplicacao}
+                  onChange={(event) => setCodigoAplicacao(event.target.value)}
+                  placeholder="Ex.: 110.0000"
+                  className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-1.5 text-xs font-mono focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <p className="text-[10px] text-on-surface-variant font-normal">
+              Composição: <strong className="font-mono text-on-surface">{vinculo || "01"}</strong> (Fonte) . <strong className="font-mono text-on-surface">{codigoAplicacao || "110.0000"}</strong> (Aplicação.Variável)
+            </p>
+          </div>
 
           {/* Processo Administrativo */}
           <label className="block text-xs font-bold text-on-surface">

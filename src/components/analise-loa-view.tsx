@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as R
 import { currency, integer, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
-import { AddElementExpenseDialog, VINCULO_OPTIONS } from "./add-element-expense-dialog";
+import { AddElementExpenseDialog, VINCULO_OPTIONS, formatVinculoComAplicacao } from "./add-element-expense-dialog";
 import {
   AnaliseLoaCardsConfigDialog,
   DEFAULT_LAYOUT_CONFIG,
@@ -63,6 +63,7 @@ export interface RawBudgetItem {
   elemento: string;
   subelemento: string;
   processo: string;
+  codigoAplicacao?: string;
   projetoIniciado?: string;
   observacao?: string;
   valLdo: number;
@@ -274,6 +275,7 @@ export function AnaliseLoaView() {
   const [editingSubelementItem, setEditingSubelementItem] = useState<RawBudgetItem | null>(null);
   const [editSubelementName, setEditSubelementName] = useState("");
   const [editSubelementVinculo, setEditSubelementVinculo] = useState("");
+  const [editSubelementCodigoAplicacao, setEditSubelementCodigoAplicacao] = useState("");
   const [editSubelementProcesso, setEditSubelementProcesso] = useState("");
   const [editSubelementProjetoIniciado, setEditSubelementProjetoIniciado] = useState("");
   const [editSubelementObservacao, setEditSubelementObservacao] = useState("");
@@ -797,7 +799,13 @@ export function AnaliseLoaView() {
         } catch (apiError) {
           console.warn("Não foi possível carregar registros via API:", apiError);
         }
-        const res = await fetch("/loa_new.xlsx");
+        const res = await fetch(`/loa_new.xlsx?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+          },
+        });
         if (!res.ok) throw new Error("Planilha não encontrada");
         const buffer = await res.arrayBuffer();
         const wb = XLSX.read(buffer, { type: "array" });
@@ -825,6 +833,7 @@ export function AnaliseLoaView() {
           process: findCol("processo", "processo administrativo", "proc.", "proc", "processo_administrativo"),
           value: findCol("valor", "val_loa", "valor loa", "valor_loa"),
           link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
+          appCode: findCol("codigo_aplicacao", "cod_aplicacao", "codigo de aplicacao", "código de aplicação", "cod. aplicacao", "cod aplicacao", "aplicacao", "aplicação", "cd_aplicacao"),
           obs: findCol("obs.", "obs", "observacao", "observação", "observacoes", "observações", "justificativa"),
           iniciado: findCol("iniciado", "projeto iniciado", "projeto_iniciado"),
         };
@@ -856,6 +865,17 @@ export function AnaliseLoaView() {
             : undefined;
           const valor = Number(r[columns.value]) || 0;
           const realVinculoStr = String(r[columns.link] || "").trim();
+          let extractedFonte = realVinculoStr;
+          let extractedCodigoAplicacao: string | undefined = columns.appCode >= 0 ? String(r[columns.appCode] || "").trim() || undefined : undefined;
+
+          // Se o vínculo vier no formato composto por pontos (ex.: 01.110.0000)
+          if (realVinculoStr.includes(".") && !extractedCodigoAplicacao) {
+            const vParts = realVinculoStr.split(".");
+            if (vParts.length >= 2) {
+              extractedFonte = vParts[0];
+              extractedCodigoAplicacao = vParts.slice(1).join(".");
+            }
+          }
 
           const natCodeClean = natureStr.split("-")[0].trim();
           const natCodeRaw = natCodeClean.replace(/\D/g, "");
@@ -887,9 +907,10 @@ export function AnaliseLoaView() {
             ? (grupoNome ? `${parts[0]}.${parts[1]} — ${grupoNome}` : `${parts[0]}.${parts[1]} — Grupo`)
             : "Outros";
           const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
-          const vinculo = realVinculoStr || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
+          const vinculo = extractedFonte || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
+          const codApp = extractedCodigoAplicacao;
 
-          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${subelemStr}`;
+          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${codApp || ""}|${processStr}|${subelemStr}`;
 
           if (!loaMap.has(groupKey)) {
             loaMap.set(groupKey, {
@@ -903,6 +924,7 @@ export function AnaliseLoaView() {
               acao: actionStr,
               natureza: natureStr,
               fonteVinculo: vinculo,
+              codigoAplicacao: codApp,
               categoriaEconomica: catEcon,
               grupoNatureza: grpNat,
               elemento: elem,
@@ -928,16 +950,16 @@ export function AnaliseLoaView() {
 
         // 1. Carregar despesas adicionadas manualmente
         try {
-          let addedList: RawBudgetItem[] = [];
+          let apiAddedList: RawBudgetItem[] = [];
           const resAdded = await fetch("/api/configuracoes/layout?chave=painel_loa_added_expenses");
           if (resAdded.ok) {
             const data = await resAdded.json();
-            if (data.success && Array.isArray(data.valor)) addedList = data.valor;
+            if (data.success && Array.isArray(data.valor)) apiAddedList = data.valor;
           }
-          if (!addedList.length) {
-            const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
-            if (savedAddedExpenses) addedList = JSON.parse(savedAddedExpenses) as RawBudgetItem[];
-          }
+          const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
+          const localAddedList = savedAddedExpenses ? JSON.parse(savedAddedExpenses) as RawBudgetItem[] : [];
+          const addedById = new Map([...apiAddedList, ...localAddedList].map((item) => [item.id, item]));
+          const addedList = [...addedById.values()];
           if (addedList.length) {
             itemsArray = [...itemsArray, ...addedList.map(item => ({ ...item, tipoAcao: item.tipoAcao || getActionTypeLabel(item.acao) }))];
           }
@@ -985,12 +1007,45 @@ export function AnaliseLoaView() {
             });
           }
 
-          const savedJustifications = localStorage.getItem("painel_loa_justifications_v1");
-          if (savedJustifications) {
-            setJustifications(JSON.parse(savedJustifications));
+          let loadedJustifications: Record<string, string> = {};
+          const resJust = await fetch("/api/configuracoes/layout?chave=painel_loa_justifications");
+          if (resJust.ok) {
+            const data = await resJust.json();
+            if (data.success && data.valor) loadedJustifications = data.valor;
+          }
+          if (!Object.keys(loadedJustifications).length) {
+            const savedJustifications = localStorage.getItem("painel_loa_justifications_v1");
+            if (savedJustifications) loadedJustifications = JSON.parse(savedJustifications);
+          }
+          if (Object.keys(loadedJustifications).length > 0) {
+            setJustifications(loadedJustifications);
           }
         } catch (e) {
           console.warn("Erro ao carregar edições salvas:", e);
+        }
+
+        // 3.5. Carregar e aplicar edições personalizadas de subelementos (vínculo, código de aplicação, processo, projeto iniciado, observação)
+        try {
+          let subelementEdits: Record<string, Partial<RawBudgetItem>> = {};
+          const resSub = await fetch("/api/configuracoes/layout?chave=painel_loa_subelement_edits");
+          if (resSub.ok) {
+            const data = await resSub.json();
+            if (data.success && data.valor) subelementEdits = data.valor;
+          }
+          if (!Object.keys(subelementEdits).length) {
+            const savedSub = localStorage.getItem("painel_loa_subelement_edits_v1");
+            if (savedSub) subelementEdits = JSON.parse(savedSub);
+          }
+          if (Object.keys(subelementEdits).length > 0) {
+            itemsArray = itemsArray.map((item) => {
+              if (subelementEdits[item.id]) {
+                return { ...item, ...subelementEdits[item.id] };
+              }
+              return item;
+            });
+          }
+        } catch (e) {
+          console.warn("Erro ao carregar customizações de subelementos:", e);
         }
 
         // 4. Carregar linhas validadas pelo usuário
@@ -1103,6 +1158,7 @@ export function AnaliseLoaView() {
       elemento,
       subelemento: subelementoFinal,
       processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
+      codigoAplicacao: newExpenseCodigoAplicacao.trim() || undefined,
       projetoIniciado: newExpenseProjetoIniciado || undefined,
       observacao: newExpenseObservacao.trim() || undefined,
       valLdo: 0,
@@ -1112,9 +1168,20 @@ export function AnaliseLoaView() {
     setRawItems((previous) => [...previous, newItem]);
     try {
       const saved = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([...saved, newItem]));
+      const addedList = [...saved, newItem];
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(addedList));
+      void fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: addedList }),
+      });
     } catch {
       localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([newItem]));
+      void fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: [newItem] }),
+      });
     }
     setExpandedEditGroups((previous) => new Set(previous).add(addExpenseGroup.id));
     setHasChanges(true);
@@ -1220,14 +1287,24 @@ export function AnaliseLoaView() {
 
       // Persistir no Banco de Dados
       try {
-        await fetch("/api/configuracoes/layout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chave: "painel_loa_custom_edits",
-            valor: customMap,
+        await Promise.all([
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_custom_edits",
+              valor: customMap,
+            }),
           }),
-        });
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_justifications",
+              valor: validJustifications,
+            }),
+          }),
+        ]);
       } catch (err) {
         console.error("Erro ao persistir edições no banco:", err);
       }
@@ -1452,13 +1529,14 @@ export function AnaliseLoaView() {
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
-    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; fonteVinculo: string; processo: string; projetoIniciado: string; observacao: string; ldo: number; loa: number; diff: number; count: number }>();
+    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; fonteVinculo: string; codigoAplicacao: string; processo: string; projetoIniciado: string; observacao: string; ldo: number; loa: number; diff: number; count: number }>();
 
     filteredItems.forEach((item) => {
       const name = item.subelemento && item.subelemento.trim() !== "" ? item.subelemento : item.natureza || "Outros / Sem Subelemento";
       const vinculo = item.fonteVinculo || "01";
+      const codApp = item.codigoAplicacao || "";
       const proc = item.processo && item.processo !== "—" ? item.processo : "";
-      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${vinculo}_${proc}_${name}`;
+      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${vinculo}_${codApp}_${proc}_${name}`;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -1467,6 +1545,7 @@ export function AnaliseLoaView() {
           secretaria: item.secretaria || "",
           natureza: item.natureza || "",
           fonteVinculo: vinculo,
+          codigoAplicacao: codApp,
           processo: proc,
           projetoIniciado: item.projetoIniciado || "",
           observacao: item.observacao || "",
@@ -1774,8 +1853,6 @@ export function AnaliseLoaView() {
       const savedAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
         .filter((entry) => entry.id !== item.id);
       localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(savedAdded));
-
-      // Sincronizar com o banco de dados
       await fetch("/api/configuracoes/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3562,6 +3639,7 @@ export function AnaliseLoaView() {
                                                           setEditingSubelementItem(item);
                                                           setEditSubelementName(getSubelementLabel(item));
                                                           setEditSubelementVinculo(item.fonteVinculo || "01");
+                                                          setEditSubelementCodigoAplicacao(item.codigoAplicacao || item.processo.match(/^CA:\s*(.+)$/i)?.[1]?.trim() || "");
                                                           setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
                                                           setEditSubelementProjetoIniciado(item.projetoIniciado || "");
                                                           setEditSubelementObservacao(item.observacao || justifications[item.id] || "");
@@ -3586,15 +3664,15 @@ export function AnaliseLoaView() {
                                                     </div>
                                                   </div>
 
-                                                  {/* Badges de Vínculo e Processo */}
+                                                  {/* Badges de Vínculo (com Código de Aplicação integrado) e Processo */}
                                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                                    {item.fonteVinculo && (
+                                                    {(item.fonteVinculo || item.codigoAplicacao) && (
                                                       <span
                                                         className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
-                                                        title={`Fonte / Vínculo: ${item.fonteVinculo}`}
+                                                        title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}`}
                                                       >
                                                         <span className="material-symbols-outlined text-[12px]">account_balance</span>
-                                                        <span>Vínculo: {item.fonteVinculo}</span>
+                                                        <span>Vínculo: {formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}</span>
                                                       </span>
                                                     )}
                                                     {item.processo && item.processo !== "—" && (
@@ -3830,9 +3908,9 @@ export function AnaliseLoaView() {
                                 Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
                               </span>
                             )}
-                            {item.fonteVinculo && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-teal-50 text-teal-800 border border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-700/60">
-                                Vínculo {item.fonteVinculo}
+                            {(item.fonteVinculo || item.codigoAplicacao) && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-teal-50 text-teal-800 border border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-700/60" title={`Fonte/Vínculo e Aplicação: ${formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}`}>
+                                Vínculo {formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}
                               </span>
                             )}
                             {item.processo && (
@@ -4282,6 +4360,16 @@ export function AnaliseLoaView() {
                   className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-right font-mono text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                 />
               </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Código de Aplicação
+                <input
+                  value={editSubelementCodigoAplicacao}
+                  onChange={(event) => setEditSubelementCodigoAplicacao(event.target.value)}
+                  placeholder="Ex.: 110000"
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-mono"
+                />
+              </label>
               <label className="block text-xs font-bold text-on-surface">
                 Vínculo
                 <select
@@ -4368,35 +4456,66 @@ export function AnaliseLoaView() {
                 />
               </label>
 
-              <label className="block text-xs font-bold text-on-surface">
-                Fonte / Vínculo de Recursos *
-                <div className="mt-1 flex gap-2">
-                  <select
-                    value={VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) ? editSubelementVinculo : "custom"}
-                    onChange={(event) => {
-                      if (event.target.value !== "custom") {
-                        setEditSubelementVinculo(event.target.value);
-                      }
-                    }}
-                    className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {VINCULO_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                    <option value="custom">Outro Vínculo...</option>
-                  </select>
-                  {(!VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) || editSubelementVinculo === "custom") && (
-                    <input
-                      value={editSubelementVinculo === "custom" ? "" : editSubelementVinculo}
-                      onChange={(event) => setEditSubelementVinculo(event.target.value)}
-                      placeholder="Ex.: 01"
-                      className="w-24 rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs font-mono"
-                    />
-                  )}
+              {/* Bloco Unificado: Fonte / Vínculo & Código de Aplicação */}
+              <div className="rounded-xl border border-outline-variant/60 bg-surface-container-lowest/80 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-on-surface">Vínculo & Aplicação</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 border border-teal-300 dark:border-teal-700 font-mono font-bold text-[11px]">
+                    <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                    <span>{formatVinculoComAplicacao(editSubelementVinculo || "01", editSubelementCodigoAplicacao)}</span>
+                  </span>
                 </div>
-              </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-on-surface mb-1">
+                      Fonte / Vínculo *
+                    </label>
+                    <div className="flex gap-1.5">
+                      <select
+                        value={VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) ? editSubelementVinculo : "custom"}
+                        onChange={(event) => {
+                          if (event.target.value !== "custom") {
+                            setEditSubelementVinculo(event.target.value);
+                          }
+                        }}
+                        className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-1.5 text-xs font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        {VINCULO_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                        <option value="custom">Outro...</option>
+                      </select>
+                      {(!VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) || editSubelementVinculo === "custom") && (
+                        <input
+                          value={editSubelementVinculo === "custom" ? "" : editSubelementVinculo}
+                          onChange={(event) => setEditSubelementVinculo(event.target.value)}
+                          placeholder="Ex.: 01"
+                          className="w-16 rounded-lg border border-outline-variant bg-surface px-2 py-1.5 text-xs font-mono"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-on-surface mb-1">
+                      Código de Aplicação
+                    </label>
+                    <input
+                      value={editSubelementCodigoAplicacao}
+                      onChange={(event) => setEditSubelementCodigoAplicacao(event.target.value)}
+                      placeholder="Ex.: 110.0000"
+                      className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-1.5 text-xs font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-on-surface-variant font-normal">
+                  Composição: <strong className="font-mono text-on-surface">{editSubelementVinculo || "01"}</strong> (Fonte) . <strong className="font-mono text-on-surface">{editSubelementCodigoAplicacao || "110.0000"}</strong> (Aplicação.Variável)
+                </p>
+              </div>
 
               <label className="block text-xs font-bold text-on-surface">
                 Valor LOA *
@@ -4456,27 +4575,66 @@ export function AnaliseLoaView() {
                 type="button"
                 onClick={() => {
                   const newValor = parseBr(editSubelementValor);
+                  const updatedPayload: Partial<RawBudgetItem> = {
+                    subelemento: editSubelementName.trim() || editingSubelementItem.subelemento,
+                    fonteVinculo: editSubelementVinculo.trim() || editingSubelementItem.fonteVinculo || "01",
+                    codigoAplicacao: editSubelementCodigoAplicacao.trim() || undefined,
+                    processo: editSubelementProcesso.trim() || "—",
+                    projetoIniciado: editSubelementProjetoIniciado || undefined,
+                    observacao: editSubelementObservacao.trim() || undefined,
+                    valLoa: newValor,
+                  };
+
                   setRawItems((previous) =>
                     previous.map((entry) =>
                       entry.id === editingSubelementItem.id
                         ? {
                           ...entry,
-                          subelemento: editSubelementName.trim() || entry.subelemento,
-                          fonteVinculo: editSubelementVinculo.trim() || entry.fonteVinculo || "01",
-                          processo: editSubelementProcesso.trim() || "—",
-                          projetoIniciado: editSubelementProjetoIniciado || undefined,
-                          observacao: editSubelementObservacao.trim() || undefined,
-                          valLoa: newValor,
+                          ...updatedPayload,
                         }
                         : entry
                     )
                   );
+
                   if (editSubelementObservacao.trim()) {
                     setJustifications((prev) => ({
                       ...prev,
                       [editingSubelementItem.id]: editSubelementObservacao.trim(),
                     }));
                   }
+
+                  // Gravar no LocalStorage e no Banco de Dados
+                  try {
+                    const savedSubEdits = JSON.parse(localStorage.getItem("painel_loa_subelement_edits_v1") || "{}");
+                    savedSubEdits[editingSubelementItem.id] = updatedPayload;
+                    localStorage.setItem("painel_loa_subelement_edits_v1", JSON.stringify(savedSubEdits));
+                    void fetch("/api/configuracoes/layout", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        chave: "painel_loa_subelement_edits",
+                        valor: savedSubEdits,
+                      }),
+                    });
+
+                    // Se for item adicionado manualmente, atualizar também o registro
+                    if (editingSubelementItem.id.startsWith("manual-")) {
+                      const savedAdded = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
+                      const nextAdded = savedAdded.map((it) => it.id === editingSubelementItem.id ? { ...it, ...updatedPayload } : it);
+                      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(nextAdded));
+                      void fetch("/api/configuracoes/layout", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          chave: "painel_loa_added_expenses",
+                          valor: nextAdded,
+                        }),
+                      });
+                    }
+                  } catch (e) {
+                    console.warn("Erro ao salvar customizações do subelemento:", e);
+                  }
+
                   setHasChanges(true);
                   setEditingSubelementItem(null);
                 }}
