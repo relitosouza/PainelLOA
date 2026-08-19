@@ -117,7 +117,7 @@ export function AddElementExpenseDialog({
     }
   };
 
-  const canConfirm = Boolean(subelemento.trim() && parseValue(value) > 0);
+  const canConfirm = Boolean(subelemento.trim() && (!value || parseValue(value) >= 0));
 
   return (
     <div

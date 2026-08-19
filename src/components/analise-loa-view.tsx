@@ -1132,7 +1132,7 @@ export function AnaliseLoaView() {
   const handleAddExpense = () => {
     if (!addExpenseGroup) return;
     const value = parseBr(newExpenseValor);
-    if (value <= 0) return;
+    if (isNaN(value) || value < 0) return;
 
     const naturezaFinal = addElementContext ? addElementContext.natureza : newExpenseNatureza;
     if (!naturezaFinal) return;
@@ -1183,7 +1183,10 @@ export function AnaliseLoaView() {
         body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: [newItem] }),
       });
     }
+
+    const natureKey = `${addExpenseGroup.id}|${naturezaFinal}`;
     setExpandedEditGroups((previous) => new Set(previous).add(addExpenseGroup.id));
+    setExpandedNatureGroups((previous) => new Set(previous).add(natureKey));
     setHasChanges(true);
     setAddExpenseGroup(null);
     setAddElementContext(null);
