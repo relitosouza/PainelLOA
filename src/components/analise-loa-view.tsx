@@ -157,7 +157,7 @@ const ACTION_CANONICAL_MAP: Record<string, string> = {
 
 function normalizeActionLabel(value: string) {
   if (!value) return value;
-  const clean = value.trim();
+  const clean = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   const match = clean.match(/^(\d+[\.\d]*|\d+)/);
   const code = match ? match[1] : null;
   if (code && ACTION_CANONICAL_MAP[code]) {
@@ -168,7 +168,7 @@ function normalizeActionLabel(value: string) {
 
 function normalizeProgramLabel(value: string) {
   if (!value) return value;
-  const program = value.trim();
+  const program = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
   return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
 }
@@ -1129,7 +1129,7 @@ export function AnaliseLoaView() {
     setSaveModalOpen(false);
   };
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!addExpenseGroup) return;
     const value = parseBr(newExpenseValor);
     if (isNaN(value) || value < 0) return;
@@ -1165,23 +1165,25 @@ export function AnaliseLoaView() {
       valLoa: value,
     };
 
+    const existingManualItems = rawItems.filter((i) => i.id.startsWith("manual-") && i.id !== newItem.id);
+    const addedList = [...existingManualItems, newItem];
+
     setRawItems((previous) => [...previous, newItem]);
+    setSavedRawItems((previous) => [...previous, newItem]);
+    setOriginalRawItems((previous) => [...previous, newItem]);
+
     try {
-      const saved = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
-      const addedList = [...saved, newItem];
       localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(addedList));
-      void fetch("/api/configuracoes/layout", {
+    } catch { }
+
+    try {
+      await fetch("/api/configuracoes/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: addedList }),
       });
-    } catch {
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([newItem]));
-      void fetch("/api/configuracoes/layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: [newItem] }),
-      });
+    } catch (err) {
+      console.error("Erro ao salvar despesa no banco:", err);
     }
 
     const natureKey = `${addExpenseGroup.id}|${naturezaFinal}`;

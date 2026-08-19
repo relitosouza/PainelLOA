@@ -49,6 +49,50 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Sincronizar na tabela relacional SubelementoCustomizado se for adição de subelementos
+    if (chave === "painel_loa_added_expenses" && Array.isArray(valor)) {
+      for (const item of valor) {
+        if (item && item.id) {
+          await db.subelementoCustomizado.upsert({
+            where: { id: item.id },
+            update: {
+              groupKey: item.progKey || null,
+              secretaria: item.secretaria || "",
+              programa: item.programa || "",
+              acao: item.acao || "",
+              natureza: item.natureza || "",
+              elemento: item.elemento || "",
+              subelemento: item.subelemento || "",
+              fonteVinculo: item.fonteVinculo || "01",
+              codigoAplicacao: item.codigoAplicacao || null,
+              processo: item.processo || null,
+              projetoIniciado: item.projetoIniciado || null,
+              observacao: item.observacao || null,
+              valLoa: Number(item.valLoa) || 0,
+              valLdo: Number(item.valLdo) || 0,
+            },
+            create: {
+              id: item.id,
+              groupKey: item.progKey || null,
+              secretaria: item.secretaria || "",
+              programa: item.programa || "",
+              acao: item.acao || "",
+              natureza: item.natureza || "",
+              elemento: item.elemento || "",
+              subelemento: item.subelemento || "",
+              fonteVinculo: item.fonteVinculo || "01",
+              codigoAplicacao: item.codigoAplicacao || null,
+              processo: item.processo || null,
+              projetoIniciado: item.projetoIniciado || null,
+              observacao: item.observacao || null,
+              valLoa: Number(item.valLoa) || 0,
+              valLdo: Number(item.valLdo) || 0,
+            },
+          }).catch((err) => console.warn("Aviso ao sincronizar SubelementoCustomizado:", err));
+        }
+      }
+    }
+
     return NextResponse.json({ success: true, valor: saved.valor });
   } catch (error) {
     console.error("Erro ao salvar configuração do painel:", error);

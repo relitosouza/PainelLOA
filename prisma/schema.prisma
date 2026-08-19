@@ -43,6 +43,8 @@ model BudgetRecord {
   @@index([administrativeProcess])
   @@index([value])
   @@index([importId])
+  @@index([organ, program, action])
+  @@index([expenseNature, subelement])
 }
 
 model BudgetUnit {
@@ -191,6 +193,8 @@ model IniciativaEstrategica {
   @@index([programaticaLdo])
   @@index([dsIniciativa])
   @@index([vinculo])
+  @@index([secretaria, programa, acao])
+  @@index([despesa, vinculo])
 }
 
 model NomenclaturaDespesa {
@@ -318,4 +322,28 @@ model PainelConfig {
   atualizadoEm DateTime @updatedAt
 
   @@index([chave])
+}
+
+model SubelementoCustomizado {
+  id              String   @id
+  groupKey        String?  @db.VarChar(255)
+  secretaria      String   @db.VarChar(255)
+  programa        String   @db.VarChar(255)
+  acao            String   @db.VarChar(255)
+  natureza        String   @db.VarChar(255)
+  elemento        String   @db.VarChar(100)
+  subelemento     String   @db.Text
+  fonteVinculo    String   @db.VarChar(100)
+  codigoAplicacao String?  @db.VarChar(100)
+  processo        String?  @db.VarChar(255)
+  projetoIniciado String?  @db.VarChar(50)
+  observacao      String?  @db.Text
+  valLoa          Decimal  @default(0) @db.Decimal(18, 2)
+  valLdo          Decimal  @default(0) @db.Decimal(18, 2)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  @@index([secretaria, programa, acao])
+  @@index([natureza])
+  @@index([fonteVinculo])
 }
