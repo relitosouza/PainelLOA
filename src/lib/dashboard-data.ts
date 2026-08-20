@@ -46,6 +46,7 @@ function mapDemoRecord(record: SecretariatRecord, index: number): DashboardRow {
     expenseNature: record.expenseNature,
     subelement: record.category === "operating" ? "33" : "51",
     administrativeProcess: record.process,
+    apelido: "",
     value: record.value,
   };
 }
@@ -165,6 +166,7 @@ export function buildDemoDashboardData(
       expenseNature: buildGroups(filteredRecords, "expenseNature"),
       subelement: buildGroups(filteredRecords, "subelement"),
       administrativeProcess: buildGroups(filteredRecords, "administrativeProcess"),
+      apelido: buildGroups(filteredRecords, "apelido"),
     },
     filterOptions: Object.fromEntries(
       FIELDS.map((field) => [

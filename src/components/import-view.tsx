@@ -113,7 +113,7 @@ export function ImportView() {
         if (currentResponse.ok) {
           const currentData = await currentResponse.json() as { records?: Array<Record<string, unknown>> };
           const currentRecords = (currentData.records ?? []).map((row) => ({
-            organ: String(row.organ ?? ""), budgetUnit: String(row.budgetUnit ?? ""), functionName: "", subfunction: "", program: String(row.program ?? ""), action: String(row.action ?? ""), expenseNature: "", subelement: "", administrativeProcess: "", value: Number(row.value) || 0,
+            organ: String(row.organ ?? ""), budgetUnit: String(row.budgetUnit ?? ""), functionName: "", subfunction: "", program: String(row.program ?? ""), action: String(row.action ?? ""), expenseNature: "", subelement: "", administrativeProcess: "", apelido: String(row.apelido ?? ""), value: Number(row.value) || 0,
           }));
           setComparison(compareProgramActions(currentRecords, parsed.records));
         }

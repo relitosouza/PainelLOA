@@ -58,6 +58,7 @@ async function groupBy(field: FieldKey, where: Prisma.BudgetRecordWhereInput) {
     case "expenseNature": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["expenseNature"], ...args }), field);
     case "subelement": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["subelement"], ...args }), field);
     case "administrativeProcess": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["administrativeProcess"], ...args }), field);
+    case "apelido": return normalizeGroups(await db.budgetRecord.groupBy({ by: ["apelido"], ...args }), field);
   }
   return [];
 }
@@ -70,6 +71,7 @@ async function distinctCount(field: FieldKey, where: Prisma.BudgetRecordWhereInp
     case "program": return (await db.budgetRecord.groupBy({ by: ["program"], where })).length;
     case "action": return (await db.budgetRecord.groupBy({ by: ["action"], where })).length;
     case "administrativeProcess": return (await db.budgetRecord.groupBy({ by: ["administrativeProcess"], where })).length;
+    case "apelido": return (await db.budgetRecord.groupBy({ by: ["apelido"], where })).length;
     default: return 0;
   }
 }

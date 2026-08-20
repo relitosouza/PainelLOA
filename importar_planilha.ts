@@ -5,7 +5,7 @@ import { parseWorkbook } from "./src/lib/parser";
 const prisma = new PrismaClient();
 
 async function main() {
-  const filePath = "./ConsolidadoLoa27_ATIVIDADES (1).xlsx";
+  const filePath = "/home/sf01/Downloads/LOA PROPOSTA + APELIDO.xlsx";
   console.log("Lendo arquivo...");
   
   if (!fs.existsSync(filePath)) {
@@ -15,6 +15,14 @@ async function main() {
 
   const buffer = fs.readFileSync(filePath);
   const parsed = parseWorkbook(buffer);
+  const numberOrNull = (value: unknown) => {
+    const n = Number(value);
+    return value === "" || value === null || value === undefined || !Number.isFinite(n) ? null : n;
+  };
+  const integerOrNull = (value: unknown) => {
+    const n = numberOrNull(value);
+    return n === null ? null : Math.trunc(n);
+  };
   
   if (!parsed.hasRequiredFields) {
     console.error("Erro: A planilha não possui todos os campos obrigatórios.");
@@ -28,16 +36,13 @@ async function main() {
 
   console.log(`Encontrados ${parsed.records.length} registros válidos.`);
   
-  console.log("Limpando dados anteriores...");
-  await prisma.loaImport.deleteMany();
-  
   const totalValue = parsed.records.reduce((sum, row) => sum + row.value, 0);
   
   console.log("Iniciando importação no banco de dados local...");
   const imported = await prisma.$transaction(async (tx) => {
     const batch = await tx.loaImport.create({
       data: {
-        fileName: "ConsolidadoLoa27_ATIVIDADES (1).xlsx",
+        fileName: "LOA PROPOSTA + APELIDO.xlsx",
         recordCount: parsed.records.length,
         totalValue: totalValue,
       }
@@ -52,6 +57,25 @@ async function main() {
         })),
       });
       console.log(`Importado lote ${start} a ${Math.min(start + 1000, parsed.records.length)}...`);
+    }
+    if (parsed.contracts.length) {
+      await tx.contract.createMany({
+        data: parsed.contracts.map((row) => ({
+          ...row,
+          importId: batch.id,
+          valorContratual: numberOrNull(row.valorContratual),
+          valor12Meses: numberOrNull(row.valor12Meses),
+          loaProposta: numberOrNull(row.loaProposta),
+          diferenca: numberOrNull(row.diferenca),
+          qtdProgramaticas: integerOrNull(row.qtdProgramaticas),
+          mesesContrato: integerOrNull(row.mesesContrato),
+          mesesRestantes: integerOrNull(row.mesesRestantes),
+          quantidadePA: integerOrNull(row.quantidadePA),
+          inicioContrato: row.inicioContrato ? new Date(String(row.inicioContrato)) : null,
+          vencimentoContrato: row.vencimentoContrato ? new Date(String(row.vencimentoContrato)) : null,
+        })),
+      });
+      console.log(`Importados ${parsed.contracts.length} contratos...`);
     }
     return batch;
   });

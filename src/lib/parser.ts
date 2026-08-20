@@ -4,8 +4,10 @@ import type { BudgetRow, FieldKey } from "@/types/loa";
 const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "CD ORGAO DS ORGAO": "organ",
   "ORGAO": "organ",
+  "SECRETARIA": "organ",
   "CD UNID DS UNID": "budgetUnit",
   "UNIDADE ORCAMENTARIA": "budgetUnit",
+  "UNIDADE": "budgetUnit",
   "CD FUNCAO DS FUNCAO": "functionName",
   "FUNCAO": "functionName",
   "CD SUBFUNCAO DS SUBFUNCAO": "subfunction",
@@ -16,11 +18,22 @@ const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "ACAO": "action",
   "NATUREZA DE DESPESA": "expenseNature",
   "NATUREZA DA DESPESA": "expenseNature",
+  "NATUREZA": "expenseNature",
   "DESC SUB": "subelement",
   "SUBELEMENTO": "subelement",
   "PROCESSO ADMINISTRATIVO": "administrativeProcess",
   "VALOR": "value",
   "PECA ORCAMENTARIA": "budgetPiece",
+  "APELIDO": "apelido" as any,
+  "APELIDOS": "apelido" as any,
+  "APELIDO DESPESA": "apelido" as any,
+  "APELIDO DA DESPESA": "apelido" as any,
+  "CONTRATO": "contrato" as any,
+  "CONTRATOS": "contrato" as any,
+  "N CONTRATO": "contrato" as any,
+  "NUMERO CONTRATO": "contrato" as any,
+  "FR": "fonteRecurso" as any,
+  "TIPO DE ACAO": "tipoAcao" as any,
 };
 
 const REQUIRED: Array<FieldKey | "value"> = ["budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "value"];
@@ -64,9 +77,19 @@ function isValidHeader(map: Map<FieldKey | "value" | "budgetPiece", number>) {
 
 export function parseWorkbook(buffer: ArrayBuffer | Buffer) {
   const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name) === "CONSOLIDADOLOA27 ATIVIDADES") ?? workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "" });
-  return parseRows(rows);
+  const parsed = parseRows(rows);
+  const contracts = workbook.SheetNames.includes("Contratos") ? parseContracts(workbook.Sheets.Contratos) : [];
+  return { ...parsed, contracts };
+}
+
+const contractHeaders = ["secretaria", "fornecedor", "apelidoDespesa", "contratoPasta", "processoAdministrativo", "valorContratual", "inicioContrato", "vencimentoContrato", "fonteClassificacao", "classificacao", "qtdProgramaticas", "reajuste", "conferido", "mesesContrato", "mesesRestantes", "valor12Meses", "loaProposta", "vinculo", "quantidadePA", "diferenca"] as const;
+function excelDate(value: unknown) { const n = Number(value); return Number.isFinite(n) && n > 20000 ? new Date(Date.UTC(1899, 11, 30 + n)).toISOString() : null; }
+function parseContracts(sheet: XLSX.WorkSheet) {
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "", range: 2 });
+  return rows.filter((row) => row.some((value) => String(value ?? "").trim())).map((row) => Object.fromEntries(contractHeaders.map((key, i) => [key, ["inicioContrato", "vencimentoContrato"].includes(key) ? excelDate(row[i]) : row[i] ?? ""])));
 }
 
 export function parseRows(rows: unknown[][]) {
@@ -119,6 +142,12 @@ export function parseRows(rows: unknown[][]) {
     }
     record.organ = rowOrgan || currentOrgan;
     record.value = value;
+    const apelidoIdx = headerMap.get("apelido" as any);
+    const apelidoVal = apelidoIdx !== undefined ? clean(row[apelidoIdx]) : (row.length > 24 ? clean(row[24]) : "");
+    (record as BudgetRow & Record<string, string>).apelido = apelidoVal;
+    (record as BudgetRow & Record<string, string>).contrato = clean(row[headerMap.get("contrato" as any)!]);
+    (record as BudgetRow & Record<string, string>).fonteRecurso = clean(row[headerMap.get("fonteRecurso" as any)!]);
+    (record as BudgetRow & Record<string, string>).tipoAcao = clean(row[headerMap.get("tipoAcao" as any)!]);
     records.push(record);
   });
 
