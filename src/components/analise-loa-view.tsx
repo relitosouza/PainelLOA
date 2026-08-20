@@ -993,11 +993,6 @@ export function AnaliseLoaView() {
             const data = await resCustom.json();
             if (data.success && data.valor) customMap = data.valor;
           }
-          if (!Object.keys(customMap).length) {
-            const savedCustomLoa = localStorage.getItem("painel_loa_custom_edits_v1");
-            if (savedCustomLoa) customMap = JSON.parse(savedCustomLoa);
-          }
-
           if (Object.keys(customMap).length > 0) {
             itemsArray = itemsArray.map((item) => {
               if (customMap[item.id] !== undefined) {
@@ -1012,10 +1007,6 @@ export function AnaliseLoaView() {
           if (resJust.ok) {
             const data = await resJust.json();
             if (data.success && data.valor) loadedJustifications = data.valor;
-          }
-          if (!Object.keys(loadedJustifications).length) {
-            const savedJustifications = localStorage.getItem("painel_loa_justifications_v1");
-            if (savedJustifications) loadedJustifications = JSON.parse(savedJustifications);
           }
           if (Object.keys(loadedJustifications).length > 0) {
             setJustifications(loadedJustifications);
@@ -1280,19 +1271,17 @@ export function AnaliseLoaView() {
 
       setSavingState("saving");
 
-      // Gravar no localStorage e Banco de Dados
+      // Gravar alterações e justificativas no Banco de Dados
       const customMap: Record<string, number> = {};
       finalItems.forEach((item) => {
         customMap[item.id] = item.valLoa;
       });
 
-      localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
-      localStorage.setItem("painel_loa_justifications_v1", JSON.stringify(validJustifications));
       setJustifications(validJustifications);
 
       // Persistir no Banco de Dados
       try {
-        await Promise.all([
+        const responses = await Promise.all([
           fetch("/api/configuracoes/layout", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1310,8 +1299,14 @@ export function AnaliseLoaView() {
             }),
           }),
         ]);
+        if (responses.some((response) => !response.ok)) {
+          throw new Error("O banco de dados recusou o salvamento das alterações.");
+        }
       } catch (err) {
         console.error("Erro ao persistir edições no banco:", err);
+        setSavingState("idle");
+        setSaveError("Não foi possível salvar as alterações no banco de dados.");
+        return;
       }
 
       setHasChanges(false);
@@ -1882,23 +1877,6 @@ export function AnaliseLoaView() {
           body: JSON.stringify({
             chave: "painel_loa_removed_expenses",
             valor: nextRemoved,
-          }),
-        });
-      }
-    } catch { }
-
-    // 4. Se tiver edição de valor gravada para esse ID, limpar
-    try {
-      const customMap = JSON.parse(localStorage.getItem("painel_loa_custom_edits_v1") || "{}");
-      if (customMap[item.id] !== undefined) {
-        delete customMap[item.id];
-        localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
-        await fetch("/api/configuracoes/layout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chave: "painel_loa_custom_edits",
-            valor: customMap,
           }),
         });
       }
