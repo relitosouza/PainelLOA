@@ -14,7 +14,6 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   expenseNature: "Natureza",
   subelement: "Subelemento",
   administrativeProcess: "Processo",
-  apelido: "Apelido",
 };
 
 export type FilterState = DashboardFilterState;
@@ -198,9 +197,7 @@ export function Filters({
                     ? "Todos"
                     : selectedCount === 1
                     ? selectedValues[0]
-                    : selectedCount === 2
-                    ? `${selectedValues[0]}, ${selectedValues[1]}`
-                    : `${selectedValues[0]} + ${selectedCount - 1} sel.`}
+                    : `${selectedCount} sel.`}
                 </span>
                 <span className="material-symbols-outlined text-xs shrink-0">
                   {isOpen ? "expand_less" : "expand_more"}
@@ -216,30 +213,17 @@ export function Filters({
                   <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
                     <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
                       <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
-                      <div className="flex items-center gap-2">
-                        {allOptions.length > 0 && selectedCount < allOptions.length && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onChange({ ...filters, [key]: allOptions });
-                            }}
-                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                          >
-                            Todos
-                          </button>
-                        )}
-                        {selectedCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onChange({ ...filters, [key]: [] });
-                            }}
-                            className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
-                          >
-                            Limpar
-                          </button>
-                        )}
-                      </div>
+                      {selectedCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onChange({ ...filters, [key]: [] });
+                          }}
+                          className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                        >
+                          Limpar
+                        </button>
+                      )}
                     </div>
 
                     <input
@@ -340,3 +324,4 @@ export function Filters({
     </section>
   );
 }
+

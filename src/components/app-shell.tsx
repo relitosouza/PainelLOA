@@ -12,7 +12,6 @@ import { ExpenseDetailView } from "./expense-detail-view";
 import { AnaliseLoaView } from "./analise-loa-view";
 import { ElaboracaoLoaView } from "./elaboracao-loa-view";
 import { AssistenteLoaPage } from "./assistente-loa-page";
-import { ContractsView } from "./contracts-view";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 import { getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
@@ -134,8 +133,6 @@ export function AppShell({ view }: { view: string }) {
         <div className="content">
           {view === "assistente-loa" ? (
             <AssistenteLoaPage />
-          ) : view === "contratos" ? (
-            <ContractsView />
           ) : view === "importacao" ? (
             <ImportView />
           ) : view === "configuracoes" ? (

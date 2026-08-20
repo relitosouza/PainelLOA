@@ -27,7 +27,6 @@ export interface TechnicalFilterState {
   elemento: string[];
   subelemento: string[];
   processo: string[];
-  apelido: string[];
   search: string;
 }
 
@@ -45,7 +44,6 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   elemento: [],
   subelemento: [],
   processo: [],
-  apelido: [],
   search: "",
 };
 
@@ -65,8 +63,6 @@ export interface RawBudgetItem {
   elemento: string;
   subelemento: string;
   processo: string;
-  apelido: string;
-  contrato?: string;
   codigoAplicacao?: string;
   projetoIniciado?: string;
   observacao?: string;
@@ -733,7 +729,7 @@ export function AnaliseLoaView() {
           const apiLoaRes = await fetch("/api/loa?all=true");
           if (apiLoaRes.ok) {
             const apiLoaData = await apiLoaRes.json();
-            if (apiLoaData && Array.isArray(apiLoaData.records) && apiLoaData.records.length > 0) {
+            if (false && apiLoaData && Array.isArray(apiLoaData.records) && apiLoaData.records.length > 0) {
               apiLoaData.records.forEach((r: { id?: string; organ?: string; budgetUnit?: string; program?: string; action?: string; expenseNature?: string; subelement?: string; administrativeProcess?: string; value?: number }) => {
                 const organStr = String(r.organ || "").trim();
                 const unitStr = String(r.budgetUnit || "").trim();
@@ -742,8 +738,6 @@ export function AnaliseLoaView() {
                 let natureStr = String(r.expenseNature || "").trim();
                 const subelemStr = String(r.subelement || "").trim();
                 const processStr = String(r.administrativeProcess || "").trim();
-                const apelidoStr = String((r as { apelido?: string }).apelido || "").trim();
-                const contratoStr = String((r as { contrato?: string }).contrato || "").trim();
                 const valor = Number(r.value) || 0;
                 const vinculo = "Tesouro / Próprio";
 
@@ -778,12 +772,9 @@ export function AnaliseLoaView() {
                   : "Outros";
                 const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
 
-                const groupKey = `${organStr}|${programStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${apelidoStr}|${contratoStr}|${subelemStr}`;
+                const groupKey = `${organStr}|${programStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${subelemStr}`;
 
-                const existing = loaMap.get(groupKey);
-                if (existing) {
-                  existing.valLoa += valor;
-                } else loaMap.set(groupKey, {
+                loaMap.set(groupKey, {
                   id: groupKey,
                   progKey: programStr || groupKey,
                   secretaria: organStr,
@@ -799,8 +790,6 @@ export function AnaliseLoaView() {
                   elemento: elem,
                   subelemento: subelemStr,
                   processo: processStr || "—",
-                  apelido: apelidoStr || "—",
-                  contrato: contratoStr || undefined,
                   valLdo: 0,
                   valLoa: valor,
                 });
@@ -810,7 +799,6 @@ export function AnaliseLoaView() {
         } catch (apiError) {
           console.warn("Não foi possível carregar registros via API:", apiError);
         }
-        {
         const res = await fetch(`/loa_new.xlsx?t=${Date.now()}`, {
           cache: "no-store",
           headers: {
@@ -843,10 +831,6 @@ export function AnaliseLoaView() {
           nature: findCol("natureza", "natureza de despesa", "natureza da despesa"),
           subelement: findCol("desc_sub", "desc sub", "subelemento", "descrição subelemento", "descricao subelemento"),
           process: findCol("processo", "processo administrativo", "proc.", "proc", "processo_administrativo"),
-          apelido: findCol("apelido", "apelidos", "apelido da despesa", "apelido_despesa", "apelido despesa") >= 0 
-            ? findCol("apelido", "apelidos", "apelido da despesa", "apelido_despesa", "apelido despesa") 
-            : (headers.length > 24 ? 24 : -1),
-          contrato: findCol("contrato", "contratos", "contrato/pasta", "nº contrato", "numero contrato"),
           value: findCol("valor", "val_loa", "valor loa", "valor_loa"),
           link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
           appCode: findCol("codigo_aplicacao", "cod_aplicacao", "codigo de aplicacao", "código de aplicação", "cod. aplicacao", "cod aplicacao", "aplicacao", "aplicação", "cd_aplicacao"),
@@ -859,9 +843,6 @@ export function AnaliseLoaView() {
           if (!r || r.length === 0) continue;
 
           const peca = String(r[columns.piece] || "").trim();
-          // A LOA importada já alimenta os valores LOA; a planilha auxiliar
-          // entra aqui somente para recuperar os valores comparativos da LDO.
-          if (loaMap.size > 0 && peca !== "LDO") continue;
           const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
           let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
           organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
@@ -877,8 +858,6 @@ export function AnaliseLoaView() {
             .replace(/^4\.90\.52/, "4.4.90.52");
           const subelemStr = String(r[columns.subelement] || "").trim().replace(/^\.+/, "");
           const processStr = String(r[columns.process] || "").trim().replace(/^\.+/, "");
-          const apelidoStr = columns.apelido >= 0 ? String(r[columns.apelido] || "").trim() : "";
-          const contratoStr = columns.contrato >= 0 ? String(r[columns.contrato] || "").trim() : "";
           const obsStr = columns.obs >= 0 ? String(r[columns.obs] || "").trim() : "";
           const iniciadoRaw = columns.iniciado >= 0 ? String(r[columns.iniciado] || "").trim().toUpperCase() : "";
           const projetoIniciado = iniciadoRaw === "SIM" || iniciadoRaw === "NÃO" || iniciadoRaw === "NAO"
@@ -931,7 +910,7 @@ export function AnaliseLoaView() {
           const vinculo = extractedFonte || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
           const codApp = extractedCodigoAplicacao;
 
-          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${codApp || ""}|${processStr}|${apelidoStr}|${contratoStr}|${subelemStr}`;
+          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${codApp || ""}|${processStr}|${subelemStr}`;
 
           if (!loaMap.has(groupKey)) {
             loaMap.set(groupKey, {
@@ -951,8 +930,6 @@ export function AnaliseLoaView() {
               elemento: elem,
               subelemento: subelemStr,
               processo: processStr || "—",
-              apelido: apelidoStr || "—",
-              contrato: contratoStr || undefined,
               projetoIniciado: projetoIniciado,
               observacao: obsStr || undefined,
               valLdo: 0,
@@ -963,7 +940,6 @@ export function AnaliseLoaView() {
           const item = loaMap.get(groupKey)!;
           if (peca === "LDO") item.valLdo += valor;
           else if (peca === "LOA") item.valLoa += valor;
-        }
         }
 
         // Guardar cópia original inalterada para comparação em modificações
@@ -1181,8 +1157,7 @@ export function AnaliseLoaView() {
       grupoNatureza: template?.grupoNatureza || naturezaCodigo,
       elemento,
       subelemento: subelementoFinal,
-          processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
-          apelido: "—",
+      processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
       codigoAplicacao: newExpenseCodigoAplicacao.trim() || undefined,
       projetoIniciado: newExpenseProjetoIniciado || undefined,
       observacao: newExpenseObservacao.trim() || undefined,
@@ -1243,7 +1218,6 @@ export function AnaliseLoaView() {
       elemento: naturezaCodigo.split(".").slice(0, 4).join("."),
       subelemento: "",
       processo: "—",
-      apelido: "—",
       valLdo: 0,
       valLoa: project.valor,
       origem: "Banco de Projetos",
@@ -1258,25 +1232,50 @@ export function AnaliseLoaView() {
     setHasChanges(true);
   };
 
-  // Confirmar e Gravar Alterações + Justificativas no localStorage e Banco de Dados
+  // Confirmar e Gravar Alterações + Justificativas no localStorage
   const confirmSaveEdits = async () => {
     try {
+      // Separar os itens modificados em: com justificativa e sem justificativa
+      const savedMap = new Map(savedRawItems.map((item) => [item.id, item.valLoa]));
+
+      const itemsToRevert: string[] = [];
       const validJustifications: Record<string, string> = { ...justifications };
 
-      // Se não houver justificativa preenchida, usar justificativa padrão ao invés de reverter valores digitados
       modifiedItems.forEach((item) => {
         const text = (justifications[item.id] || "").trim();
-        validJustifications[item.id] = text || "Ajuste orçamentário LOA";
+        if (!text) {
+          itemsToRevert.push(item.id);
+        } else {
+          validJustifications[item.id] = text;
+        }
       });
 
+      // Tratar itens excluídos: se não possuírem justificativa, restaurá-los!
+      const restoredFromRemoval: RawBudgetItem[] = [];
       removedRawItems.forEach((item) => {
         const text = (justifications[item.id] || "").trim();
-        validJustifications[item.id] = text || "Remoção de dotação orçamentária";
+        if (!text) {
+          restoredFromRemoval.push(item);
+        } else {
+          validJustifications[item.id] = text;
+        }
       });
 
-      const finalItems = [...rawItems];
+      // Atualizar lista final de itens (revertendo os sem justificativa ao valor salvo + restaurando removidos sem justificativa)
+      let finalItems = rawItems.map((item) => {
+        if (itemsToRevert.includes(item.id)) {
+          const savedVal = savedMap.get(item.id) ?? item.valLdo;
+          return { ...item, valLoa: savedVal };
+        }
+        return item;
+      });
+
+      if (restoredFromRemoval.length > 0) {
+        finalItems = [...finalItems, ...restoredFromRemoval];
+      }
+
+      setRawItems(finalItems);
       setSavedRawItems(JSON.parse(JSON.stringify(finalItems)));
-      setOriginalRawItems(JSON.parse(JSON.stringify(finalItems)));
       setRemovedRawItems([]);
 
       setSavingState("saving");
@@ -1319,6 +1318,12 @@ export function AnaliseLoaView() {
       setSaveModalOpen(false);
       setSavingState("saved");
 
+      if (itemsToRevert.length > 0) {
+        alert(
+          `${itemsToRevert.length} linha(s) sem justificativa preenchida tiveram seus valores revertidos automaticamente aos valores anteriores!`
+        );
+      }
+
       setTimeout(() => setSavingState("idle"), 3000);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Não foi possível salvar as alterações.");
@@ -1329,13 +1334,7 @@ export function AnaliseLoaView() {
   // Extrair opções únicas cascading para os Chips de Filtro (dependente dos filtros atuais)
   const filterOptions = useMemo(() => {
     const getOptions = (key: keyof RawBudgetItem, currentFilterItems: RawBudgetItem[]) =>
-      Array.from(
-        new Set(
-          currentFilterItems
-            .map((item) => String(item[key] || "").trim())
-            .filter((val) => Boolean(val && val !== "undefined" && val !== "—" && val !== "-" && val !== "null"))
-        )
-      ).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+      Array.from(new Set(currentFilterItems.map((item) => String(item[key])).filter(Boolean))).sort();
 
     // Helper para obter os itens filtrados desconsiderando o filtro do próprio campo
     const getItemsForField = (fieldToIgnore: keyof TechnicalFilterState) => {
@@ -1356,7 +1355,6 @@ export function AnaliseLoaView() {
         if (fieldToIgnore !== "elemento" && !match(filters.elemento, item.elemento)) return false;
         if (fieldToIgnore !== "subelemento" && !match(filters.subelemento, item.subelemento)) return false;
         if (fieldToIgnore !== "processo" && !match(filters.processo, item.processo)) return false;
-        if (fieldToIgnore !== "apelido" && !match(filters.apelido, item.apelido)) return false;
 
         return true;
       });
@@ -1381,7 +1379,6 @@ export function AnaliseLoaView() {
       elemento: getOptions("elemento", getItemsForField("elemento")),
       subelemento: getOptions("subelemento", getItemsForField("subelemento")),
       processo: getOptions("processo", getItemsForField("processo")),
-      apelido: getOptions("apelido", getItemsForField("apelido")),
     };
   }, [rawItems, filters]);
 
@@ -1404,7 +1401,6 @@ export function AnaliseLoaView() {
       if (!match(filters.elemento, item.elemento)) return false;
       if (!match(filters.subelemento, item.subelemento)) return false;
       if (!match(filters.processo, item.processo)) return false;
-      if (!match(filters.apelido, item.apelido)) return false;
 
       if (filters.search) {
         const query = filters.search.toLowerCase();
@@ -2601,23 +2597,8 @@ export function AnaliseLoaView() {
 
               {/* Grade de Filtros Popover Multi-Select */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {(
-                  [
-                    "secretaria",
-                    "unidade",
-                    "programa",
-                    "tipoAcao",
-                    "acao",
-                    "natureza",
-                    "apelido",
-                    "subelemento",
-                    "fonteVinculo",
-                    "categoriaEconomica",
-                    "grupoNatureza",
-                    "processo",
-                  ] as Array<keyof typeof filterOptions>
-                )
-                  .filter((key) => filterOptions[key] !== undefined)
+                {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
+                  .filter((key) => key !== "orgao")
                   .map((key) => {
                     const labels: Record<string, string> = {
                       secretaria: "Secretaria",
@@ -2626,7 +2607,6 @@ export function AnaliseLoaView() {
                       tipoAcao: "Tipo de Ação",
                       acao: "Ação",
                       natureza: "Natureza",
-                      apelido: "Apelido",
                       fonteVinculo: "Fonte / Vínculo",
                       categoriaEconomica: "Cat. Despesa",
                       grupoNatureza: "Grupo Despesa",
@@ -2664,9 +2644,7 @@ export function AnaliseLoaView() {
                               ? "Todos"
                               : selectedCount === 1
                                 ? selectedValues[0]
-                                : selectedCount === 2
-                                ? `${selectedValues[0]}, ${selectedValues[1]}`
-                                : `${selectedValues[0]} + ${selectedCount - 1} sel.`}
+                                : `${selectedCount} sel.`}
                           </span>
                           <span className="material-symbols-outlined text-xs shrink-0">
                             {isOpen ? "expand_less" : "expand_more"}
@@ -2682,30 +2660,17 @@ export function AnaliseLoaView() {
                             <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
                               <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
                                 <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
-                                <div className="flex items-center gap-2">
-                                  {allOptions.length > 0 && selectedCount < allOptions.length && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setFilters((prev) => ({ ...prev, [key]: allOptions }));
-                                      }}
-                                      className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                                    >
-                                      Todos
-                                    </button>
-                                  )}
-                                  {selectedCount > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setFilters((prev) => ({ ...prev, [key]: [] }));
-                                      }}
-                                      className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
-                                    >
-                                      Limpar
-                                    </button>
-                                  )}
-                                </div>
+                                {selectedCount > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFilters((prev) => ({ ...prev, [key]: [] }));
+                                    }}
+                                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                                  >
+                                    Limpar
+                                  </button>
+                                )}
                               </div>
 
                               <input
@@ -2766,7 +2731,7 @@ export function AnaliseLoaView() {
               {(() => {
                 const activeFilterCount =
                   Object.keys(filterOptions)
-                    .filter((k) => k !== "orgao" && k !== "elemento")
+                    .filter((k) => k !== "orgao")
                     .reduce((sum, k) => sum + (filters[k as keyof TechnicalFilterState]?.length || 0), 0) +
                   Number(Boolean(filters.search));
 
@@ -2785,14 +2750,13 @@ export function AnaliseLoaView() {
                   elemento: "Mod. Aplicação",
                   subelemento: "Subelemento",
                   processo: "Processo",
-                  apelido: "Apelido",
                 };
 
                 return (
                   <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/40">
                     <span className="text-[11px] font-bold text-on-surface-variant mr-1">Filtros ativos:</span>
                     {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
-                      .filter((k) => k !== "orgao" && k !== "elemento")
+                      .filter((k) => k !== "orgao")
                       .flatMap((k) =>
                         ((filters[k] || []) as string[]).map((val) => (
                           <span
@@ -3725,24 +3689,6 @@ export function AnaliseLoaView() {
                                                         <span>Processo: {item.processo}</span>
                                                       </span>
                                                     )}
-                                                    {item.contrato && item.contrato !== "—" && (
-                                                      <span
-                                                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-emerald-800 dark:text-emerald-200 font-mono bg-emerald-100/70 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded-md shadow-2xs"
-                                                        title={`Contrato: ${item.contrato}`}
-                                                      >
-                                                        <span className="material-symbols-outlined text-[12px]">description</span>
-                                                        <span>Contrato: {item.contrato}</span>
-                                                      </span>
-                                                    )}
-                                                    {item.apelido && item.apelido !== "—" && (
-                                                      <span
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10.5px] font-bold rounded-md bg-amber-100/70 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs"
-                                                        title={`Apelido: ${item.apelido}`}
-                                                      >
-                                                        <span className="material-symbols-outlined text-[12px]">label</span>
-                                                        <span>Apelido: {item.apelido}</span>
-                                                      </span>
-                                                    )}
                                                   </div>
 
                                                   {/* Bloco Enquadrado de Informações (Projeto Iniciado + Observação) */}
@@ -4655,28 +4601,6 @@ export function AnaliseLoaView() {
                     )
                   );
 
-                  setSavedRawItems((previous) =>
-                    previous.map((entry) =>
-                      entry.id === editingSubelementItem.id
-                        ? {
-                          ...entry,
-                          ...updatedPayload,
-                        }
-                        : entry
-                    )
-                  );
-
-                  setOriginalRawItems((previous) =>
-                    previous.map((entry) =>
-                      entry.id === editingSubelementItem.id
-                        ? {
-                          ...entry,
-                          ...updatedPayload,
-                        }
-                        : entry
-                    )
-                  );
-
                   if (editSubelementObservacao.trim()) {
                     setJustifications((prev) => ({
                       ...prev,
@@ -4700,27 +4624,15 @@ export function AnaliseLoaView() {
 
                     // Se for item adicionado manualmente, atualizar também o registro
                     if (editingSubelementItem.id.startsWith("manual-")) {
-                      const allManual = rawItems.filter(i => i.id.startsWith("manual-")).map((it) => it.id === editingSubelementItem.id ? { ...it, ...updatedPayload } : it);
-                      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(allManual));
+                      const savedAdded = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
+                      const nextAdded = savedAdded.map((it) => it.id === editingSubelementItem.id ? { ...it, ...updatedPayload } : it);
+                      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(nextAdded));
                       void fetch("/api/configuracoes/layout", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           chave: "painel_loa_added_expenses",
-                          valor: allManual,
-                        }),
-                      });
-                    } else {
-                      // Se for item da planilha original, salvar também o valor em painel_loa_custom_edits
-                      const savedCustomMap = JSON.parse(localStorage.getItem("painel_loa_custom_edits_v1") || "{}");
-                      savedCustomMap[editingSubelementItem.id] = newValor;
-                      localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(savedCustomMap));
-                      void fetch("/api/configuracoes/layout", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          chave: "painel_loa_custom_edits",
-                          valor: savedCustomMap,
+                          valor: nextAdded,
                         }),
                       });
                     }

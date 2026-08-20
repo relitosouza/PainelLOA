@@ -1,7 +1,7 @@
-export const FIELDS = ["organ", "budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "administrativeProcess", "apelido"] as const;
+export const FIELDS = ["organ", "budgetUnit", "functionName", "subfunction", "program", "action", "expenseNature", "subelement", "administrativeProcess"] as const;
 export type FieldKey = (typeof FIELDS)[number];
 
-export type BudgetRow = Record<FieldKey, string> & { value: number; contrato?: string; fonteRecurso?: string; tipoAcao?: string };
+export type BudgetRow = Record<FieldKey, string> & { value: number };
 
 export type GroupTotal = { label: string; value: number; count: number };
 

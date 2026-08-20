@@ -37,7 +37,6 @@ export async function POST(request: Request) {
           data: parsed.records.slice(start, start + 1000).map((row) => ({ ...row, importId: batch.id, value: new Prisma.Decimal(row.value) })),
         });
       }
-      if (parsed.contracts.length) await tx.contract.createMany({ data: parsed.contracts.map((row) => ({ ...row, importId: batch.id, valorContratual: row.valorContratual === "" ? null : new Prisma.Decimal(Number(row.valorContratual)), valor12Meses: row.valor12Meses === "" ? null : new Prisma.Decimal(Number(row.valor12Meses)), loaProposta: row.loaProposta === "" ? null : new Prisma.Decimal(Number(row.loaProposta)), diferenca: row.diferenca === "" ? null : new Prisma.Decimal(Number(row.diferenca)), inicioContrato: row.inicioContrato ? new Date(String(row.inicioContrato)) : null, vencimentoContrato: row.vencimentoContrato ? new Date(String(row.vencimentoContrato)) : null })) });
       return batch;
     }, { maxWait: 10_000, timeout: 60_000 });
 

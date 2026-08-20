@@ -14,7 +14,6 @@ model LoaImport {
   totalValue  Decimal        @db.Decimal(18, 2)
   createdAt   DateTime       @default(now())
   records     BudgetRecord[]
-  contracts   Contract[]
 }
 
 model BudgetRecord {
@@ -31,10 +30,6 @@ model BudgetRecord {
   subelement              String
   administrativeProcess   String
   value                   Decimal  @db.Decimal(18, 2)
-  apelido                 String?
-  contrato                String?
-  fonteRecurso            String?
-  tipoAcao                String?
   createdAt               DateTime @default(now())
 
   @@index([organ])
@@ -50,35 +45,6 @@ model BudgetRecord {
   @@index([importId])
   @@index([organ, program, action])
   @@index([expenseNature, subelement])
-}
-
-model Contract {
-  id                    BigInt   @id @default(autoincrement())
-  importId              String
-  import                LoaImport @relation(fields: [importId], references: [id], onDelete: Cascade)
-  secretaria            String?
-  fornecedor            String?
-  apelidoDespesa        String?
-  contratoPasta         String?
-  processoAdministrativo String?
-  valorContratual       Decimal? @db.Decimal(18, 2)
-  inicioContrato        DateTime?
-  vencimentoContrato    DateTime?
-  fonteClassificacao    String?
-  classificacao         String?
-  qtdProgramaticas      Int?
-  reajuste              String?
-  conferido             String?
-  mesesContrato         Int?
-  mesesRestantes        Int?
-  valor12Meses          Decimal? @db.Decimal(18, 2)
-  loaProposta            Decimal? @db.Decimal(18, 2)
-  vinculo                String?
-  quantidadePA           Int?
-  diferenca              Decimal? @db.Decimal(18, 2)
-  @@index([importId])
-  @@index([fornecedor])
-  @@index([secretaria])
 }
 
 model BudgetUnit {

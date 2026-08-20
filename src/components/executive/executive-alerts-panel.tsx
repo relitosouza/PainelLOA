@@ -147,7 +147,6 @@ export function ExecutiveActionKpis({
 export function ExecutiveAlertsMap() {
   const [activeAlert, setActiveAlert] = useState<{
     icon: string;
-    iconColor?: string;
     title: string;
     description: string;
     origin: string;
