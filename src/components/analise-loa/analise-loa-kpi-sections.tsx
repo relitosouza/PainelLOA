@@ -77,12 +77,12 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
 
           if (kpiId === "rec-exec") {
             return (
-              <div key="rec-exec" className="glass-card bg-surface p-4 border-t-2 border-t-purple-600 shadow-sm rounded-xl">
+              <div key="rec-exec" className="glass-card bg-surface p-4 border-t-2 border-t-tertiary shadow-sm rounded-xl">
                 <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
                   {percent.format(ldoReceitaTotal > 0 ? 0 : 1)}
                 </h3>
-                <p className="text-[10px] text-purple-700 font-semibold mt-1">Transformado em LOA</p>
+                <p className="text-[10px] text-tertiary font-semibold mt-1">Transformado em LOA</p>
               </div>
             );
           }
@@ -173,12 +173,12 @@ export const AnaliseLoaDespesaKpis = React.memo(function AnaliseLoaDespesaKpis({
 
           if (kpiId === "desp-expectativa") {
             return (
-              <div key="desp-expectativa" className="glass-card bg-surface p-4 border-t-2 border-t-purple-500 shadow-sm rounded-xl">
+              <div key="desp-expectativa" className="glass-card bg-surface p-4 border-t-2 border-t-primary-container shadow-sm rounded-xl">
                 <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Expectativa LOA</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
                   {currency.format(loaExpectativaTotal)}
                 </h3>
-                <p className="text-[10px] text-purple-700 font-semibold mt-1">Expectativa LOA Fixada</p>
+                <p className="text-[10px] text-primary font-semibold mt-1">Expectativa LOA Fixada</p>
               </div>
             );
           }

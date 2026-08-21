@@ -298,13 +298,13 @@ export function ExpenseDetailView() {
                   <span className="material-symbols-outlined text-tertiary-fixed">auto_awesome</span>
                   <h4 className="font-headline font-bold text-lg text-white">Leituras da Base 2027</h4>
                 </div>
-                <div className="space-y-6 relative z-10">
-                  <div className="bg-white/5 border-l-4 border-orange-500 p-4 rounded-r-lg">
+                <div className="space-y-4 relative z-10">
+                  <div className="bg-white/10 border border-white/15 p-4 rounded-xl">
                     <p className="text-sm italic leading-relaxed text-white/90">
                       &quot;As duas maiores secretarias concentram {organStats[0] && organStats[1] ? `${(organStats[0].pct + organStats[1].pct).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "0%"} do valor previsto na importação de 2027.&quot;
                     </p>
                   </div>
-                  <div className="bg-white/5 border-l-4 border-purple-500 p-4 rounded-r-lg">
+                  <div className="bg-white/10 border border-white/15 p-4 rounded-xl">
                     <p className="text-sm italic leading-relaxed text-white/90">
                       &quot;O indicador da LRF não pode ser calculado porque a base importada ainda não contém os dados completos de despesa com pessoal. O painel será atualizado após essa importação.&quot;
                     </p>
