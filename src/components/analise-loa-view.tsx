@@ -2542,19 +2542,43 @@ export function AnaliseLoaView() {
       </header>
 
       {dataLoadState === "loading" && rawItems.length === 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant" role="status" aria-live="polite">
-          <span className="material-symbols-outlined animate-spin text-primary" aria-hidden="true">progress_activity</span>
-          <span>Carregando dados da análise...</span>
+        <div className="space-y-4 my-2 animate-in fade-in" role="status" aria-live="polite">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="glass-card bg-surface p-4 rounded-xl border border-outline-variant/60 space-y-2">
+                <div className="h-3 w-20 bg-surface-container-high/70 rounded animate-pulse" />
+                <div className="h-6 w-28 bg-surface-container-high/90 rounded animate-pulse" />
+                <div className="h-2.5 w-16 bg-surface-container-high/50 rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+          <div className="glass-card bg-surface p-6 rounded-2xl border border-outline-variant/60 space-y-3">
+            <div className="h-4 w-48 bg-surface-container-high/80 rounded animate-pulse" />
+            <div className="h-10 w-full bg-surface-container-high/50 rounded-xl animate-pulse" />
+            <div className="space-y-2 pt-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-8 w-full bg-surface-container-high/40 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          </div>
         </div>
       )}
       {dataLoadState === "error" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-error/40 bg-error-container px-4 py-3 text-sm text-on-error-container sm:flex-row sm:items-center sm:justify-between" role="alert">
-          <div>
-            <p className="font-semibold">Não foi possível carregar todos os dados da análise.</p>
-            <p className="mt-1 text-xs">{dataLoadError || "Verifique a conexão e tente novamente."}</p>
+        <div className="flex flex-col gap-3 rounded-2xl border border-error/40 bg-error-container/40 p-5 text-sm text-on-error-container sm:flex-row sm:items-center sm:justify-between my-4 animate-in fade-in" role="alert">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-xl text-rose-600 shrink-0 mt-0.5">error</span>
+            <div>
+              <p className="font-bold text-on-surface">Não foi possível carregar os dados da análise orçamentária.</p>
+              <p className="mt-0.5 text-xs text-on-surface-variant">{dataLoadError || "Verifique sua conexão ou tente recarregar a planilha."}</p>
+            </div>
           </div>
-          <button type="button" onClick={() => setDataReloadKey((value) => value + 1)} className="min-h-11 shrink-0 rounded-lg border border-error/40 bg-surface px-4 py-2 text-xs font-bold text-on-error-container hover:bg-error-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error">
-            Tentar novamente
+          <button
+            type="button"
+            onClick={() => setDataReloadKey((value) => value + 1)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">refresh</span>
+            <span>Tentar Novamente</span>
           </button>
         </div>
       )}
@@ -3011,8 +3035,68 @@ export function AnaliseLoaView() {
                                 className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
                               />
                             </td>}
-                            {visibleTableColumns.has("valorReajuste") && <td className="p-3 text-right font-mono font-semibold text-on-surface">{formatBr(group.valorReajuste)}</td>}
-                            {visibleTableColumns.has("valorAditamento") && <td className="p-3 text-right font-mono font-semibold text-on-surface">{formatBr(group.valorAditamento)}</td>}
+                            {visibleTableColumns.has("valorReajuste") && (
+                              <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                <input
+                                  type="text"
+                                  value={editingCell?.id === group.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(group.valorReajuste)}
+                                  onFocus={() => {
+                                    setEditingCell({ id: group.id, field: "valorReajuste" });
+                                    setTempInputValue(group.valorReajuste.toFixed(2).replace(".", ","));
+                                  }}
+                                  onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                  onBlur={() => {
+                                    const value = parseBr(tempInputValue);
+                                    if (group.items.length > 0) {
+                                      const portion = value / group.items.length;
+                                      setRawItems((previous) =>
+                                        previous.map((item) => {
+                                          const belongs = group.items.some((gi) => gi.id === item.id);
+                                          return belongs ? { ...item, valorReajuste: portion } : item;
+                                        })
+                                      );
+                                    }
+                                    setHasChanges(true);
+                                    setEditingCell(null);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                  }}
+                                  className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
+                                />
+                              </td>
+                            )}
+                            {visibleTableColumns.has("valorAditamento") && (
+                              <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                <input
+                                  type="text"
+                                  value={editingCell?.id === group.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(group.valorAditamento)}
+                                  onFocus={() => {
+                                    setEditingCell({ id: group.id, field: "valorAditamento" });
+                                    setTempInputValue(group.valorAditamento.toFixed(2).replace(".", ","));
+                                  }}
+                                  onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                  onBlur={() => {
+                                    const value = parseBr(tempInputValue);
+                                    if (group.items.length > 0) {
+                                      const portion = value / group.items.length;
+                                      setRawItems((previous) =>
+                                        previous.map((item) => {
+                                          const belongs = group.items.some((gi) => gi.id === item.id);
+                                          return belongs ? { ...item, valorAditamento: portion } : item;
+                                        })
+                                      );
+                                    }
+                                    setHasChanges(true);
+                                    setEditingCell(null);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                  }}
+                                  className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
+                                />
+                              </td>
+                            )}
                             {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>}
                             {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-semibold ${diffColor}`}>
                               {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
@@ -3459,8 +3543,68 @@ export function AnaliseLoaView() {
                                           )}
                                         </div>
                                       </td>}
-                                      {visibleTableColumns.has("valorReajuste") && <td className="p-2.5 text-right font-mono font-semibold text-on-surface text-xs">{formatBr(natureReajuste)}</td>}
-                                      {visibleTableColumns.has("valorAditamento") && <td className="p-2.5 text-right font-mono font-semibold text-on-surface text-xs">{formatBr(natureAditamento)}</td>}
+                                      {visibleTableColumns.has("valorReajuste") && (
+                                        <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          <input
+                                            type="text"
+                                            value={editingCell?.id === natureKey && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(natureReajuste)}
+                                            onFocus={() => {
+                                              setEditingCell({ id: natureKey, field: "valorReajuste" });
+                                              setTempInputValue(natureReajuste.toFixed(2).replace(".", ","));
+                                            }}
+                                            onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                            onBlur={() => {
+                                              const value = parseBr(tempInputValue);
+                                              if (natureItems.length > 0) {
+                                                const portion = value / natureItems.length;
+                                                setRawItems((previous) =>
+                                                  previous.map((item) => {
+                                                    const belongs = natureItems.some((ni) => ni.id === item.id);
+                                                    return belongs ? { ...item, valorReajuste: portion } : item;
+                                                  })
+                                                );
+                                              }
+                                              setHasChanges(true);
+                                              setEditingCell(null);
+                                            }}
+                                            onKeyDown={(event) => {
+                                              if (event.key === "Enter") event.currentTarget.blur();
+                                            }}
+                                            className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
+                                          />
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("valorAditamento") && (
+                                        <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          <input
+                                            type="text"
+                                            value={editingCell?.id === natureKey && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(natureAditamento)}
+                                            onFocus={() => {
+                                              setEditingCell({ id: natureKey, field: "valorAditamento" });
+                                              setTempInputValue(natureAditamento.toFixed(2).replace(".", ","));
+                                            }}
+                                            onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
+                                            onBlur={() => {
+                                              const value = parseBr(tempInputValue);
+                                              if (natureItems.length > 0) {
+                                                const portion = value / natureItems.length;
+                                                setRawItems((previous) =>
+                                                  previous.map((item) => {
+                                                    const belongs = natureItems.some((ni) => ni.id === item.id);
+                                                    return belongs ? { ...item, valorAditamento: portion } : item;
+                                                  })
+                                                );
+                                              }
+                                              setHasChanges(true);
+                                              setEditingCell(null);
+                                            }}
+                                            onKeyDown={(event) => {
+                                              if (event.key === "Enter") event.currentTarget.blur();
+                                            }}
+                                            className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
+                                          />
+                                        </td>
+                                      )}
                                       {visibleTableColumns.has("valorTotal") && <td className="p-2.5 text-right font-mono font-extrabold text-primary text-xs">{formatBr(natureTotal)}</td>}
                                       {visibleTableColumns.has("valLdo") && <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>}
                                       {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
