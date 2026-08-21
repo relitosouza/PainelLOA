@@ -9,6 +9,95 @@ export function SettingsView() {
   const [restoreStatus, setRestoreStatus] = useState<"idle" | "restored">("idle");
   const [navigationSections, setNavigationSections] = useState<NavigationSection[]>(DEFAULT_NAVIGATION_SECTIONS);
   const [navigationSaved, setNavigationSaved] = useState(false);
+  const [backupState, setBackupState] = useState<{
+    loading: boolean;
+    success?: boolean;
+    message?: string;
+    file?: string;
+  }>({ loading: false });
+
+  const [backupList, setBackupList] = useState<Array<{ filename: string; sizeFormatted: string; createdAt: string }>>([]);
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<string>("");
+  const [restorePassword, setRestorePassword] = useState("");
+  const [restoreActionState, setRestoreActionState] = useState<{ loading: boolean; success?: boolean; message?: string }>({ loading: false });
+
+  const fetchBackups = async () => {
+    try {
+      const res = await fetch("/api/backup/restore");
+      const data = await res.json();
+      if (res.ok && data.backups) {
+        setBackupList(data.backups);
+        if (data.backups.length > 0 && !selectedBackupForRestore) {
+          setSelectedBackupForRestore(data.backups[0].filename);
+        }
+      }
+    } catch {}
+  };
+
+  const handleOpenRestoreModal = () => {
+    fetchBackups();
+    setRestorePassword("");
+    setRestoreModalOpen(true);
+    setRestoreActionState({ loading: false });
+  };
+
+  const handleExecuteRestore = async () => {
+    if (!selectedBackupForRestore) return;
+    if (!restorePassword.trim()) {
+      setRestoreActionState({ loading: false, success: false, message: "Por favor, digite a senha de segurança." });
+      return;
+    }
+    if (!window.confirm(`ATENÇÃO CRÍTICA:\n\nVocê tem certeza que deseja restaurar a base de dados a partir do arquivo:\n${selectedBackupForRestore}?\n\nTodos os dados atuais serão substituídos por este snapshot.`)) {
+      return;
+    }
+
+    try {
+      setRestoreActionState({ loading: true });
+      const res = await fetch("/api/backup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: selectedBackupForRestore, password: restorePassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setRestoreActionState({ loading: false, success: true, message: "Banco de dados restaurado com sucesso!" });
+      } else {
+        setRestoreActionState({ loading: false, success: false, message: data.error || "Falha ao restaurar banco." });
+      }
+    } catch {
+      setRestoreActionState({ loading: false, success: false, message: "Erro de conexão ao restaurar banco." });
+    }
+  };
+
+  const handleTriggerBackup = async () => {
+    try {
+      setBackupState({ loading: true });
+      const res = await fetch("/api/backup", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBackupState({
+          loading: false,
+          success: true,
+          message: "Backup gerado com sucesso!",
+          file: data.backupFile,
+        });
+        fetchBackups();
+      } else {
+        setBackupState({
+          loading: false,
+          success: false,
+          message: data.error || "Falha ao gerar backup.",
+        });
+      }
+    } catch {
+      setBackupState({
+        loading: false,
+        success: false,
+        message: "Erro de conexão ao solicitar backup.",
+      });
+    }
+  };
 
   useEffect(() => {
     try {
@@ -142,27 +231,216 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* Database Status Panel */}
-        <aside className="lg:col-span-4 panel bg-surface-bright p-6">
-          <h2 className="text-md font-bold text-on-surface mb-4">Status do Painel</h2>
-          
-          <div className="space-y-4">
-            <div className="border border-outline-variant p-3 bg-surface flex justify-between items-center text-xs rounded-xl shadow-sm">
-              <span className="font-semibold text-on-surface">Conexão BD</span>
-              <span className="font-semibold text-green-800 bg-green-100 px-2 py-0.5 rounded-full">Ativo</span>
-            </div>
-            
-            <div className="border border-outline-variant p-3 bg-surface flex justify-between items-center text-xs rounded-xl shadow-sm">
-              <span className="font-semibold text-on-surface">Último Sync</span>
-              <span className="font-mono font-semibold text-on-surface-variant">30/06/2026 10:24</span>
-            </div>
+        {/* Database Status & Backup Panel */}
+        <aside className="lg:col-span-4 panel bg-surface-bright p-6 space-y-6">
+          <div>
+            <h2 className="text-md font-bold text-on-surface mb-4">Status do Painel & Operação</h2>
+            <div className="space-y-3">
+              <div className="border border-outline-variant p-3 bg-surface flex justify-between items-center text-xs rounded-xl shadow-sm">
+                <span className="font-semibold text-on-surface">Conexão BD</span>
+                <span className="font-semibold text-green-800 bg-green-100 px-2 py-0.5 rounded-full">Ativo</span>
+              </div>
+              
+              <div className="border border-outline-variant p-3 bg-surface flex justify-between items-center text-xs rounded-xl shadow-sm">
+                <span className="font-semibold text-on-surface">Último Sync</span>
+                <span className="font-mono font-semibold text-on-surface-variant">30/06/2026 10:24</span>
+              </div>
 
-            <div className="border border-outline-variant p-3 bg-surface flex justify-between items-center text-xs rounded-xl shadow-sm">
-              <span className="font-semibold text-on-surface">Versão API</span>
-              <span className="font-mono font-semibold text-on-surface-variant">v1.2.0</span>
+              <div className="border border-outline-variant p-3 bg-surface flex justify-between items-center text-xs rounded-xl shadow-sm">
+                <span className="font-semibold text-on-surface">Versão API</span>
+                <span className="font-mono font-semibold text-on-surface-variant">v1.2.0</span>
+              </div>
             </div>
           </div>
+
+          <div className="border-t border-outline-variant/60 pt-5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="material-symbols-outlined text-primary text-lg">backup</span>
+              <h3 className="text-sm font-bold text-on-surface">Governança & Backup</h3>
+            </div>
+            <p className="text-xs text-on-surface-variant mb-4">
+              Gere um snapshot compactado (.sql.gz) de todas as tabelas e dados da LOA para segurança e contingência.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleTriggerBackup}
+                disabled={backupState.loading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs bg-primary text-on-primary hover:opacity-90 transition-all shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <span className={`material-symbols-outlined text-base ${backupState.loading ? "animate-spin" : ""}`}>
+                  {backupState.loading ? "progress_activity" : "database"}
+                </span>
+                <span>{backupState.loading ? "Gerando Backup..." : "Gerar Backup Agora"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenRestoreModal}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs bg-surface border border-outline-variant text-on-surface hover:bg-surface-container transition-all shadow-xs cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base text-amber-700">settings_backup_restore</span>
+                <span>Restaurar Base de Dados</span>
+              </button>
+            </div>
+
+            {backupState.message && (
+              <div
+                className={`mt-3 p-3 rounded-xl border text-xs animate-in fade-in ${
+                  backupState.success
+                    ? "bg-emerald-50 text-emerald-900 border-emerald-300"
+                    : "bg-rose-50 text-rose-900 border-rose-300"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-base shrink-0 mt-0.5">
+                    {backupState.success ? "check_circle" : "error"}
+                  </span>
+                  <div>
+                    <p className="font-bold">{backupState.message}</p>
+                    {backupState.file && (
+                      <p className="font-mono text-[10px] mt-1 opacity-80 break-all">
+                        Arquivo: {backupState.file}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </aside>
+
+        {/* Modal de Restauração de Banco de Dados */}
+        {restoreModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+            <div className="w-full max-w-lg rounded-2xl bg-surface border border-outline-variant p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-outline-variant/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-xl">settings_backup_restore</span>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-on-surface">Restaurar Banco de Dados</h3>
+                    <p className="text-xs text-on-surface-variant">Selecione um snapshot para recuperação</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRestoreModalOpen(false)}
+                  className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-lg text-amber-700 shrink-0 mt-0.5">warning</span>
+                <p>
+                  <strong>Aviso Crítico:</strong> A restauração irá substituir a base de dados atual pelo snapshot selecionado. Operações não salvas serão perdidas.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-on-surface block">Backups Disponíveis no Servidor:</label>
+                {backupList.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant p-3 bg-surface-container rounded-xl text-center">
+                    Nenhum arquivo de backup encontrado.
+                  </p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {backupList.map((b) => (
+                      <label
+                        key={b.filename}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                          selectedBackupForRestore === b.filename
+                            ? "bg-primary/10 border-primary font-bold text-primary"
+                            : "bg-surface border-outline-variant/70 hover:bg-surface-container text-on-surface"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="radio"
+                            name="backup_selection"
+                            checked={selectedBackupForRestore === b.filename}
+                            onChange={() => setSelectedBackupForRestore(b.filename)}
+                            className="text-primary focus:ring-primary"
+                          />
+                          <div className="truncate">
+                            <p className="font-mono text-xs truncate">{b.filename}</p>
+                            <p className="text-[10px] text-on-surface-variant font-normal">
+                              {new Date(b.createdAt).toLocaleString("pt-BR")}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-surface-container border border-outline-variant/60 shrink-0">
+                          {b.sizeFormatted}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-bold text-on-surface flex items-center justify-between">
+                  <span>Senha de Autorização:</span>
+                  <span className="text-[10px] text-amber-800 font-normal">Obrigatória para confirmação</span>
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-2.5 text-base text-on-surface-variant">lock</span>
+                  <input
+                    type="password"
+                    value={restorePassword}
+                    onChange={(e) => setRestorePassword(e.target.value)}
+                    placeholder="Digite a senha de segurança..."
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {restoreActionState.message && (
+                <div
+                  className={`p-3 rounded-xl border text-xs ${
+                    restoreActionState.success
+                      ? "bg-emerald-50 text-emerald-900 border-emerald-300 font-bold"
+                      : "bg-rose-50 text-rose-900 border-rose-300"
+                  }`}
+                >
+                  {restoreActionState.message}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant/60">
+                <button
+                  type="button"
+                  onClick={() => setRestoreModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-surface border border-outline-variant text-on-surface hover:bg-surface-container cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteRestore}
+                  disabled={restoreActionState.loading || !selectedBackupForRestore}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {restoreActionState.loading ? (
+                    <>
+                      <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                      <span>Restaurando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-sm">settings_backup_restore</span>
+                      <span>Confirmar Restauração</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="lg:col-span-8 panel p-6 bg-surface border border-amber-200">
           <div className="flex items-start gap-3">
