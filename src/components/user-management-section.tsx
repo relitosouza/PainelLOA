@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { SECRETARIAS_NOMES } from "@/lib/secretarias-catalogo";
+import { SECRETARIAS_NOMES, SECRETARIAS_USUARIOS } from "@/lib/secretarias-catalogo";
 
 interface UsuarioItem {
   id: string;
@@ -27,12 +27,15 @@ export function UserManagementSection() {
   const [filterSecretaria, setFilterSecretaria] = useState("");
 
   // Formulário de Criação
+  // Formulário de Criação / Edição
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [papel, setPapel] = useState<"ADMIN" | "PLANEJAMENTO" | "TECNICO_SECRETARIA" | "LEITURA">("TECNICO_SECRETARIA");
   const [secretaria, setSecretaria] = useState("");
   const [cargo, setCargo] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [ativo, setAtivo] = useState(true);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -59,7 +62,35 @@ export function UserManagementSection() {
     carregarUsuarios();
   }, [carregarUsuarios]);
 
-  const handleCriarUsuario = async (e: React.FormEvent) => {
+  const handleAbrirNovo = () => {
+    setEditingUserId(null);
+    setNome("");
+    setEmail("");
+    setCargo("");
+    setTelefone("");
+    setSecretaria("");
+    setPapel("TECNICO_SECRETARIA");
+    setAtivo(true);
+    setFormError("");
+    setFormSuccess("");
+    setModalOpen(true);
+  };
+
+  const handleAbrirEdicao = (u: UsuarioItem) => {
+    setEditingUserId(u.id);
+    setNome(u.nome);
+    setEmail(u.email);
+    setPapel(u.papel);
+    setSecretaria(u.secretaria || "");
+    setCargo(u.cargo || "");
+    setTelefone(u.telefone || "");
+    setAtivo(u.ativo);
+    setFormError("");
+    setFormSuccess("");
+    setModalOpen(true);
+  };
+
+  const handleSalvarUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
     setFormSuccess("");
@@ -76,8 +107,12 @@ export function UserManagementSection() {
 
     try {
       setSubmitting(true);
-      const res = await fetch("/api/usuarios", {
-        method: "POST",
+      const isEditing = Boolean(editingUserId);
+      const url = isEditing ? `/api/usuarios/${editingUserId}` : "/api/usuarios";
+      const method = isEditing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome,
@@ -86,7 +121,7 @@ export function UserManagementSection() {
           secretaria: papel === "ADMIN" || papel === "PLANEJAMENTO" ? (secretaria || null) : secretaria,
           cargo: cargo.trim() || null,
           telefone: telefone.trim() || null,
-          ativo: true,
+          ativo,
         }),
       });
 
@@ -97,22 +132,51 @@ export function UserManagementSection() {
         return;
       }
 
-      setFormSuccess("Usuário cadastrado com sucesso!");
-      setNome("");
-      setEmail("");
-      setCargo("");
-      setTelefone("");
-      setSecretaria("");
-      setPapel("TECNICO_SECRETARIA");
+      setFormSuccess(isEditing ? "Usuário atualizado com sucesso!" : "Usuário cadastrado com sucesso!");
       await carregarUsuarios();
       setTimeout(() => {
         setModalOpen(false);
         setFormSuccess("");
-      }, 1200);
+      }, 1000);
     } catch {
       setFormError("Erro de conexão com o servidor.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleToggleAtivo = async (u: UsuarioItem) => {
+    try {
+      const res = await fetch(`/api/usuarios/${u.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo: !u.ativo }),
+      });
+      if (res.ok) {
+        await carregarUsuarios();
+      }
+    } catch (err) {
+      console.error("Erro ao alterar status do usuário:", err);
+    }
+  };
+
+  const handleExcluirUsuario = async (u: UsuarioItem) => {
+    const confirmMsg = `Tem certeza que deseja excluir o usuário "${u.nome}" (${u.email})?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`/api/usuarios/${u.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await carregarUsuarios();
+      } else {
+        alert(data.error || "Não foi possível excluir o usuário.");
+      }
+    } catch (err) {
+      console.error("Erro ao excluir usuário:", err);
+      alert("Erro ao tentar excluir usuário.");
     }
   };
 
@@ -159,7 +223,7 @@ export function UserManagementSection() {
 
         <button
           type="button"
-          onClick={() => setModalOpen(true)}
+          onClick={handleAbrirNovo}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-on-primary bg-primary rounded-xl hover:opacity-90 transition-opacity shrink-0 shadow-xs cursor-pointer"
         >
           <span className="material-symbols-outlined text-sm">person_add</span>
@@ -197,18 +261,19 @@ export function UserManagementSection() {
               <th className="px-4 py-3">Secretaria Vinculada</th>
               <th className="px-4 py-3 text-center">Atividade Registrada</th>
               <th className="px-4 py-3 text-center">Status</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/30">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-on-surface-variant">
+                <td colSpan={7} className="px-4 py-8 text-center text-on-surface-variant">
                   Carregando usuários cadastrados...
                 </td>
               </tr>
             ) : usuarios.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-on-surface-variant">
+                <td colSpan={7} className="px-4 py-8 text-center text-on-surface-variant">
                   Nenhum usuário encontrado com os filtros selecionados.
                 </td>
               </tr>
@@ -236,13 +301,36 @@ export function UserManagementSection() {
                     <span className="font-bold text-primary">{u._count?.alteracoesRealizadas ?? 0}</span> alterações
                   </td>
                   <td className="px-4 py-2.5 text-center">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAtivo(u)}
+                      title="Clique para ativar/desativar"
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-opacity hover:opacity-80 ${
                         u.ativo ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
                       }`}
                     >
                       {u.ativo ? "Ativo" : "Inativo"}
-                    </span>
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleAbrirEdicao(u)}
+                        title="Editar Usuário"
+                        className="p-1 rounded-md text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExcluirUsuario(u)}
+                        title="Excluir Usuário"
+                        className="p-1 rounded-md text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -257,8 +345,12 @@ export function UserManagementSection() {
           <div className="bg-surface rounded-2xl shadow-2xl border border-outline-variant max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between p-4 border-b border-outline-variant bg-surface-container">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">person_add</span>
-                <h3 className="font-bold text-sm text-on-surface">Novo Usuário do Sistema</h3>
+                <span className="material-symbols-outlined text-primary">
+                  {editingUserId ? "manage_accounts" : "person_add"}
+                </span>
+                <h3 className="font-bold text-sm text-on-surface">
+                  {editingUserId ? "Editar Usuário" : "Novo Usuário do Sistema"}
+                </h3>
               </div>
               <button
                 type="button"
@@ -269,7 +361,7 @@ export function UserManagementSection() {
               </button>
             </div>
 
-            <form onSubmit={handleCriarUsuario} className="p-5 space-y-4">
+            <form onSubmit={handleSalvarUsuario} className="p-5 space-y-4">
               {formError && (
                 <div className="p-3 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg">
                   {formError}
@@ -331,7 +423,7 @@ export function UserManagementSection() {
                     className="w-full text-xs rounded-lg border border-outline-variant bg-surface px-3 py-2 text-on-surface outline-none focus:border-primary cursor-pointer"
                   >
                     <option value="">Geral / Todas</option>
-                    {Object.entries(SECRETARIAS_NOMES).map(([cod, nomeSec]) => (
+                    {Object.entries(SECRETARIAS_USUARIOS).map(([cod, nomeSec]) => (
                       <option key={cod} value={`${cod} - ${nomeSec}`}>
                         {cod} - {nomeSec}
                       </option>
@@ -376,7 +468,7 @@ export function UserManagementSection() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-bold text-on-primary bg-primary rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
                 >
-                  {submitting ? "Cadastrando..." : "Cadastrar Usuário"}
+                  {submitting ? "Salvando..." : editingUserId ? "Salvar Alterações" : "Cadastrar Usuário"}
                 </button>
               </div>
             </form>
