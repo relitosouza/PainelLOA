@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
-import { currency, integer, percent } from "@/lib/format";
+import { currency, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
 import { AddElementExpenseDialog, VINCULO_OPTIONS, formatVinculoComAplicacao } from "./add-element-expense-dialog";
@@ -11,6 +11,8 @@ import {
   type AnaliseLoaLayoutConfig,
 } from "./analise-loa-cards-config-dialog";
 import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
+import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
+import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 
 // --- Tipos de Filtro ---
@@ -252,8 +254,6 @@ export function AnaliseLoaView() {
   const [expandedNatureGroups, setExpandedNatureGroups] = useState<Set<string>>(new Set());
   const [collapsedLdoPlanningGroups, setCollapsedLdoPlanningGroups] = useState<Set<string>>(new Set());
   const [tableSearch, setTableSearch] = useState("");
-  const [openFilterKey, setOpenFilterKey] = useState<string | null>(null);
-  const [filterSearchQuery, setFilterSearchQuery] = useState<Record<string, string>>({});
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(10);
   const [tableSort, setTableSort] = useState<{ column: TableSortColumn; direction: "asc" | "desc" }>({ column: "acao", direction: "asc" });
@@ -2420,421 +2420,36 @@ export function AnaliseLoaView() {
         // Seção 1: Painel da Receita Orçamentária
         if (sectionId === "painel-receita") {
           return (
-            <div key="painel-receita" className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                <span className="material-symbols-outlined text-sm text-emerald-600">account_balance_wallet</span>
-                <span>Painel da Receita Orçamentária</span>
-              </div>
-              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                {layoutConfig.receitaKpisOrder.map((kpiId) => {
-                  if (layoutConfig.visibility[kpiId] === false) return null;
-
-                  if (kpiId === "rec-ldo") {
-                    return (
-                      <div key="rec-ldo" className="glass-card bg-surface p-4 border-t-2 border-t-emerald-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(ldoReceitaTotal)}
-                        </h3>
-                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">Receita Planejada LDO</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-loa") {
-                    return (
-                      <div key="rec-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(0)}
-                        </h3>
-                        <p className="text-[10px] text-blue-700 font-semibold mt-1">Receita Fixada LOA</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-diff") {
-                    const recLdo = ldoReceitaTotal;
-                    const recLoa = 0;
-                    const recDiff = recLoa - recLdo;
-                    const isGreater = recDiff > 0;
-                    const isSmaller = recDiff < 0;
-
-                    return (
-                      <div key="rec-diff" className={`glass-card bg-surface p-4 border-t-2 ${isGreater ? "border-t-rose-500 bg-rose-50/20" : isSmaller ? "border-t-emerald-500" : "border-t-gray-400"} shadow-sm`}>
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
-                        <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${isGreater ? "text-rose-600" : isSmaller ? "text-emerald-600" : "text-on-surface"}`}>
-                          {isGreater ? "▲" : isSmaller ? "▼" : "—"} {currency.format(Math.abs(recDiff))}
-                        </h3>
-                        <p className="text-[10px] text-on-surface-variant mt-1">
-                          {isGreater ? "⚠️ LOA maior que a LDO (+ Excesso)" : isSmaller ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-exec") {
-                    return (
-                      <div key="rec-exec" className="glass-card bg-surface p-4 border-t-2 border-t-purple-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {percent.format(ldoReceitaTotal > 0 ? 0 : 1)}
-                        </h3>
-                        <p className="text-[10px] text-purple-700 font-semibold mt-1">Transformado em LOA</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-maior") {
-                    return (
-                      <div key="rec-maior" className="glass-card bg-surface p-4 border-t-2 border-t-teal-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Maior Arrecadação LDO</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(0)}
-                        </h3>
-                        <p className="text-[10px] text-teal-700 font-semibold mt-1">Maior Fonte LDO</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-fontes") {
-                    return (
-                      <div key="rec-fontes" className="glass-card bg-surface p-4 border-t-2 border-t-amber-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total Fontes / Vínculos</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {integer.format(61)}
-                        </h3>
-                        <p className="text-[10px] text-amber-700 font-semibold mt-1">Fontes de Recurso LDO</p>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-              </section>
-            </div>
+            <AnaliseLoaReceitaKpis
+              key="painel-receita"
+              layoutConfig={layoutConfig}
+              ldoReceitaTotal={ldoReceitaTotal}
+            />
           );
         }
 
         // Seção 2: Painel da Despesa Orçamentária
         if (sectionId === "painel-despesa") {
           return (
-            <div key="painel-despesa" className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                <span className="material-symbols-outlined text-sm text-blue-600">payments</span>
-                <span>Painel da Despesa Orçamentária</span>
-              </div>
-              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                {layoutConfig.despesaKpisOrder.map((kpiId) => {
-                  if (layoutConfig.visibility[kpiId] === false) return null;
-
-                  if (kpiId === "desp-ldo") {
-                    return (
-                      <div key="desp-ldo" className="glass-card bg-surface p-4 border-t-2 border-t-emerald-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(metrics.valLdoTotal)}
-                        </h3>
-                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">Despesa Planejada</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-loa") {
-                    return (
-                      <div key="desp-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(metrics.valLoaTotal)}
-                        </h3>
-                        <p className="text-[10px] text-blue-700 font-semibold mt-1">Despesa Fixada</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-diff") {
-                    return (
-                      <div key="desp-diff" className={`glass-card bg-surface p-4 border-t-2 ${metrics.diff > 0 ? "border-t-rose-500 bg-rose-50/20" : metrics.diff < 0 ? "border-t-emerald-500" : "border-t-gray-400"} shadow-sm`}>
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
-                        <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
-                          {metrics.diff > 0 ? "▲" : metrics.diff < 0 ? "▼" : "—"} {currency.format(Math.abs(metrics.diff))}
-                        </h3>
-                        <p className="text-[10px] text-on-surface-variant mt-1">
-                          {metrics.diff > 0 ? "⚠️ LOA maior que a LDO (+ Excesso)" : metrics.diff < 0 ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-expectativa") {
-                    return (
-                      <div key="desp-expectativa" className="glass-card bg-surface p-4 border-t-2 border-t-purple-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Expectativa LOA</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(loaExpectativaTotal)}
-                        </h3>
-                        <p className="text-[10px] text-purple-700 font-semibold mt-1">Expectativa LOA Fixada</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-exec") {
-                    return (
-                      <div key="desp-exec" className="glass-card bg-surface p-4 border-t-2 border-t-teal-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {percent.format(metrics.percentExec / 100)}
-                        </h3>
-                        <p className="text-[10px] text-teal-700 font-semibold mt-1">Transformado em LOA</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-naturezas") {
-                    return (
-                      <div key="desp-naturezas" className="glass-card bg-surface p-4 border-t-2 border-t-amber-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total de Naturezas</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {integer.format(metrics.totalNaturezas)}
-                        </h3>
-                        <p className="text-[10px] text-on-surface-variant mt-1">Classificações econômicas</p>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-              </section>
-            </div>
+            <AnaliseLoaDespesaKpis
+              key="painel-despesa"
+              layoutConfig={layoutConfig}
+              loaExpectativaTotal={loaExpectativaTotal}
+              metrics={metrics}
+            />
           );
         }
 
         // Seção 3: Filtros Avançados Orçamentários
         if (sectionId === "filtros-avancados") {
           return (
-            <section key="filtros-avancados" className="glass-card p-5 bg-surface border border-outline-variant space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">tune</span>
-                  <h3 className="text-sm font-headline font-bold text-on-surface">Filtros Avançados Orçamentários</h3>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    placeholder="Buscar por código, ação, palavra-chave..."
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
-                  />
-                  <button
-                    onClick={() => setFilters(INITIAL_FILTERS)}
-                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200"
-                  >
-                    Limpar Filtros
-                  </button>
-                </div>
-              </div>
-
-              {/* Grade de Filtros Popover Multi-Select */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
-                  .filter((key) => key !== "orgao")
-                  .map((key) => {
-                    const labels: Record<string, string> = {
-                      secretaria: "Secretaria",
-                      unidade: "Unidade",
-                      programa: "Programa",
-                      tipoAcao: "Tipo de Ação",
-                      acao: "Ação",
-                      natureza: "Natureza",
-                      fonteVinculo: "Fonte / Vínculo",
-                      categoriaEconomica: "Cat. Despesa",
-                      grupoNatureza: "Grupo Despesa",
-                      elemento: "Mod. Aplicação",
-                      subelemento: "Subelemento",
-                      processo: "Processo",
-                    };
-
-                    const fieldLabel = labels[key] || key;
-                    const selectedValues = (filters[key] || []) as string[];
-                    const selectedCount = selectedValues.length;
-                    const allOptions = filterOptions[key] || [];
-                    const searchQ = (filterSearchQuery[key] || "").toLowerCase();
-                    const visibleOptions = allOptions.filter((opt) => opt.toLowerCase().includes(searchQ));
-                    const isOpen = openFilterKey === key;
-
-                    return (
-                      <div key={key} className="relative flex flex-col gap-1">
-                        <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
-                          <span>{fieldLabel}</span>
-                          {selectedCount > 0 && (
-                            <span className="text-[10px] text-primary font-extrabold">{selectedCount}</span>
-                          )}
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setOpenFilterKey(isOpen ? null : key)}
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${selectedCount
-                              ? "bg-primary/10 border-primary font-bold text-primary"
-                              : "bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container/60"
-                            }`}
-                        >
-                          <span className="truncate">
-                            {selectedCount === 0
-                              ? "Todos"
-                              : selectedCount === 1
-                                ? selectedValues[0]
-                                : `${selectedCount} sel.`}
-                          </span>
-                          <span className="material-symbols-outlined text-xs shrink-0">
-                            {isOpen ? "expand_less" : "expand_more"}
-                          </span>
-                        </button>
-
-                        {isOpen && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-30"
-                              onClick={() => setOpenFilterKey(null)}
-                            />
-                            <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
-                              <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
-                                <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
-                                {selectedCount > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFilters((prev) => ({ ...prev, [key]: [] }));
-                                    }}
-                                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
-                                  >
-                                    Limpar
-                                  </button>
-                                )}
-                              </div>
-
-                              <input
-                                type="text"
-                                placeholder={`Buscar ${fieldLabel.toLowerCase()}...`}
-                                value={filterSearchQuery[key] || ""}
-                                onChange={(e) =>
-                                  setFilterSearchQuery((prev) => ({ ...prev, [key]: e.target.value }))
-                                }
-                                className="w-full px-2 py-1 text-xs rounded-md border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-
-                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
-                                {visibleOptions.length === 0 ? (
-                                  <p className="text-[11px] text-on-surface-variant p-2 text-center">Nenhuma opção encontrada</p>
-                                ) : (
-                                  visibleOptions.map((opt) => {
-                                    const isChecked = selectedValues.includes(opt);
-                                    return (
-                                      <label
-                                        key={opt}
-                                        className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors ${isChecked
-                                            ? "bg-primary/10 text-primary font-semibold"
-                                            : "hover:bg-surface-container/60 text-on-surface"
-                                          }`}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={isChecked}
-                                          onChange={() => {
-                                            setFilters((prev) => {
-                                              const current = (prev[key] || []) as string[];
-                                              return {
-                                                ...prev,
-                                                [key]: isChecked
-                                                  ? current.filter((v) => v !== opt)
-                                                  : [...current, opt],
-                                              };
-                                            });
-                                          }}
-                                          className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
-                                        />
-                                        <span className="truncate min-w-0" title={opt}>{opt}</span>
-                                      </label>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-
-              {/* Badges de Filtros Ativos */}
-              {(() => {
-                const activeFilterCount =
-                  Object.keys(filterOptions)
-                    .filter((k) => k !== "orgao")
-                    .reduce((sum, k) => sum + (filters[k as keyof TechnicalFilterState]?.length || 0), 0) +
-                  Number(Boolean(filters.search));
-
-                if (!activeFilterCount) return null;
-
-                const labelsMap: Record<string, string> = {
-                  secretaria: "Secretaria",
-                  unidade: "Unidade",
-                  programa: "Programa",
-                  tipoAcao: "Tipo de Ação",
-                  acao: "Ação",
-                  natureza: "Natureza",
-                  fonteVinculo: "Fonte / Vínculo",
-                  categoriaEconomica: "Cat. Despesa",
-                  grupoNatureza: "Grupo Despesa",
-                  elemento: "Mod. Aplicação",
-                  subelemento: "Subelemento",
-                  processo: "Processo",
-                };
-
-                return (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/40">
-                    <span className="text-[11px] font-bold text-on-surface-variant mr-1">Filtros ativos:</span>
-                    {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
-                      .filter((k) => k !== "orgao")
-                      .flatMap((k) =>
-                        ((filters[k] || []) as string[]).map((val) => (
-                          <span
-                            key={`${k}-${val}`}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20"
-                          >
-                            <strong>{labelsMap[k] || k}:</strong> {val}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFilters((prev) => ({
-                                  ...prev,
-                                  [k]: (prev[k] as string[]).filter((v) => v !== val),
-                                }));
-                              }}
-                              className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    {filters.search && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
-                        <strong>Busca:</strong> &ldquo;{filters.search}&rdquo;
-                        <button
-                          type="button"
-                          onClick={() => setFilters((prev) => ({ ...prev, search: "" }))}
-                          className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-            </section>
+            <AnaliseLoaAdvancedFilters
+              key="filtros-avancados"
+              filters={filters}
+              setFilters={setFilters}
+              initialFilters={INITIAL_FILTERS}
+              filterOptions={filterOptions}
+            />
           );
         }
 
