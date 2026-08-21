@@ -74,6 +74,8 @@ export interface RawBudgetItem {
   observacao?: string;
   valLdo: number;
   valLoa: number;
+  valorReajuste?: number;
+  valorAditamento?: number;
   origem?: "Banco de Projetos";
   bancoProjetoKey?: string;
 }
@@ -89,9 +91,12 @@ interface EditableGroup {
   children: RawBudgetItem[];
   valLdo: number;
   valLoa: number;
+  valorReajuste: number;
+  valorAditamento: number;
+  valorTotal: number;
 }
 
-type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "diff" | "status" | "adjusted";
+type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "valorTotal" | "diff" | "status" | "adjusted";
 type AnalyticalColumn = TableSortColumn;
 type NaturezaOption = { codigo: string; nome: string };
 type Iniciativa = { id?: string | number; acao?: string; secretaria?: string; programa?: string; despesa?: string; dsIniciativa?: string; programaticaLdo?: string; vinculo?: string; valorFinalPldo27?: number };
@@ -100,11 +105,17 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
   { key: "acao", label: "Ação", required: true },
   { key: "elemento", label: "Elemento de Despesa" },
   { key: "valLdo", label: "Valor LDO" },
-  { key: "valLoa", label: "Valor LOA" },
+  { key: "valLoa", label: "Valor LOA (Vigente)" },
+  { key: "valorReajuste", label: "Valor Reajuste" },
+  { key: "valorAditamento", label: "Valor Aditamento" },
+  { key: "valorTotal", label: "Valor Total" },
   { key: "diff", label: "Diferença" },
   { key: "status", label: "Status" },
   { key: "adjusted", label: "Validação" },
 ];
+
+const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
+  item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0);
 
 const ACTION_CANONICAL_MAP: Record<string, string> = {
   "0.001": "0.001 - Serviços da Dívida Pública",
@@ -701,7 +712,7 @@ export function AnaliseLoaView() {
   ]);
 
   // Estado para controlar a célula em foco de edição (id + campo: 'valLdo' | 'valLoa')
-  const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" | "groupValLoa" } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "groupValLoa" } | null>(null);
   const [tempInputValue, setTempInputValue] = useState<string>("");
 
   const toggleTableSort = (column: TableSortColumn) => {
@@ -1066,6 +1077,20 @@ export function AnaliseLoaView() {
           console.warn("Erro ao carregar customizações de subelementos:", e);
         }
 
+        // 3.6. Carregar reajustes e aditamentos digitados no detalhamento analítico
+        try {
+          const response = await fetch("/api/configuracoes/layout?chave=painel_loa_reajustes_aditamentos");
+          if (response.ok) {
+            const data = await response.json();
+            const financialEdits = data.success && data.valor
+              ? data.valor as Record<string, { valorReajuste?: number; valorAditamento?: number }>
+              : {};
+            itemsArray = itemsArray.map((item) => ({ ...item, ...(financialEdits[item.id] || {}) }));
+          }
+        } catch (e) {
+          console.warn("Erro ao carregar reajustes e aditamentos:", e);
+        }
+
         // 4. Carregar linhas validadas pelo usuário
         try {
           let loadedValidated: Record<string, boolean> = {};
@@ -1111,10 +1136,14 @@ export function AnaliseLoaView() {
 
   // Obter a lista de itens modificados em relação aos valores da última gravação
   const modifiedItems = useMemo(() => {
-    const savedMap = new Map(savedRawItems.map((item) => [item.id, item.valLoa]));
+    const savedMap = new Map(savedRawItems.map((item) => [item.id, item]));
     return rawItems.filter((item) => {
-      const savedVal = savedMap.get(item.id);
-      return savedVal !== undefined && Math.abs(item.valLoa - savedVal) > 0.001;
+      const saved = savedMap.get(item.id);
+      return saved !== undefined && (
+        Math.abs(item.valLoa - saved.valLoa) > 0.001 ||
+        Math.abs((item.valorReajuste ?? 0) - (saved.valorReajuste ?? 0)) > 0.001 ||
+        Math.abs((item.valorAditamento ?? 0) - (saved.valorAditamento ?? 0)) > 0.001
+      );
     });
   }, [rawItems, savedRawItems]);
 
@@ -1243,6 +1272,7 @@ export function AnaliseLoaView() {
     try {
       // Separar os itens modificados em: com justificativa e sem justificativa
       const savedMap = new Map(savedRawItems.map((item) => [item.id, item.valLoa]));
+      const savedItemsMap = new Map(savedRawItems.map((item) => [item.id, item]));
 
       const itemsToRevert: string[] = [];
       const validJustifications: Record<string, string> = { ...justifications };
@@ -1270,8 +1300,13 @@ export function AnaliseLoaView() {
       // Atualizar lista final de itens (revertendo os sem justificativa ao valor salvo + restaurando removidos sem justificativa)
       let finalItems = rawItems.map((item) => {
         if (itemsToRevert.includes(item.id)) {
-          const savedVal = savedMap.get(item.id) ?? item.valLdo;
-          return { ...item, valLoa: savedVal };
+          const saved = savedItemsMap.get(item.id);
+          return {
+            ...item,
+            valLoa: saved?.valLoa ?? item.valLdo,
+            valorReajuste: saved?.valorReajuste ?? 0,
+            valorAditamento: saved?.valorAditamento ?? 0,
+          };
         }
         return item;
       });
@@ -1288,8 +1323,13 @@ export function AnaliseLoaView() {
 
       // Gravar alterações e justificativas no Banco de Dados
       const customMap: Record<string, number> = {};
+      const financialAdjustments: Record<string, { valorReajuste: number; valorAditamento: number }> = {};
       finalItems.forEach((item) => {
         customMap[item.id] = item.valLoa;
+        financialAdjustments[item.id] = {
+          valorReajuste: item.valorReajuste ?? 0,
+          valorAditamento: item.valorAditamento ?? 0,
+        };
       });
 
       setJustifications(validJustifications);
@@ -1360,6 +1400,14 @@ export function AnaliseLoaView() {
             body: JSON.stringify({
               chave: "painel_loa_justifications",
               valor: validJustifications,
+            }),
+          }),
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_reajustes_aditamentos",
+              valor: financialAdjustments,
             }),
           }),
         ]);
@@ -1474,7 +1522,7 @@ export function AnaliseLoaView() {
   const tableItems = useMemo(() => {
     return filteredItems.filter((item) => {
       if (statusFilters.length > 0) {
-        const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, item.valLoa));
+        const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, getItemLoaTotal(item)));
         if (!matchesFilter) return false;
       }
       if (!tableSearch) return true;
@@ -1506,10 +1554,16 @@ export function AnaliseLoaView() {
         children: [],
         valLdo: 0,
         valLoa: 0,
+        valorReajuste: 0,
+        valorAditamento: 0,
+        valorTotal: 0,
       };
       group.children.push(item);
       group.valLdo += item.valLdo;
       group.valLoa += item.valLoa;
+      group.valorReajuste += item.valorReajuste ?? 0;
+      group.valorAditamento += item.valorAditamento ?? 0;
+      group.valorTotal += getItemLoaTotal(item);
       groups.set(groupKey, group);
     });
 
@@ -1524,8 +1578,11 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
       else if (tableSort.column === "valLdo") result = left.valLdo - right.valLdo;
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
-      else if (tableSort.column === "diff") result = (left.valLoa - left.valLdo) - (right.valLoa - right.valLdo);
-      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valLoa), getStatusLabel(right.valLdo, right.valLoa));
+      else if (tableSort.column === "valorReajuste") result = left.valorReajuste - right.valorReajuste;
+      else if (tableSort.column === "valorAditamento") result = left.valorAditamento - right.valorAditamento;
+      else if (tableSort.column === "valorTotal") result = left.valorTotal - right.valorTotal;
+      else if (tableSort.column === "diff") result = (left.valorTotal - left.valLdo) - (right.valorTotal - right.valLdo);
+      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valorTotal), getStatusLabel(right.valLdo, right.valorTotal));
       else result = Number(Boolean(validatedRows[left.id])) - Number(Boolean(validatedRows[right.id]));
       return tableSort.direction === "asc" ? result : -result;
     };
@@ -1535,8 +1592,11 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
       else if (tableSort.column === "valLdo") result = left.valLdo - right.valLdo;
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
-      else if (tableSort.column === "diff") result = (left.valLoa - left.valLdo) - (right.valLoa - right.valLdo);
-      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valLoa), getStatusLabel(right.valLdo, right.valLoa));
+      else if (tableSort.column === "valorReajuste") result = (left.valorReajuste ?? 0) - (right.valorReajuste ?? 0);
+      else if (tableSort.column === "valorAditamento") result = (left.valorAditamento ?? 0) - (right.valorAditamento ?? 0);
+      else if (tableSort.column === "valorTotal") result = getItemLoaTotal(left) - getItemLoaTotal(right);
+      else if (tableSort.column === "diff") result = (getItemLoaTotal(left) - left.valLdo) - (getItemLoaTotal(right) - right.valLdo);
+      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, getItemLoaTotal(left)), getStatusLabel(right.valLdo, getItemLoaTotal(right)));
       else result = getValidated(left) - getValidated(right);
       return tableSort.direction === "asc" ? result : -result;
     };
@@ -1561,12 +1621,18 @@ export function AnaliseLoaView() {
   const metrics = useMemo(() => {
     let valLdoTotal = 0;
     let valLoaTotal = 0;
+    let valLoaVigenteTotal = 0;
+    let valorReajusteTotal = 0;
+    let valorAditamentoTotal = 0;
     const acoesSet = new Set<string>();
     const naturezasSet = new Set<string>();
 
     tableItems.forEach((item) => {
       valLdoTotal += item.valLdo;
-      valLoaTotal += item.valLoa;
+      valLoaTotal += getItemLoaTotal(item);
+      valLoaVigenteTotal += item.valLoa;
+      valorReajusteTotal += item.valorReajuste ?? 0;
+      valorAditamentoTotal += item.valorAditamento ?? 0;
       if (item.acao) acoesSet.add(item.acao);
       if (item.natureza) naturezasSet.add(item.natureza);
     });
@@ -1577,6 +1643,9 @@ export function AnaliseLoaView() {
     return {
       valLdoTotal,
       valLoaTotal,
+      valLoaVigenteTotal,
+      valorReajusteTotal,
+      valorAditamentoTotal,
       diff,
       percentExec,
       totalAcoes: acoesSet.size,
@@ -1664,7 +1733,8 @@ export function AnaliseLoaView() {
     let reduzido = 0;
 
     filteredItems.forEach((item) => {
-      const diff = item.valLoa - item.valLdo;
+      const itemTotal = getItemLoaTotal(item);
+      const diff = itemTotal - item.valLdo;
       if (diff > maiorAumento.val) {
         maiorAumento = { item: `${item.acao} — ${item.subelemento || item.natureza}`, val: diff };
       }
@@ -1672,8 +1742,8 @@ export function AnaliseLoaView() {
         maiorReducao = { item: `${item.acao} — ${item.subelemento || item.natureza}`, val: diff };
       }
 
-      if (item.valLdo === 0 && item.valLoa > 0) novasDotacoes++;
-      if (item.valLdo > 0 && item.valLoa === 0) dotacoesRemovidas++;
+      if (item.valLdo === 0 && itemTotal > 0) novasDotacoes++;
+      if (item.valLdo > 0 && itemTotal === 0) dotacoesRemovidas++;
 
       if (diff > 0) suplementado += diff;
       if (diff < 0) reduzido += Math.abs(diff);
@@ -2026,7 +2096,7 @@ export function AnaliseLoaView() {
         item.natureza,
         item.subelemento || "",
         item.processo || "",
-        item.valLoa,
+        getItemLoaTotal(item),
         "LOA",
         vinculo,
         item.tipoAcao || getActionTypeLabel(item.acao),
@@ -2055,10 +2125,13 @@ export function AnaliseLoaView() {
         Programa: group.programa,
         Ação: group.acao,
         "Valor LDO (R$)": group.valLdo,
-        "Valor LOA (R$)": group.valLoa,
-        "Diferença Nominal (R$)": group.valLoa - group.valLdo,
-        "Variação (%)": group.valLdo > 0 ? ((group.valLoa - group.valLdo) / group.valLdo) * 100 : 0,
-        Status: getStatusInfo(group.valLdo, group.valLoa).label,
+        "Valor LOA Vigente (R$)": group.valLoa,
+        "Valor Reajuste (R$)": group.valorReajuste,
+        "Valor Aditamento (R$)": group.valorAditamento,
+        "Valor Total (R$)": group.valorTotal,
+        "Diferença Nominal (R$)": group.valorTotal - group.valLdo,
+        "Variação (%)": group.valLdo > 0 ? ((group.valorTotal - group.valLdo) / group.valLdo) * 100 : 0,
+        Status: getStatusInfo(group.valLdo, group.valorTotal).label,
         Indicador: ldoData.indicador || "Não informado",
         "Unidade de Medida": ldoData.unidadeMedida || "Unidade",
         "Meta Física 2027": ldoData.custoFisico2027 ?? 0,
@@ -2079,8 +2152,11 @@ export function AnaliseLoaView() {
           "Fonte/Vínculo": item.fonteVinculo || "01",
           Processo: item.processo || "—",
           "Valor Original (R$)": original,
-          "Valor LOA Editável (R$)": item.valLoa,
-          "Diferença (R$)": item.valLoa - original,
+          "Valor LOA Vigente (R$)": item.valLoa,
+          "Valor Reajuste (R$)": item.valorReajuste ?? 0,
+          "Valor Aditamento (R$)": item.valorAditamento ?? 0,
+          "Valor Total (R$)": getItemLoaTotal(item),
+          "Diferença Total - LDO (R$)": getItemLoaTotal(item) - item.valLdo,
           "Validado pelo usuário": validatedRows[item.id] ? "SIM" : "NÃO",
           "Justificativa do Ajuste": (justifications[item.id] || "").trim() || "—",
         };
@@ -2201,19 +2277,19 @@ export function AnaliseLoaView() {
           { content: `AÇÃO: ${group.acao}\nMeta Física 2027: ${ldoData.custoFisico2027 ?? "—"} (${ldoData.unidadeMedida || "unid."}) • Indicador: ${ldoData.indicador || "—"}`, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
           { content: "TOTAL DA AÇÃO", styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
           { content: currency.format(group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valLoa), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valLoa - group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: getStatusInfo(group.valLdo, group.valLoa).label, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: currency.format(group.valorTotal), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: currency.format(group.valorTotal - group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
+          { content: getStatusInfo(group.valLdo, group.valorTotal).label, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
         ]);
         group.children.forEach((item) => {
           const original = originalValuesById.get(item.id) ?? item.valLdo;
           const modified = Math.abs(item.valLoa - original) > 0.001;
-          const diff = item.valLoa - original;
+          const diff = getItemLoaTotal(item) - item.valLdo;
           reportBody.push([
             `  ↳ ${item.subelemento || item.elemento || "Dotação"}${item.fonteVinculo ? ` (Vínculo: ${item.fonteVinculo})` : ""}${item.processo && item.processo !== "—" ? ` [Proc: ${item.processo}]` : ""}`,
             item.natureza || item.elemento,
             currency.format(item.valLdo),
-            currency.format(item.valLoa),
+            currency.format(getItemLoaTotal(item)),
             diff > 0 ? `+${currency.format(diff)}` : currency.format(diff),
             validatedRows[item.id] ? "Validado" : "Pendente de validação",
           ]);
@@ -2781,13 +2857,6 @@ export function AnaliseLoaView() {
                     <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
                     PDF
                   </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-sm">print</span>
-                    Imprimir
-                  </button>
                 </div>
               </div>
 
@@ -2800,7 +2869,10 @@ export function AnaliseLoaView() {
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[300px] min-w-[260px] sm:w-[450px] sm:min-w-[350px]">{renderSortHeader("acao", "Ação")}</th>
                       {visibleTableColumns.has("elemento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[100px] min-w-[90px] sm:w-[110px] sm:min-w-[100px]">{renderSortHeader("elemento", "Elemento de Despesa")}</th>}
                       {visibleTableColumns.has("valLdo") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>}
-                      {visibleTableColumns.has("valLoa") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Editável)", "text-right")}</th>}
+                      {visibleTableColumns.has("valLoa") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Vigente)", "text-right")}</th>}
+                      {visibleTableColumns.has("valorReajuste") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Valor Reajuste", "text-right")}</th>}
+                      {visibleTableColumns.has("valorAditamento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Valor Aditamento", "text-right")}</th>}
+                      {visibleTableColumns.has("valorTotal") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorTotal", "Valor Total", "text-right")}</th>}
                       {visibleTableColumns.has("diff") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>}
                       {visibleTableColumns.has("status") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>}
                       {visibleTableColumns.has("adjusted") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>}
@@ -2809,8 +2881,8 @@ export function AnaliseLoaView() {
                   <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
                     {paginatedEditableGroups.map((group) => {
                       const isExpanded = expandedEditGroups.has(group.id);
-                      const diff = group.valLoa - group.valLdo;
-                      const status = getStatusInfo(group.valLdo, group.valLoa);
+                      const diff = group.valorTotal - group.valLdo;
+                      const status = getStatusInfo(group.valLdo, group.valorTotal);
                       const diffColor = diff > 0 ? "text-emerald-600 font-bold" : diff < 0 ? "text-rose-600 font-bold" : "text-gray-400";
                       const natureGroups = Array.from(group.children.reduce((map, item) => {
                         const key = item.natureza || item.elemento || "Outros";
@@ -2939,6 +3011,9 @@ export function AnaliseLoaView() {
                                 className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
                               />
                             </td>}
+                            {visibleTableColumns.has("valorReajuste") && <td className="p-3 text-right font-mono font-semibold text-on-surface">{formatBr(group.valorReajuste)}</td>}
+                            {visibleTableColumns.has("valorAditamento") && <td className="p-3 text-right font-mono font-semibold text-on-surface">{formatBr(group.valorAditamento)}</td>}
+                            {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>}
                             {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-semibold ${diffColor}`}>
                               {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
                             </td>}
@@ -3288,6 +3363,9 @@ export function AnaliseLoaView() {
                                     </span>
                                   </button>
                                 </th>}
+                                {visibleTableColumns.has("valorReajuste") && <th className="p-2 text-right">Valor Reajuste</th>}
+                                {visibleTableColumns.has("valorAditamento") && <th className="p-2 text-right">Valor Aditamento</th>}
+                                {visibleTableColumns.has("valorTotal") && <th className="p-2 text-right">Valor Total</th>}
                                 {visibleTableColumns.has("diff") && <th className="p-2 text-right">
                                   <button
                                     type="button"
@@ -3323,8 +3401,11 @@ export function AnaliseLoaView() {
                                 const natureExpanded = expandedNatureGroups.has(natureKey);
                                 const natureLdo = natureItems.reduce((sum, item) => sum + item.valLdo, 0);
                                 const natureLoa = natureItems.reduce((sum, item) => sum + item.valLoa, 0);
-                                const natureDiff = natureLoa - natureLdo;
-                                const natureStatus = getStatusInfo(natureLdo, natureLoa);
+                                const natureReajuste = natureItems.reduce((sum, item) => sum + (item.valorReajuste ?? 0), 0);
+                                const natureAditamento = natureItems.reduce((sum, item) => sum + (item.valorAditamento ?? 0), 0);
+                                const natureTotal = natureLoa + natureReajuste + natureAditamento;
+                                const natureDiff = natureTotal - natureLdo;
+                                const natureStatus = getStatusInfo(natureLdo, natureTotal);
                                 return (
                                   <Fragment key={natureKey}>
                                     <tr className="bg-surface hover:bg-surface-container/60 transition-colors border-b border-outline-variant/20">
@@ -3378,6 +3459,9 @@ export function AnaliseLoaView() {
                                           )}
                                         </div>
                                       </td>}
+                                      {visibleTableColumns.has("valorReajuste") && <td className="p-2.5 text-right font-mono font-semibold text-on-surface text-xs">{formatBr(natureReajuste)}</td>}
+                                      {visibleTableColumns.has("valorAditamento") && <td className="p-2.5 text-right font-mono font-semibold text-on-surface text-xs">{formatBr(natureAditamento)}</td>}
+                                      {visibleTableColumns.has("valorTotal") && <td className="p-2.5 text-right font-mono font-extrabold text-primary text-xs">{formatBr(natureTotal)}</td>}
                                       {visibleTableColumns.has("valLdo") && <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>}
                                       {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
                                         <input
@@ -3529,9 +3613,52 @@ export function AnaliseLoaView() {
                                               className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
                                             />
                                           </td>}
-                                          {visibleTableColumns.has("diff") && <td className="p-2 text-right text-on-surface-variant/60 text-xs">—</td>}
+                                          {visibleTableColumns.has("valorReajuste") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <input
+                                              type="text"
+                                              value={editingCell?.id === item.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(item.valorReajuste ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: item.id, field: "valorReajuste" });
+                                                setTempInputValue((item.valorReajuste ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorReajuste: value } : entry));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                          </td>}
+                                          {visibleTableColumns.has("valorAditamento") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <input
+                                              type="text"
+                                              value={editingCell?.id === item.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(item.valorAditamento ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: item.id, field: "valorAditamento" });
+                                                setTempInputValue((item.valorAditamento ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorAditamento: value } : entry));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                          </td>}
+                                          {visibleTableColumns.has("valorTotal") && <td className="p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>}
+                                          {visibleTableColumns.has("diff") && <td className={`p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                            {currency.format(getItemLoaTotal(item) - item.valLdo)}
+                                          </td>}
                                           {visibleTableColumns.has("status") && <td className="p-2 text-center">
-                                            <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
+                                            <span className={`inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border ${getStatusInfo(item.valLdo, getItemLoaTotal(item)).class}`}>
+                                              {getStatusInfo(item.valLdo, getItemLoaTotal(item)).label}
+                                            </span>
                                           </td>}
                                           {visibleTableColumns.has("adjusted") && <td className="p-2 text-center">
                                             <button
@@ -3571,8 +3698,11 @@ export function AnaliseLoaView() {
                         {formatBr(metrics.valLdoTotal)}
                       </td>}
                       {visibleTableColumns.has("valLoa") && <td className="p-3 text-right text-primary font-extrabold">
-                        {formatBr(metrics.valLoaTotal)}
+                        {formatBr(metrics.valLoaVigenteTotal)}
                       </td>}
+                      {visibleTableColumns.has("valorReajuste") && <td className="p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorReajusteTotal)}</td>}
+                      {visibleTableColumns.has("valorAditamento") && <td className="p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>}
+                      {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right text-primary font-extrabold">{formatBr(metrics.valLoaTotal)}</td>}
                       {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
                         {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
                       </td>}
