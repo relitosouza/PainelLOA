@@ -4,7 +4,9 @@ import type { BudgetRow, FieldKey } from "@/types/loa";
 const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "CD ORGAO DS ORGAO": "organ",
   "ORGAO": "organ",
+  "SECRETARIA": "organ",
   "CD UNID DS UNID": "budgetUnit",
+  "UNIDADE": "budgetUnit",
   "UNIDADE ORCAMENTARIA": "budgetUnit",
   "CD FUNCAO DS FUNCAO": "functionName",
   "FUNCAO": "functionName",
@@ -16,6 +18,7 @@ const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "ACAO": "action",
   "NATUREZA DE DESPESA": "expenseNature",
   "NATUREZA DA DESPESA": "expenseNature",
+  "NATUREZA": "expenseNature",
   "DESC SUB": "subelement",
   "SUBELEMENTO": "subelement",
   "PROCESSO": "administrativeProcess",

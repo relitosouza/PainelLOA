@@ -3,7 +3,7 @@ export type LoaExpectativa = {
   valor: number;
 };
 
-// Fonte importada da aba "LOA Expectativa" de Pasta2.xlsx.
+// Fonte oficial importada da aba "LOA Expectativa" de Pasta2.xlsx (Total: R$ 6.510.880.526,06)
 const LOA_EXPECTATIVA_ROWS: Array<[string, number]> = [
   ["01- CMO", 148065765],
   ["02 - GABINETE DO PREFEITO", 18828299],
@@ -13,7 +13,7 @@ const LOA_EXPECTATIVA_ROWS: Array<[string, number]> = [
   ["07 - SECRETARIA DE EMPREGO, TRABALHO E RENDA", 41089404],
   ["08 - SECRETARIA DE EDUCAÇÃO", 1899767527],
   ["09 - SECRETARIA DA SAÚDE", 1267943979],
-  ["11 - SECRETARIA DE SERVIÇOS E OBRAS", 452902118.5],
+  ["11 - SECRETARIA DE SERVIÇOS E OBRAS", 704005788],
   ["12 - SECRETARIA DE ESPORTE, RECREAÇÃO E LAZER", 37730984],
   ["13 - SECRETARIA DE HABITAÇÃO", 131492082],
   ["14 - SECRETARIA DE ASSISTÊNCIA SOCIAL", 144415794],
@@ -45,7 +45,7 @@ const LOA_EXPECTATIVA_ROWS: Array<[string, number]> = [
 
 export const LOA_EXPECTATIVA: LoaExpectativa[] = LOA_EXPECTATIVA_ROWS.map(([secretaria, valor]) => ({ secretaria, valor }));
 
-export const LOA_EXPECTATIVA_TOTAL = LOA_EXPECTATIVA.reduce((total, item) => total + item.valor, 0);
+export const LOA_EXPECTATIVA_TOTAL = Number(LOA_EXPECTATIVA.reduce((total, item) => total + item.valor, 0).toFixed(2));
 
 export function normalizeLoaExpectativaSecretaria(value: string) {
   return value

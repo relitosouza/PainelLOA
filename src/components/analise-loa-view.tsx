@@ -66,6 +66,9 @@ export interface RawBudgetItem {
   elemento: string;
   subelemento: string;
   processo: string;
+  funcao?: string;
+  subfuncao?: string;
+  programaticaLoa?: string;
   codigoAplicacao?: string;
   projetoIniciado?: string;
   observacao?: string;
@@ -100,7 +103,7 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
   { key: "valLoa", label: "Valor LOA" },
   { key: "diff", label: "Diferença" },
   { key: "status", label: "Status" },
-  { key: "adjusted", label: "Ajustado / Validado" },
+  { key: "adjusted", label: "Validação" },
 ];
 
 const ACTION_CANONICAL_MAP: Record<string, string> = {
@@ -236,7 +239,7 @@ export function AnaliseLoaView() {
   const [dataLoadState, setDataLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [dataLoadError, setDataLoadError] = useState("");
   const [dataReloadKey, setDataReloadKey] = useState(0);
-  const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(0);
+  const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
   const loaExpectativaTotal = useMemo(() => {
@@ -843,6 +846,8 @@ export function AnaliseLoaView() {
           programKey: findCol("programática_loa", "programatica_loa", "programatica"),
           organ: findCol("secretaria", "orgao", "órgão", "secretaria_nome"),
           unit: findCol("unidade", "unid", "cd_unid.-ds_unid."),
+          functionName: findCol("funcao", "função", "cd_função-ds_função", "cd_funcao-ds_funcao"),
+          subfunction: findCol("subfuncao", "subfunção", "cd subfunção-ds_subfunção", "cd subfuncao-ds_subfuncao"),
           program: findCol("programa", "cd_programa-ds_programa"),
           action: findCol("acao", "ação", "cd_ação-ds_ação", "cd_acao-ds_acao"),
           nature: findCol("natureza", "natureza de despesa", "natureza da despesa"),
@@ -865,6 +870,8 @@ export function AnaliseLoaView() {
           organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
           if (organStr === "01 - CMO" || organStr === "01- CMO") organStr = "01 - CMO";
           const unitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
+          const functionStr = columns.functionName >= 0 ? String(r[columns.functionName] || "").trim().replace(/^\.+/, "") : "";
+          const subfunctionStr = columns.subfunction >= 0 ? String(r[columns.subfunction] || "").trim().replace(/^\.+/, "") : "";
           const programStr = normalizeProgramLabel(String(r[columns.program] || "").trim().replace(/^\.+/, ""));
           const actionStr = normalizeActionLabel(String(r[columns.action] || "").trim().replace(/^\.+/, ""));
           if (!organStr && !programStr && !actionStr) continue;
@@ -936,6 +943,9 @@ export function AnaliseLoaView() {
               secretaria: organStr,
               orgao: organStr,
               unidade: unitStr,
+              funcao: functionStr,
+              subfuncao: subfunctionStr,
+              programaticaLoa: progKey,
               programa: programStr,
               tipoAcao: getActionTypeLabel(actionStr),
               acao: actionStr,
@@ -1464,11 +1474,7 @@ export function AnaliseLoaView() {
   const tableItems = useMemo(() => {
     return filteredItems.filter((item) => {
       if (statusFilters.length > 0) {
-        const original = originalValuesById.get(item.id) ?? item.valLdo;
-        const adjusted = Math.abs(item.valLoa - original) > 0.001;
-        const matchesFilter = statusFilters.some((filter) =>
-          filter === "Ajustado" ? adjusted : filter === getStatusLabel(item.valLdo, item.valLoa)
-        );
+        const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, item.valLoa));
         if (!matchesFilter) return false;
       }
       if (!tableSearch) return true;
@@ -1482,7 +1488,7 @@ export function AnaliseLoaView() {
         item.subelemento.toLowerCase().includes(query)
       );
     });
-  }, [filteredItems, originalValuesById, statusFilters, tableSearch]);
+  }, [filteredItems, statusFilters, tableSearch]);
 
   const editableGroups = useMemo<EditableGroup[]>(() => {
     const groups = new Map<string, EditableGroup>();
@@ -1507,10 +1513,7 @@ export function AnaliseLoaView() {
       groups.set(groupKey, group);
     });
 
-    const getAdjusted = (item: RawBudgetItem) => {
-      const original = originalValuesById.get(item.id) ?? item.valLdo;
-      return Math.abs(item.valLoa - original) > 0.001 ? 1 : 0;
-    };
+    const getValidated = (item: RawBudgetItem) => validatedRows[item.id] ? 1 : 0;
     const compareText = (left: string, right: string) => left.localeCompare(right, "pt-BR", { numeric: true, sensitivity: "base" });
     const compareGroup = (left: EditableGroup, right: EditableGroup) => {
       const leftFromBank = left.children.some((item) => item.origem === "Banco de Projetos");
@@ -1523,7 +1526,7 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
       else if (tableSort.column === "diff") result = (left.valLoa - left.valLdo) - (right.valLoa - right.valLdo);
       else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valLoa), getStatusLabel(right.valLdo, right.valLoa));
-      else result = left.children.reduce((sum, item) => sum + getAdjusted(item), 0) - right.children.reduce((sum, item) => sum + getAdjusted(item), 0);
+      else result = Number(Boolean(validatedRows[left.id])) - Number(Boolean(validatedRows[right.id]));
       return tableSort.direction === "asc" ? result : -result;
     };
     const compareChild = (left: RawBudgetItem, right: RawBudgetItem) => {
@@ -1534,7 +1537,7 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
       else if (tableSort.column === "diff") result = (left.valLoa - left.valLdo) - (right.valLoa - right.valLdo);
       else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valLoa), getStatusLabel(right.valLdo, right.valLoa));
-      else result = getAdjusted(left) - getAdjusted(right);
+      else result = getValidated(left) - getValidated(right);
       return tableSort.direction === "asc" ? result : -result;
     };
 
@@ -1542,7 +1545,7 @@ export function AnaliseLoaView() {
       ...group,
       children: [...group.children].sort(compareChild),
     })).sort(compareGroup);
-  }, [originalValuesById, tableItems, tableSort]);
+  }, [tableItems, tableSort, validatedRows]);
 
   const totalTablePages = useMemo(
     () => Math.max(1, Math.ceil(editableGroups.length / tablePageSize)),
@@ -1975,6 +1978,74 @@ export function AnaliseLoaView() {
   );
 
   // Funções de exportação
+  const exportDetailedCsv = () => {
+    const extractCode = (value?: string) => value?.trim().match(/^[\d.]+/)?.[0] ?? "";
+    const classificationKey = (item: RawBudgetItem) => [item.secretaria, item.unidade, item.programa, item.acao].join("|");
+    const classificationByContext = new Map<string, RawBudgetItem>();
+    const classificationByAction = new Map<string, RawBudgetItem>();
+    rawItems.forEach((item) => {
+      if (!item.programaticaLoa) return;
+      classificationByContext.set(classificationKey(item), item);
+      if (!classificationByAction.has(item.acao)) classificationByAction.set(item.acao, item);
+    });
+    const headers = [
+      "UG", "secretaria", "unidade", "funcao", "subfuncao", "programa", "acao", "natureza",
+      "Programática_LOA", "secretaria", "unidade", "funcao", "subfuncao", "programa", "acao",
+      "natureza", "desc_sub", "processo", " valor ", "Peça Orçamentária", "Vínculo",
+      "Tipo de despesa", "INICIADO", "OBS.",
+    ];
+    const escapeCell = (value: string | number) => {
+      const text = String(value ?? "");
+      return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const rows = tableItems.map((item) => {
+      const reference = classificationByContext.get(classificationKey(item)) || classificationByAction.get(item.acao);
+      const functionName = item.funcao || reference?.funcao || "";
+      const subfunction = item.subfuncao || reference?.subfuncao || "";
+      const programaticaLoa = item.programaticaLoa || reference?.programaticaLoa || "";
+      const secretariaCode = extractCode(item.secretaria);
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "";
+      return [
+        secretariaCode,
+        secretariaCode,
+        extractCode(item.unidade),
+        extractCode(functionName),
+        extractCode(subfunction),
+        extractCode(item.programa),
+        extractCode(item.acao),
+        extractCode(item.natureza),
+        programaticaLoa,
+        item.secretaria,
+        item.unidade,
+        functionName,
+        subfunction,
+        item.programa,
+        item.acao,
+        item.natureza,
+        item.subelemento || "",
+        item.processo || "",
+        item.valLoa,
+        "LOA",
+        vinculo,
+        item.tipoAcao || getActionTypeLabel(item.acao),
+        item.projetoIniciado || "",
+        item.observacao || (justifications[item.id] || "").trim(),
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map(escapeCell).join(";")).join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "detalhamento-analitico-editavel.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const exportToExcel = () => {
     // 1. Aba: Visão Geral das Ações Orçamentárias
     const acoesData = editableGroups.map((group) => {
@@ -1998,7 +2069,6 @@ export function AnaliseLoaView() {
     const analiticoData = editableGroups.flatMap((group) =>
       group.children.map((item) => {
         const original = originalValuesById.get(item.id) ?? item.valLdo;
-        const adjusted = Math.abs(item.valLoa - original) > 0.001;
         return {
           Secretaria: item.secretaria,
           Programa: item.programa,
@@ -2011,7 +2081,7 @@ export function AnaliseLoaView() {
           "Valor Original (R$)": original,
           "Valor LOA Editável (R$)": item.valLoa,
           "Diferença (R$)": item.valLoa - original,
-          "Item Ajustado": adjusted ? "SIM" : "NÃO",
+          "Validado pelo usuário": validatedRows[item.id] ? "SIM" : "NÃO",
           "Justificativa do Ajuste": (justifications[item.id] || "").trim() || "—",
         };
       })
@@ -2137,7 +2207,7 @@ export function AnaliseLoaView() {
         ]);
         group.children.forEach((item) => {
           const original = originalValuesById.get(item.id) ?? item.valLdo;
-          const adjusted = Math.abs(item.valLoa - original) > 0.001;
+          const modified = Math.abs(item.valLoa - original) > 0.001;
           const diff = item.valLoa - original;
           reportBody.push([
             `  ↳ ${item.subelemento || item.elemento || "Dotação"}${item.fonteVinculo ? ` (Vínculo: ${item.fonteVinculo})` : ""}${item.processo && item.processo !== "—" ? ` [Proc: ${item.processo}]` : ""}`,
@@ -2145,9 +2215,9 @@ export function AnaliseLoaView() {
             currency.format(item.valLdo),
             currency.format(item.valLoa),
             diff > 0 ? `+${currency.format(diff)}` : currency.format(diff),
-            adjusted ? "Ajustado" : "Conforme LDO",
+            validatedRows[item.id] ? "Validado" : "Pendente de validação",
           ]);
-          if (adjusted && justifications[item.id]) {
+          if (modified && justifications[item.id]) {
             reportBody.push([{
               content: `Motivação Técnica / Justificativa: ${justifications[item.id]}`,
               colSpan: 6,
@@ -2530,7 +2600,7 @@ export function AnaliseLoaView() {
                       <span className="material-symbols-outlined text-sm">filter_alt</span>
                       <span>
                         {statusFilters.length === 0
-                          ? "Status/Ajustado"
+                          ? "Status"
                           : statusFilters.length === 1
                             ? statusFilters[0]
                             : `${statusFilters.length} status sel.`}
@@ -2548,7 +2618,7 @@ export function AnaliseLoaView() {
                         />
                         <div className="absolute left-0 mt-1.5 w-52 bg-surface rounded-xl shadow-xl border border-outline-variant p-2 z-30 space-y-1 animate-in fade-in zoom-in-95">
                           <div className="flex items-center justify-between px-2 py-1 border-b border-outline-variant/60 mb-1">
-                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por Status/Ajustado</span>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por status</span>
                             {statusFilters.length > 0 && (
                               <button
                                 type="button"
@@ -2565,7 +2635,6 @@ export function AnaliseLoaView() {
                             { label: "Nova Dotação", badge: "bg-blue-100 text-blue-800 border-blue-300" },
                             { label: "Removida", badge: "bg-amber-100 text-amber-800 border-amber-300" },
                             { label: "Sem alteração", badge: "bg-gray-100 text-gray-700 border-gray-300" },
-                            { label: "Ajustado", badge: "bg-amber-100 text-amber-800 border-amber-300" },
                           ].map((st) => {
                             const checked = statusFilters.includes(st.label);
                             return (
@@ -2697,6 +2766,15 @@ export function AnaliseLoaView() {
                     Excel
                   </button>
                   <button
+                    type="button"
+                    onClick={exportDetailedCsv}
+                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-sky-50 text-sky-700 border border-sky-300 hover:bg-sky-100 transition-colors flex items-center gap-1"
+                    title="Exportar os registros visíveis no mesmo modelo da planilha LOA"
+                  >
+                    <span className="material-symbols-outlined text-sm" aria-hidden="true">csv</span>
+                    CSV LOA
+                  </button>
+                  <button
                     onClick={exportToPDF}
                     className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
                   >
@@ -2725,7 +2803,7 @@ export function AnaliseLoaView() {
                       {visibleTableColumns.has("valLoa") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Editável)", "text-right")}</th>}
                       {visibleTableColumns.has("diff") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>}
                       {visibleTableColumns.has("status") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>}
-                      {visibleTableColumns.has("adjusted") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Ajustado / Validado", "text-center")}</th>}
+                      {visibleTableColumns.has("adjusted") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
@@ -2734,10 +2812,6 @@ export function AnaliseLoaView() {
                       const diff = group.valLoa - group.valLdo;
                       const status = getStatusInfo(group.valLdo, group.valLoa);
                       const diffColor = diff > 0 ? "text-emerald-600 font-bold" : diff < 0 ? "text-rose-600 font-bold" : "text-gray-400";
-                      const groupAdjusted = group.children.some((item) => {
-                        const original = originalValuesById.get(item.id) ?? item.valLdo;
-                        return Math.abs(item.valLoa - original) > 0.001;
-                      });
                       const natureGroups = Array.from(group.children.reduce((map, item) => {
                         const key = item.natureza || item.elemento || "Outros";
                         map.set(key, [...(map.get(key) ?? []), item]);
@@ -2872,28 +2946,21 @@ export function AnaliseLoaView() {
                               <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
                             </td>}
                             {visibleTableColumns.has("adjusted") && <td className="p-3 text-center">
-                              {groupAdjusted ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
-                                  <span className="material-symbols-outlined text-[12px]">edit</span>
-                                  <span>Ajustado</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleValidateRow(group.id)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[group.id]
+                                    ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                    : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                  }`}
+                                title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada"}
+                                aria-label={`Validar ação ${group.acao}`}
+                              >
+                                <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                  {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
                                 </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleValidateRow(group.id)}
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[group.id]
-                                      ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                      : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                    }`}
-                                  title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada (sem alterações necessárias)"}
-                                  aria-label={`Validar ação ${group.acao}`}
-                                >
-                                  <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                    {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
-                                  </span>
-                                  <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
-                                </button>
-                              )}
+                                <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
+                              </button>
                             </td>}
                           </tr>
                           {isExpanded && (
@@ -3247,7 +3314,7 @@ export function AnaliseLoaView() {
                                     </span>
                                   </button>
                                 </th>}
-                                {visibleTableColumns.has("adjusted") && <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Ajustado</th>}
+                                {visibleTableColumns.has("adjusted") && <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Validação</th>}
                               </tr>
 
                               {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
@@ -3342,9 +3409,6 @@ export function AnaliseLoaView() {
 
                                     {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (NETOS) */}
                                     {natureExpanded && natureItems.map((item) => {
-                                      const original = originalValuesById.get(item.id) ?? item.valLdo;
-                                      const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
-
                                       return (
                                         <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
                                             <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2.5 pl-12 sm:pl-16 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
@@ -3470,28 +3534,21 @@ export function AnaliseLoaView() {
                                             <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
                                           </td>}
                                           {visibleTableColumns.has("adjusted") && <td className="p-2 text-center">
-                                            {childAdjusted ? (
-                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9.5px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
-                                                <span className="material-symbols-outlined text-[11px]">edit</span>
-                                                <span>Ajustado</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleValidateRow(item.id)}
+                                              className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[item.id]
+                                                  ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                                  : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                                }`}
+                                              title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento"}
+                                              aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
+                                            >
+                                              <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                                {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
                                               </span>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() => toggleValidateRow(item.id)}
-                                                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[item.id]
-                                                    ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                                    : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                                  }`}
-                                                title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento (sem alterações)"}
-                                                aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
-                                              >
-                                                <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                                  {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
-                                                </span>
-                                                <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
-                                              </button>
-                                            )}
+                                              <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
+                                            </button>
                                           </td>}
                                         </tr>
                                       );

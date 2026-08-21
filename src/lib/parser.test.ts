@@ -27,4 +27,18 @@ describe("parseRows", () => {
     expect(result.records).toHaveLength(1);
     expect(result.records[0].administrativeProcess).toBe("");
   });
+
+  it("importa valores do modelo CSV exportado pelo detalhamento analítico", () => {
+    const result = parseRows([
+      ["UG", "secretaria", "unidade", "funcao", "subfuncao", "programa", "acao", "natureza", "Programática_LOA", "secretaria", "unidade", "funcao", "subfuncao", "programa", "acao", "natureza", "desc_sub", "processo", " valor ", "Peça Orçamentária", "Vínculo", "Tipo de despesa", "INICIADO", "OBS."],
+      ["11", "11", "001", "04", "122", "0011", "2.011", "3.3.90.39.00", "11.001.04.122.0011.2.011.3.3.90.39.00", "11 - SECRETARIA DE SERVIÇOS E OBRAS", "001 - GABINETE", "04 - ADMINISTRAÇÃO", "122 - ADMINISTRAÇÃO GERAL", "0011 - GESTÃO", "2.011 - MANUTENÇÃO", "3.3.90.39.00 - SERVIÇOS", "SERVIÇOS TÉCNICOS", "PA 001/2026", "674.799.655,19", "LOA", "01.110.0000", "2. Atividade", "SIM", ""],
+    ]);
+
+    expect(result.hasRequiredFields).toBe(true);
+    expect(result.missingOrgan).toBe(false);
+    expect(result.invalidValues).toEqual([]);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].organ).toBe("11 - SECRETARIA DE SERVIÇOS E OBRAS");
+    expect(result.records[0].value).toBe(674799655.19);
+  });
 });
