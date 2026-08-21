@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { percent } from "@/lib/format";
+import { useMemo } from "react";
 
 function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -12,15 +11,7 @@ function compactCurrency(value: number) {
   }).format(value);
 }
 
-function cleanLabel(label: string) {
-  return label.replace(/^\d{2}\.\d{2}\.\d{3}\.\d{2}\s*-\s*/i, "").replace(/=$/, "").trim();
-}
-
-export function LdoDeliveryMatrix({
-  totalLoa,
-}: {
-  totalLoa: number;
-}) {
+export function LdoDeliveryMatrix() {
   const priorities = useMemo(() => {
     return [
       {

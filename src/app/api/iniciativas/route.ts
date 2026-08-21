@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
     const unidade = searchParams.get("unidade");
     const search = searchParams.get("search");
 
-    const where: any = {};
+    const where: Prisma.IniciativaEstrategicaWhereInput = {};
 
     if (secretaria) {
       const secCodeMatch = secretaria.trim().match(/^\d+/);
@@ -95,10 +96,11 @@ export async function GET(req: NextRequest) {
       totalCount: formattedIniciativas.length,
       totalValor: Number(totalValorRaw._sum?.valorFinalPldo27 || 0),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro ao buscar iniciativas estratégicas:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Erro ao buscar iniciativas estratégicas", details: error?.message || String(error) },
+      { error: "Erro ao buscar iniciativas estratégicas", details: message },
       { status: 500 }
     );
   }

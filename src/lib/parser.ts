@@ -99,7 +99,7 @@ export function parseRows(rows: unknown[][]) {
       return;
     }
 
-    const budgetPieceIdx = headerMap.get("budgetPiece" as any);
+    const budgetPieceIdx = headerMap.get("budgetPiece");
     if (budgetPieceIdx !== undefined) {
       const pieceVal = clean(row[budgetPieceIdx]).toUpperCase();
       if (pieceVal && pieceVal !== "LOA") return;

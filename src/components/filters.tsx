@@ -315,7 +315,7 @@ export function Filters({
           )}
           {filters.search && (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
-              <strong>Busca:</strong> "{filters.search}"
+              <strong>Busca:</strong> &ldquo;{filters.search}&rdquo;
               <button type="button" onClick={() => onChange({ ...filters, search: "" })} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs">×</button>
             </span>
           )}

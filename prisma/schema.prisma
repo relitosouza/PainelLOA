@@ -14,23 +14,28 @@ model LoaImport {
   totalValue  Decimal        @db.Decimal(18, 2)
   createdAt   DateTime       @default(now())
   records     BudgetRecord[]
+  Contract    Contract[]
 }
 
 model BudgetRecord {
   id                    BigInt    @id @default(autoincrement())
   importId              String
-  import                 LoaImport @relation(fields: [importId], references: [id], onDelete: Cascade)
-  organ                  String
-  budgetUnit             String
-  functionName           String
-  subfunction            String
-  program                String
-  action                  String
-  expenseNature           String
-  subelement              String
-  administrativeProcess   String
-  value                   Decimal  @db.Decimal(18, 2)
-  createdAt               DateTime @default(now())
+  organ                 String
+  budgetUnit            String
+  functionName          String
+  subfunction           String
+  program               String
+  action                String
+  expenseNature         String
+  subelement            String
+  administrativeProcess String
+  value                 Decimal   @db.Decimal(18, 2)
+  createdAt             DateTime  @default(now())
+  apelido               String?
+  contrato              String?
+  fonteRecurso          String?
+  tipoAcao              String?
+  import                LoaImport @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@index([organ])
   @@index([budgetUnit])
@@ -57,62 +62,43 @@ model BudgetOrgan {
   name String
 }
 
-enum StatusImportacao {
-  PROCESSANDO
-  CONCLUIDO
-  CONCLUIDO_COM_ALERTAS
-  ERRO
-  CANCELADO
-}
-
-enum TipoImportacaoReceita {
-  RECEITA_ARRECADADA
-  LDO_RECEITAS
-  LOA_RECEITAS
-}
-
 model ArquivoImportacao {
-  id                  BigInt   @id @default(autoincrement())
+  id                  BigInt                @id @default(autoincrement())
   nomeArquivo         String
   tipoArquivo         String?
   tamanhoArquivo      BigInt?
-  tipoImportacao      TipoImportacaoReceita @default(RECEITA_ARRECADADA)
   exercicioReferencia Int?
-  quantidadeLinhas    Int      @default(0)
-  registrosImportados Int      @default(0)
-  registrosIgnorados  Int      @default(0)
-  registrosComErro    Int      @default(0)
-  valorTotalImportado Decimal? @db.Decimal(18, 2)
-  status              StatusImportacao @default(PROCESSANDO)
-  mensagemErro        String?  @db.Text
+  quantidadeLinhas    Int                   @default(0)
+  registrosImportados Int                   @default(0)
+  registrosIgnorados  Int                   @default(0)
+  registrosComErro    Int                   @default(0)
+  status              StatusImportacao      @default(PROCESSANDO)
+  mensagemErro        String?
   usuarioResponsavel  String?
-  iniciadoEm          DateTime @default(now())
+  iniciadoEm          DateTime              @default(now())
   concluidoEm         DateTime?
-
-  receitasArrecadadas ReceitaArrecadada[]
+  tipoImportacao      TipoImportacaoReceita @default(RECEITA_ARRECADADA)
+  valorTotalImportado Decimal?              @db.Decimal(18, 2)
   ldoReceitas         LdoReceita[]
+  receitasArrecadadas ReceitaArrecadada[]
 }
 
 model ReceitaArrecadada {
-  id                    BigInt   @id @default(autoincrement())
-
-  dataMovimento          DateTime?
-  exercicio              Int
-  valor                  Decimal  @db.Decimal(18, 2)
-
-  receita                String?
-  naturezaReceita        String?
-  descricaoReceita       String?
-  unidadeOrcamentaria    String?
-  codigoFundo            String?
-  vinculo                String?
-
-  arquivoImportacaoId    BigInt?
-  arquivoImportacao      ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id])
-
-  hashRegistro           String?  @unique
-  criadoEm               DateTime @default(now())
-  atualizadoEm           DateTime @updatedAt
+  id                  BigInt             @id @default(autoincrement())
+  dataMovimento       DateTime?
+  exercicio           Int
+  valor               Decimal            @db.Decimal(18, 2)
+  receita             String?
+  naturezaReceita     String?
+  descricaoReceita    String?
+  unidadeOrcamentaria String?
+  codigoFundo         String?
+  vinculo             String?
+  arquivoImportacaoId BigInt?
+  hashRegistro        String?            @unique
+  criadoEm            DateTime           @default(now())
+  atualizadoEm        DateTime           @updatedAt
+  arquivoImportacao   ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id])
 
   @@index([exercicio])
   @@index([dataMovimento])
@@ -124,41 +110,27 @@ model ReceitaArrecadada {
   @@index([arquivoImportacaoId])
 }
 
-enum StatusDistribuicaoLdo {
-  NAO_INICIADO
-  PARCIALMENTE_DISTRIBUIDO
-  TOTALMENTE_DISTRIBUIDO
-  ACIMA_LDO
-}
-
 model LdoReceita {
-  id                    BigInt   @id @default(autoincrement())
-  exercicio             Int
-  numeroLdo             String?  @db.VarChar(100)
-  
-  // Regra do campo Apelido: alfanumerico obrigatoriamente preservado como string
-  apelidoOriginal       String   @db.VarChar(255)
-  apelidoNormalizado    String   @db.VarChar(255)
-
-  vinculo               String   @db.VarChar(100)
-  descricaoVinculo      String   @db.Text
-  valorTotalLdo         Decimal  @db.Decimal(18, 2)
-
-  arquivoImportacaoId   BigInt?
-  arquivoImportacao     ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id], onDelete: SetNull)
-
-  linhaOrigem           Int?
-  versaoImportacao      Int      @default(1)
-  situacaoValidacao     String   @default("VÁLIDO") // VÁLIDO, ALERTA, DUPLICADO, INVALIDO
-  mensagemValidacao     String?  @db.Text
-
-  statusDistribuicao    StatusDistribuicaoLdo @default(NAO_INICIADO)
-  valorDistribuidoLoa   Decimal  @default(0) @db.Decimal(18, 2)
-  saldoDistribuir       Decimal  @default(0) @db.Decimal(18, 2)
-  observacoes           String?  @db.Text
-
-  criadoEm              DateTime @default(now())
-  atualizadoEm          DateTime @updatedAt
+  id                  BigInt                @id @default(autoincrement())
+  exercicio           Int
+  numeroLdo           String?               @db.VarChar(100)
+  apelidoOriginal     String                @db.VarChar(255)
+  apelidoNormalizado  String                @db.VarChar(255)
+  vinculo             String                @db.VarChar(100)
+  descricaoVinculo    String
+  valorTotalLdo       Decimal               @db.Decimal(18, 2)
+  arquivoImportacaoId BigInt?
+  linhaOrigem         Int?
+  versaoImportacao    Int                   @default(1)
+  situacaoValidacao   String                @default("VÁLIDO")
+  mensagemValidacao   String?
+  statusDistribuicao  StatusDistribuicaoLdo @default(NAO_INICIADO)
+  valorDistribuidoLoa Decimal               @default(0) @db.Decimal(18, 2)
+  saldoDistribuir     Decimal               @default(0) @db.Decimal(18, 2)
+  observacoes         String?
+  criadoEm            DateTime              @default(now())
+  atualizadoEm        DateTime              @updatedAt
+  arquivoImportacao   ArquivoImportacao?    @relation(fields: [arquivoImportacaoId], references: [id])
 
   @@index([exercicio])
   @@index([apelidoNormalizado])
@@ -168,20 +140,20 @@ model LdoReceita {
 }
 
 model IniciativaEstrategica {
-  id              BigInt   @id @default(autoincrement())
-  secretaria      String   @db.VarChar(255)
-  unidade         String?  @db.VarChar(100)
-  funcao          String?  @db.VarChar(100)
-  subfuncao       String?  @db.VarChar(100)
-  programa        String?  @db.VarChar(100)
-  acao            String   @db.VarChar(100)
-  despesa         String?  @db.VarChar(100)
-  programaticaLdo String   @db.VarChar(255)
-  dsIniciativa    String   @db.Text
-  vinculo         String   @db.VarChar(100)
+  id               BigInt   @id @default(autoincrement())
+  secretaria       String   @db.VarChar(255)
+  programaticaLdo  String   @db.VarChar(255)
+  dsIniciativa     String
+  acao             String   @db.VarChar(100)
+  vinculo          String   @db.VarChar(100)
   valorFinalPldo27 Decimal  @db.Decimal(18, 2)
-  criadoEm        DateTime @default(now())
-  atualizadoEm    DateTime @updatedAt
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+  despesa          String?  @db.VarChar(100)
+  funcao           String?  @db.VarChar(100)
+  programa         String?  @db.VarChar(100)
+  subfuncao        String?  @db.VarChar(100)
+  unidade          String?  @db.VarChar(100)
 
   @@index([secretaria])
   @@index([unidade])
@@ -209,45 +181,39 @@ model NomenclaturaDespesa {
   @@index([codigoFormatado])
 }
 
-enum StatusEnquadramentoLdo {
-  PENDENTE
-  PARCIAL
-  CONCLUIDO
-}
-
 model LdoAcaoImportacao {
-  id             String    @id @default(cuid())
-  nomeArquivo    String
-  exercicio      Int
-  quantidade     Int
-  valorTotal     Decimal   @db.Decimal(18, 2)
-  ativo          Boolean   @default(true)
-  criadoEm       DateTime  @default(now())
-  acoes          LdoAcao[]
+  id          String    @id @default(cuid())
+  nomeArquivo String
+  exercicio   Int
+  quantidade  Int
+  valorTotal  Decimal   @db.Decimal(18, 2)
+  ativo       Boolean   @default(true)
+  criadoEm    DateTime  @default(now())
+  acoes       LdoAcao[]
 
   @@index([exercicio, ativo])
 }
 
 model LdoAcao {
-  id              String                 @id @default(cuid())
+  id              String                @id @default(cuid())
   importacaoId    String
-  importacao      LdoAcaoImportacao      @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
   exercicio       Int
-  secretaria      String                 @db.VarChar(255)
-  programaCodigo  String?                @db.VarChar(50)
-  programaNome    String                 @db.VarChar(255)
-  funcaoCodigo    String?                @db.VarChar(50)
-  funcaoNome      String?                @db.VarChar(255)
-  subfuncaoCodigo String?                @db.VarChar(50)
-  subfuncaoNome   String?                @db.VarChar(255)
-  acaoCodigo      String                 @db.VarChar(50)
-  acaoNome        String?                @db.VarChar(255)
-  produto         String                 @db.Text
-  metaFisica      Decimal?               @db.Decimal(18, 2)
-  custoFinanceiro Decimal                @db.Decimal(18, 2)
+  secretaria      String                @db.VarChar(255)
+  programaCodigo  String?               @db.VarChar(50)
+  programaNome    String                @db.VarChar(255)
+  acaoCodigo      String                @db.VarChar(50)
+  acaoNome        String?               @db.VarChar(255)
+  produto         String
+  metaFisica      Decimal?              @db.Decimal(18, 2)
+  custoFinanceiro Decimal               @db.Decimal(18, 2)
   linhaOrigem     Int?
-  criadoEm        DateTime               @default(now())
+  criadoEm        DateTime              @default(now())
+  funcaoCodigo    String?               @db.VarChar(50)
+  funcaoNome      String?               @db.VarChar(255)
+  subfuncaoCodigo String?               @db.VarChar(50)
+  subfuncaoNome   String?               @db.VarChar(255)
   enquadramentos  EnquadramentoLdoLoa[]
+  importacao      LdoAcaoImportacao     @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
 
   @@index([exercicio, secretaria])
   @@index([acaoCodigo])
@@ -268,22 +234,22 @@ model CodigoAuxiliarImportacao {
 }
 
 model CodigoAuxiliar {
-  id             String                    @id @default(cuid())
-  importacaoId   String
-  importacao     CodigoAuxiliarImportacao  @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
-  exercicio      Int
-  tipo           String                    @db.VarChar(100)
-  abaOrigem      String                    @db.VarChar(150)
-  codigo         String                    @db.VarChar(100)
-  nome           String                    @db.Text
-  especificacao  String?                   @db.Text
-  observacao     String?                   @db.Text
-  metadados      Json?
-  ativo          Boolean                   @default(true)
-  criadoEm       DateTime                  @default(now())
-  enquadramentosDespesa EnquadramentoLdoLoa[] @relation("DespesaEnquadramento")
-  enquadramentosFonte   EnquadramentoLdoLoa[] @relation("FonteEnquadramento")
-  enquadramentosAplicacao EnquadramentoLdoLoa[] @relation("AplicacaoEnquadramento")
+  id                      String                   @id @default(cuid())
+  importacaoId            String
+  exercicio               Int
+  tipo                    String                   @db.VarChar(100)
+  abaOrigem               String                   @db.VarChar(150)
+  codigo                  String                   @db.VarChar(100)
+  nome                    String
+  especificacao           String?
+  observacao              String?
+  metadados               Json?
+  ativo                   Boolean                  @default(true)
+  criadoEm                DateTime                 @default(now())
+  importacao              CodigoAuxiliarImportacao @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
+  enquadramentosAplicacao EnquadramentoLdoLoa[]    @relation("AplicacaoEnquadramento")
+  enquadramentosDespesa   EnquadramentoLdoLoa[]    @relation("DespesaEnquadramento")
+  enquadramentosFonte     EnquadramentoLdoLoa[]    @relation("FonteEnquadramento")
 
   @@unique([importacaoId, tipo, codigo])
   @@index([exercicio, tipo, ativo])
@@ -291,22 +257,22 @@ model CodigoAuxiliar {
 }
 
 model EnquadramentoLdoLoa {
-  id                  String          @id @default(cuid())
-  ldoAcaoId           String
-  ldoAcao             LdoAcao         @relation(fields: [ldoAcaoId], references: [id], onDelete: Cascade)
-  despesaId           String
-  despesa             CodigoAuxiliar  @relation("DespesaEnquadramento", fields: [despesaId], references: [id])
-  fonteRecursoId       String
-  fonteRecurso         CodigoAuxiliar  @relation("FonteEnquadramento", fields: [fonteRecursoId], references: [id])
-  codigoAplicacaoId    String
-  codigoAplicacao      CodigoAuxiliar  @relation("AplicacaoEnquadramento", fields: [codigoAplicacaoId], references: [id])
-  valor               Decimal         @db.Decimal(18, 2)
-  justificativa       String?         @db.Text
-  motivoSugestao      String?         @db.Text
-  responsavel         String?         @db.VarChar(255)
-  criadoEm            DateTime        @default(now())
-  atualizadoEm        DateTime        @updatedAt
-  removidoEm          DateTime?
+  id                String         @id @default(cuid())
+  ldoAcaoId         String
+  despesaId         String
+  fonteRecursoId    String
+  codigoAplicacaoId String
+  valor             Decimal        @db.Decimal(18, 2)
+  justificativa     String?
+  motivoSugestao    String?
+  responsavel       String?        @db.VarChar(255)
+  criadoEm          DateTime       @default(now())
+  atualizadoEm      DateTime       @updatedAt
+  removidoEm        DateTime?
+  codigoAplicacao   CodigoAuxiliar @relation("AplicacaoEnquadramento", fields: [codigoAplicacaoId], references: [id])
+  despesa           CodigoAuxiliar @relation("DespesaEnquadramento", fields: [despesaId], references: [id])
+  fonteRecurso      CodigoAuxiliar @relation("FonteEnquadramento", fields: [fonteRecursoId], references: [id])
+  ldoAcao           LdoAcao        @relation(fields: [ldoAcaoId], references: [id], onDelete: Cascade)
 
   @@index([ldoAcaoId, removidoEm])
   @@index([despesaId])
@@ -332,12 +298,12 @@ model SubelementoCustomizado {
   acao            String   @db.VarChar(255)
   natureza        String   @db.VarChar(255)
   elemento        String   @db.VarChar(100)
-  subelemento     String   @db.Text
+  subelemento     String
   fonteVinculo    String   @db.VarChar(100)
   codigoAplicacao String?  @db.VarChar(100)
   processo        String?  @db.VarChar(255)
   projetoIniciado String?  @db.VarChar(50)
-  observacao      String?  @db.Text
+  observacao      String?
   valLoa          Decimal  @default(0) @db.Decimal(18, 2)
   valLdo          Decimal  @default(0) @db.Decimal(18, 2)
   criadoEm        DateTime @default(now())
@@ -346,4 +312,162 @@ model SubelementoCustomizado {
   @@index([secretaria, programa, acao])
   @@index([natureza])
   @@index([fonteVinculo])
+}
+
+model Contract {
+  id                     BigInt    @id @default(autoincrement())
+  importId               String
+  secretaria             String?
+  fornecedor             String?
+  apelidoDespesa         String?
+  contratoPasta          String?
+  processoAdministrativo String?
+  valorContratual        Decimal?  @db.Decimal(18, 2)
+  inicioContrato         DateTime?
+  vencimentoContrato     DateTime?
+  fonteClassificacao     String?
+  classificacao          String?
+  qtdProgramaticas       Int?
+  reajuste               String?
+  conferido              String?
+  mesesContrato          Int?
+  mesesRestantes         Int?
+  valor12Meses           Decimal?  @db.Decimal(18, 2)
+  loaProposta            Decimal?  @db.Decimal(18, 2)
+  vinculo                String?
+  quantidadePA           Int?
+  diferenca              Decimal?  @db.Decimal(18, 2)
+  LoaImport              LoaImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([fornecedor])
+  @@index([importId])
+  @@index([secretaria])
+}
+
+enum StatusImportacao {
+  PROCESSANDO
+  CONCLUIDO
+  CONCLUIDO_COM_ALERTAS
+  ERRO
+  CANCELADO
+}
+
+enum TipoImportacaoReceita {
+  RECEITA_ARRECADADA
+  LDO_RECEITAS
+  LOA_RECEITAS
+}
+
+enum StatusDistribuicaoLdo {
+  NAO_INICIADO
+  PARCIALMENTE_DISTRIBUIDO
+  TOTALMENTE_DISTRIBUIDO
+  ACIMA_LDO
+}
+
+enum StatusEnquadramentoLdo {
+  PENDENTE
+  PARCIAL
+  CONCLUIDO
+}
+
+enum PapelUsuario {
+  ADMIN
+  PLANEJAMENTO
+  TECNICO_SECRETARIA
+  LEITURA
+}
+
+enum StatusAlteracaoOrcamentaria {
+  APLICADA
+  PENDENTE_APROVACAO
+  REJEITADA
+  REVERTIDA
+}
+
+model Usuario {
+  id                   String                 @id @default(cuid())
+  nome                 String                 @db.VarChar(255)
+  email                String                 @unique @db.VarChar(255)
+  senhaHash            String?                @db.VarChar(255)
+  papel                PapelUsuario           @default(TECNICO_SECRETARIA)
+  ativo                Boolean                @default(true)
+  secretaria           String?                @db.VarChar(255)
+  codigoSecretaria     String?                @db.VarChar(50)
+  cargo                String?                @db.VarChar(150)
+  telefone             String?                @db.VarChar(50)
+  ultimoAcesso         DateTime?
+  criadoEm             DateTime               @default(now())
+  atualizadoEm         DateTime               @updatedAt
+  alteracoesRealizadas AlteracaoOrcamentaria[]
+  exclusoesRealizadas  ExclusaoDotacao[]
+
+  @@index([email])
+  @@index([codigoSecretaria])
+  @@index([papel])
+}
+
+model AlteracaoOrcamentaria {
+  id                  BigInt                      @id @default(autoincrement())
+  dotacaoId           String?
+  exercicio           Int                         @default(2027)
+  secretaria          String                      @db.VarChar(255)
+  codigoSecretaria    String?                     @db.VarChar(50)
+  programa            String?
+  acao                String?
+  natureza            String?                     @db.VarChar(255)
+  subelemento         String?
+  processo            String?                     @db.VarChar(255)
+  apelido             String?                     @db.VarChar(255)
+  valorAnterior       Decimal                     @db.Decimal(18, 2)
+  valorNovo           Decimal                     @db.Decimal(18, 2)
+  diferenca           Decimal                     @db.Decimal(18, 2)
+  justificativa       String
+  tipoAlteracao       String                      @default("AJUSTE_VALOR") @db.VarChar(50)
+  status              StatusAlteracaoOrcamentaria @default(APLICADA)
+  usuarioId           String?
+  nomeOperador        String                      @db.VarChar(255)
+  emailOperador       String?                     @db.VarChar(255)
+  criadoEm            DateTime                    @default(now())
+  revertidoEm         DateTime?
+  usuarioReversao     String?                     @db.VarChar(255)
+  usuario             Usuario?                    @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([secretaria])
+  @@index([codigoSecretaria])
+  @@index([exercicio])
+  @@index([dotacaoId])
+  @@index([criadoEm])
+  @@index([usuarioId])
+}
+
+model ExclusaoDotacao {
+  id               BigInt    @id @default(autoincrement())
+  dotacaoId        String
+  exercicio        Int       @default(2027)
+  secretaria       String    @db.VarChar(255)
+  codigoSecretaria String?   @db.VarChar(50)
+  programa         String?
+  acao             String?
+  natureza         String?   @db.VarChar(255)
+  subelemento      String?
+  processo         String?   @db.VarChar(255)
+  apelido          String?   @db.VarChar(255)
+  valorOriginal    Decimal   @db.Decimal(18, 2)
+  dadosOriginais   Json?
+  motivoExclusao   String
+  restaurado       Boolean   @default(false)
+  restauradoEm     DateTime?
+  usuarioId        String?
+  nomeOperador     String    @db.VarChar(255)
+  emailOperador    String?   @db.VarChar(255)
+  criadoEm         DateTime  @default(now())
+  usuario          Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([secretaria])
+  @@index([codigoSecretaria])
+  @@index([exercicio])
+  @@index([dotacaoId])
+  @@index([criadoEm])
+  @@index([usuarioId])
 }

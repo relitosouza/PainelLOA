@@ -32,8 +32,6 @@ interface TableRow {
 
 export function AnalisesCombinadasSection() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<number | null>(1); // Botão 1 selecionado por padrão
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const [statusBases, setStatusBases] = useState<StatusBases>({
     loaDespesas: { existe: true, count: 100, status: "DISPONIVEL" },
@@ -61,7 +59,6 @@ export function AnalisesCombinadasSection() {
   useEffect(() => {
     async function fetchData() {
       try {
-        setLoading(true);
         const res = await fetch("/api/analises-combinadas");
         if (!res.ok) throw new Error("Falha ao carregar dados das Análises Combinadas.");
         const json = await res.json();
@@ -70,8 +67,6 @@ export function AnalisesCombinadasSection() {
         if (json.tabelas) setTabelas(json.tabelas);
       } catch (err) {
         console.warn("Usando estado fallback para Análises Combinadas:", err);
-      } finally {
-        setLoading(false);
       }
     }
     fetchData();

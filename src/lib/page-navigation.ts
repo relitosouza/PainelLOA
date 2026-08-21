@@ -52,7 +52,7 @@ export const PRIMARY_PAGE_LINKS: PrimaryPageLink[] = [
   { key: "assistente-loa", label: "Assistente LOA", href: "/assistente-loa", icon: "auto_awesome" },
 ];
 
-export function getPrimaryPageLinks(_currentView?: string) {
+export function getPrimaryPageLinks() {
   return PRIMARY_PAGE_LINKS;
 }
 

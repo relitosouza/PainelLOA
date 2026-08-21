@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { percent } from "@/lib/format";
 
 function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -35,8 +34,6 @@ export function BudgetScenarioSimulator({
 
   // 2. Cenário Base LOA
   const baseRev = total;
-  const baseExp = total;
-  const baseResult = 0;
 
   // 3. Cenário Conservador (-5% receita)
   const consRev = total * 0.95;

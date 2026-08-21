@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const headers = ["Apelido", "Vínculo", "Descrição do Vínculo", "Total"];
     const examples = [

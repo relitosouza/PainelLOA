@@ -10,6 +10,7 @@ import {
   DEFAULT_LAYOUT_CONFIG,
   type AnaliseLoaLayoutConfig,
 } from "./analise-loa-cards-config-dialog";
+import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 
 // --- Tipos de Filtro ---
@@ -245,8 +246,8 @@ export function AnaliseLoaView() {
     }, 0);
   }, [filters.secretaria]);
 
-  // Estados da Tree View, Tabela, Alterações e Justificativas
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
   const [expandedEditGroups, setExpandedEditGroups] = useState<Set<string>>(new Set());
   const [expandedNatureGroups, setExpandedNatureGroups] = useState<Set<string>>(new Set());
   const [collapsedLdoPlanningGroups, setCollapsedLdoPlanningGroups] = useState<Set<string>>(new Set());
@@ -538,10 +539,12 @@ export function AnaliseLoaView() {
     const acaoCodeMatch = acaoClean.match(/^(\d+[\.\d]*|\d+)/);
     const acaoCode = acaoCodeMatch ? acaoCodeMatch[1] : acaoClean;
 
+    type LdoItemMatch = { indicador?: string; produto?: string; unidMedida?: string; custoFisico2027?: number; custoFinanceiro2027?: number };
     const dataIndexes = ldoPlanningJson as {
-      bySecProgAcao: Record<string, any>;
-      byProgAcao: Record<string, any>;
-      byAcao: Record<string, any>;
+      bySecProgAcao?: Record<string, LdoItemMatch>;
+      bySecAcao?: Record<string, LdoItemMatch>;
+      byProgAcao?: Record<string, LdoItemMatch>;
+      byAcao?: Record<string, LdoItemMatch>;
     };
 
     // 2. Busca exata por Secretaria + Programa + Ação
@@ -559,7 +562,7 @@ export function AnaliseLoaView() {
 
     // 3. Busca por Secretaria + Ação (útil quando o programa na LOA foi cadastrado diferente da LDO)
     const keySecAcao = `${secCode}|${acaoCode}`;
-    const secAcaoMatch = (dataIndexes as any).bySecAcao?.[keySecAcao];
+    const secAcaoMatch = dataIndexes.bySecAcao?.[keySecAcao];
     if (secAcaoMatch) {
       return {
         indicador: secAcaoMatch.indicador || secAcaoMatch.produto || "Não informado",
@@ -1114,18 +1117,6 @@ export function AnaliseLoaView() {
     setSaveModalOpen(true);
   };
 
-  const openAddExpense = (group: EditableGroup, natureza?: string) => {
-    setAddExpenseGroup(group);
-    const nat = natureza || group.children[0]?.natureza || group.children[0]?.elemento || "";
-    setAddElementContext(natureza ? { group, natureza } : null);
-    setNewExpenseNatureza(nat);
-    setNewExpenseSubelemento("");
-    setNewExpenseVinculo("01");
-    setNewExpenseCodigoAplicacao("");
-    setNewExpenseProcesso("");
-    setNewExpenseValor("");
-  };
-
   // Cancelar a edição e reverter todos os campos editados ao valor anterior (antes de abrir o modal)
   const handleCancelSaveModal = () => {
     setRawItems(JSON.parse(JSON.stringify(savedRawItems)));
@@ -1293,8 +1284,57 @@ export function AnaliseLoaView() {
 
       setJustifications(validJustifications);
 
-      // Persistir no Banco de Dados
+      // Persistir no Banco de Dados (Tabelas Relacionais de Auditoria + Fallback de Layout)
       try {
+        const alteracoesPayload = modifiedItems
+          .filter((item) => !itemsToRevert.includes(item.id))
+          .map((item) => ({
+            dotacaoId: item.id,
+            exercicio: 2027,
+            secretaria: item.secretaria,
+            programa: item.programa,
+            acao: item.acao,
+            natureza: item.natureza,
+            subelemento: item.subelemento,
+            processo: item.processo,
+            apelido: "apelido" in item ? String((item as Record<string, unknown>).apelido) : null,
+            valorAnterior: savedMap.get(item.id) ?? item.valLdo,
+            valorNovo: item.valLoa,
+            justificativa: validJustifications[item.id] || "Ajuste orçamentário aprovado",
+            tipoAlteracao: "AJUSTE_VALOR",
+          }));
+
+        const exclusoesPayload = removedRawItems
+          .filter((item) => !restoredFromRemoval.some((r) => r.id === item.id))
+          .map((item) => ({
+            dotacaoId: item.id,
+            exercicio: 2027,
+            secretaria: item.secretaria,
+            programa: item.programa,
+            acao: item.acao,
+            natureza: item.natureza,
+            subelemento: item.subelemento,
+            processo: item.processo,
+            apelido: "apelido" in item ? String((item as Record<string, unknown>).apelido) : null,
+            valorOriginal: item.valLoa,
+            dadosOriginais: item,
+            motivoExclusao: validJustifications[item.id] || "Exclusão de dotação",
+          }));
+
+        if (alteracoesPayload.length > 0 || exclusoesPayload.length > 0) {
+          void fetch("/api/orcamento/alteracoes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nomeOperador: "Técnico Responsável",
+              emailOperador: "planejamento@osasco.sp.gov.br",
+              justificativaGeral: "Ajuste em lote no Painel de Análise LOA",
+              alteracoes: alteracoesPayload.length > 0 ? alteracoesPayload : undefined,
+              exclusoes: exclusoesPayload,
+            }),
+          });
+        }
+
         const responses = await Promise.all([
           fetch("/api/configuracoes/layout", {
             method: "POST",
@@ -2331,6 +2371,14 @@ export function AnaliseLoaView() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setAuditModalOpen(true)}
+            className="flex min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 transition-colors shadow-sm sm:w-auto cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-base text-emerald-700">history_edu</span>
+            Auditoria Orçamentária
+          </button>
+          <button
+            type="button"
             onClick={() => setCardsConfigModalOpen(true)}
             className="flex min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-surface border border-outline-variant text-on-surface hover:bg-surface-container transition-colors shadow-sm sm:w-auto"
           >
@@ -2773,7 +2821,7 @@ export function AnaliseLoaView() {
                       )}
                     {filters.search && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
-                        <strong>Busca:</strong> "{filters.search}"
+                        <strong>Busca:</strong> &ldquo;{filters.search}&rdquo;
                         <button
                           type="button"
                           onClick={() => setFilters((prev) => ({ ...prev, search: "" }))}
@@ -4717,6 +4765,13 @@ export function AnaliseLoaView() {
         config={layoutConfig}
         onSaveConfig={handleSaveLayoutConfig}
         onResetConfig={handleResetLayoutConfig}
+      />
+
+      {/* 9. POPUP MODAL: Auditoria Orçamentária & Rastreabilidade */}
+      <AuditoriaOrcamentariaModal
+        isOpen={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+        secretariaAtiva={filters.secretaria[0] || ""}
       />
     </div>
   );

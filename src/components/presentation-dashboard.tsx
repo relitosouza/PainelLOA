@@ -284,11 +284,7 @@ export function PresentationDashboard() {
 
   const trend = previousTotal ? summary.total / previousTotal - 1 : 0;
   const topFiveShare = summary.total ? summary.organs.slice(0, 5).reduce((sum, item) => sum + item.value, 0) / summary.total : 0;
-  const ownRevenue = summary.total * 0.41;
-  const transfers = summary.total * 0.53;
-  const capitalRevenue = Math.max(0, summary.total - ownRevenue - transfers);
   const investmentShare = summary.total ? summary.investment / summary.total : 0;
-  const perCapita = summary.total / 723500;
 
   const topProgram = useMemo(() => {
     const records = getCurrentRecords(year).filter(
@@ -353,34 +349,6 @@ export function PresentationDashboard() {
 
     return sorted[0] || { label: "Ação de Investimento em Infraestrutura", value: summary.investment };
   }, [year, secretariat, getCurrentRecords, summary.investment]);
-
-  const getPriorityValue = (keywords: string[], fallbackPct: number) => {
-    const organMatch = summary.organs.find((item) =>
-      keywords.some((keyword) => item.label.toLowerCase().includes(keyword))
-    );
-    if (organMatch) return organMatch.value;
-
-    const functionMatch = summary.functions.find((item) =>
-      keywords.some((keyword) => item.label.toLowerCase().includes(keyword))
-    );
-    if (functionMatch) return functionMatch.value;
-
-    return summary.total * fallbackPct;
-  };
-
-  const prioritySaude = getPriorityValue(["saude", "saúde"], 0.24);
-  const priorityEducacao = getPriorityValue(["educac", "educaç"], 0.20);
-  const priorityObras = getPriorityValue(["obras", "infraestrutura", "infra", "urbanismo"], 0.08);
-  const priorityMobilidade = getPriorityValue(["mobilidade", "transporte", "trânsito", "transito"], 0.05);
-  const priorityAssistencia = getPriorityValue(["assistência", "assistencia", "social", "cidadania"], 0.04);
-
-  const priorities = [
-    { label: "Saúde", value: prioritySaude, color: "bg-red-500" },
-    { label: "Educação", value: priorityEducacao, color: "bg-indigo-500" },
-    { label: "Obras", value: priorityObras, color: "bg-amber-500" },
-    { label: "Mobilidade", value: priorityMobilidade, color: "bg-blue-500" },
-    { label: "Assistência", value: priorityAssistencia, color: "bg-emerald-500" },
-  ].sort((left, right) => right.value - left.value);
 
   const personnelShare = summary.total ? summary.natureTotals.Pessoal / summary.total : 0;
   const budgetPressure = useMemo(

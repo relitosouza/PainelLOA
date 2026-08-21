@@ -73,7 +73,7 @@ export function ExpenseDetailView() {
         pct,
       };
     });
-  }, [dbData, exerciseYear]);
+  }, [dbData]);
 
   // Top Contracts/Processes
   const topProcesses = useMemo(() => {

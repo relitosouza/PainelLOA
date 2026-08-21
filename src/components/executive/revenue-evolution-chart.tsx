@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { percent } from "@/lib/format";
 
 function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -29,7 +28,6 @@ export function RevenueEvolutionChart({
     ];
   }, [currentLoaTotal]);
 
-  const maxVal = Math.max(...historicalData.map((d) => d.total));
   const baseVal = historicalData[0].total;
 
   return (
@@ -73,9 +71,8 @@ export function RevenueEvolutionChart({
         </div>
 
         {historicalData.map((d, i) => {
-          const heightPct = Math.max(15, (d.total / maxVal) * 100);
-          const growth = i > 0 ? (d.total / historicalData[i - 1].total - 1) * 100 : 0;
           const totalGrowth = ((d.total / baseVal - 1) * 100);
+          const growth = i > 0 ? (d.total / historicalData[i - 1].total - 1) * 100 : 0;
 
           return (
             <div key={d.year} className="relative flex flex-col items-center group z-10">

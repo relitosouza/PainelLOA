@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
-import { currency, integer } from "@/lib/format";
+import React, { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import { currency } from "@/lib/format";
 
 interface LdoRegistro {
   id: string;
@@ -49,32 +50,10 @@ interface HistoricoItem {
   iniciadoEm: string;
 }
 
-interface PreviewValidation {
-  nomeArquivo: string;
-  exercicio: number;
-  records: Array<{
-    apelidoOriginal: string;
-    vinculo: string;
-    descricaoVinculo: string;
-    total: number;
-    situacaoValidacao: string;
-    mensagemValidacao: string;
-  }>;
-  totalLinhas: number;
-  registrosValidos: number;
-  registrosComAlerta: number;
-  registrosInvalidos: number;
-  registrosDuplicados: number;
-  valorTotalLdo: number;
-}
-
 export function LdoReceitaView() {
-  const [activeSubTab, setActiveSubTab] = useState<"dashboard" | "analitica" | "importar" | "historico">("dashboard");
+  const [activeSubTab] = useState<"dashboard" | "analitica" | "importar" | "historico">("dashboard");
   const [exercicio, setExercicio] = useState<number>(new Date().getFullYear() + 1);
-  const [numeroLdo, setNumeroLdo] = useState<string>("LDO-" + (new Date().getFullYear() + 1));
-  const [observacoes, setObservacoes] = useState<string>("");
 
-  const [loading, setLoading] = useState<boolean>(true);
   const [registros, setRegistros] = useState<LdoRegistro[]>([]);
   const [kpis, setKpis] = useState<LdoKpis | null>(null);
   const [comparativo, setComparativo] = useState<VinculoComparativo[]>([]);
@@ -85,21 +64,7 @@ export function LdoReceitaView() {
   const [filterVinculo, setFilterVinculo] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
 
-  // Upload States
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<PreviewValidation | null>(null);
-  const [acaoDuplicados, setAcaoDuplicados] = useState<"consolidar" | "manter" | "rejeitar">("consolidar");
-  const [modoImportacao, setModoImportacao] = useState<"substituir" | "complementar">("substituir");
-  const [uploadMessage, setUploadMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  useEffect(() => {
-    loadLdoData();
-  }, [exercicio]);
-
-  async function loadLdoData() {
-    setLoading(true);
+  const loadLdoData = useCallback(async () => {
     try {
       const res = await fetch(`/api/receitas/ldo?exercicio=${exercicio}`);
       if (res.ok) {
@@ -110,12 +75,14 @@ export function LdoReceitaView() {
       }
     } catch (err) {
       console.error("Erro ao carregar receitas LDO:", err);
-    } finally {
-      setLoading(false);
     }
-  }
+  }, [exercicio]);
 
-  async function loadHistorico() {
+  useEffect(() => {
+    loadLdoData();
+  }, [loadLdoData]);
+
+  const loadHistorico = useCallback(async () => {
     try {
       const res = await fetch(`/api/receitas/ldo/historico?exercicio=${exercicio}`);
       if (res.ok) {
@@ -124,75 +91,13 @@ export function LdoReceitaView() {
     } catch (err) {
       console.error(err);
     }
-  }
+  }, [exercicio]);
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSelectedFile(file);
-    setUploadMessage(null);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("exercicio", exercicio.toString());
-
-    setIsSubmitting(true);
-    try {
-      const res = await fetch("/api/receitas/ldo/validar-arquivo", {
-        method: "POST",
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPreview(data);
-      } else {
-        const err = await res.json();
-        setUploadMessage({ type: "error", text: err.error || "Falha ao validar a planilha." });
-      }
-    } catch {
-      setUploadMessage({ type: "error", text: "Erro ao ler a planilha. Verifique o arquivo." });
-    } finally {
-      setIsSubmitting(false);
+  useEffect(() => {
+    if (activeSubTab === "historico") {
+      loadHistorico();
     }
-  }
-
-  async function handleConfirmImport() {
-    if (!selectedFile) return;
-    setIsSubmitting(true);
-    setUploadMessage(null);
-
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    formData.append("exercicio", exercicio.toString());
-    formData.append("numeroLdo", numeroLdo);
-    formData.append("observacoes", observacoes);
-    formData.append("acaoDuplicados", acaoDuplicados);
-    formData.append("modoImportacao", modoImportacao);
-
-    try {
-      const res = await fetch("/api/receitas/ldo/confirmar-importacao", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (res.ok) {
-        setUploadMessage({ type: "success", text: "Importação da LDO concluída com sucesso!" });
-        setPreview(null);
-        setSelectedFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        await loadLdoData();
-        setActiveSubTab("dashboard");
-      } else {
-        const err = await res.json();
-        setUploadMessage({ type: "error", text: err.error || "Erro ao gravar a importação." });
-      }
-    } catch {
-      setUploadMessage({ type: "error", text: "Erro ao conectar com o servidor." });
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
+  }, [activeSubTab, loadHistorico]);
   const filteredRegistros = registros.filter((r) => {
     const matchApelido = !filterApelido || r.apelidoOriginal.toLowerCase().includes(filterApelido.toLowerCase());
     const matchVinculo = !filterVinculo || r.vinculo.toLowerCase().includes(filterVinculo.toLowerCase()) || r.descricaoVinculo.toLowerCase().includes(filterVinculo.toLowerCase());
@@ -210,13 +115,13 @@ export function LdoReceitaView() {
             A importação de planilhas foi centralizada no menu <strong>Importações</strong>. Acesse essa área para enviar, validar ou atualizar seus dados.
           </span>
         </div>
-        <a
+        <Link
           href="/importacao"
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors shrink-0"
         >
           <span>Ir para Importações</span>
           <span className="material-symbols-outlined text-sm">open_in_new</span>
-        </a>
+        </Link>
       </div>
 
       {/* Header & Sub-navigation */}

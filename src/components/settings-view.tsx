@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DEFAULT_NAVIGATION_SECTIONS, NAVIGATION_SETTINGS_STORAGE_KEY, PRIMARY_PAGE_LINKS, type NavigationSection, type PrimaryPageKey } from "@/lib/page-navigation";
+import { UserManagementSection } from "./user-management-section";
 
 export function SettingsView() {
   const [savedEditCount, setSavedEditCount] = useState(0);
@@ -73,9 +74,12 @@ export function SettingsView() {
         <div>
           <p className="eyebrow font-bold uppercase text-on-surface-variant tracking-wider text-[11px]">Administração</p>
           <h1 className="text-3xl font-bold tracking-tight text-on-surface">Painel Administrativo - Configurações</h1>
-          <p className="text-on-surface-variant mt-1">Identidade visual e parâmetros gerais do Visualizador da LOA.</p>
+          <p className="text-on-surface-variant mt-1">Identidade visual, usuários e parâmetros gerais do Visualizador da LOA.</p>
         </div>
       </header>
+
+      {/* Seção de Gestão de Usuários & Secretarias */}
+      <UserManagementSection />
 
       <section className="panel bg-surface p-6 mb-8" aria-labelledby="navigation-settings-title">
         <div className="flex flex-wrap items-start justify-between gap-4">

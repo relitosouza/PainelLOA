@@ -27,7 +27,6 @@ export function PolicyAllocationChart({
 }) {
   const [selectedFunction, setSelectedFunction] = useState<string | null>(null);
 
-  const total = functions.reduce((sum, f) => sum + f.value, 0);
   const maxVal = functions.length > 0 ? functions[0].value : 1;
 
   return (

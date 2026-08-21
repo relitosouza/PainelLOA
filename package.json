@@ -10,8 +10,11 @@
     "start:staging": "next start -p 3001",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:filters": "playwright test tests/e2e/filtros-analise.spec.ts",
+    "test:all": "vitest run && playwright test",
     "db:generate": "prisma generate",
     "db:push": "prisma db push"
   },

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DashboardView } from "./dashboard-view";
 import { ImportView } from "./import-view";
 import { PresentationDashboard } from "./presentation-dashboard";
@@ -86,9 +87,11 @@ export function AppShell({ view }: { view: string }) {
             {sidebarCollapsed ? "menu" : "menu_open"}
           </button>
           <div className="flex items-center gap-2 shrink-0">
-            <img
+            <Image
               src="/brasao.png"
               alt="Brasão de Osasco"
+              width={36}
+              height={36}
               className="h-9 w-auto object-contain"
             />
             <div className="text-lg font-headline font-bold text-primary hidden sm:block">
@@ -103,9 +106,11 @@ export function AppShell({ view }: { view: string }) {
         </div>
         <div className="flex gap-4 items-center">
           <span className="material-symbols-outlined text-primary">notifications</span>
-          <img
+          <Image
             alt="User profile"
             className="w-8 h-8 rounded-full object-cover"
+            width={32}
+            height={32}
             src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBDE1_mK6eZnevHIDNtgh5q3IUhCSThIhS8ajWhcpFEWZ6p4rME6G5piJ1vBNDa7l7igIUmmU0CrPBMTqJebycoX6lBIkHw5Jb49wW6sfW8Va3A0O3X__PywcPv5dII7JtvB_AaP3LALiJRMWqdFyIHz1oJ-wUjrfArWRvC0H1rYqff38KRYi7dZy-VTLQeHEADdDj8-hi7Q8Rfb2j9O57KadrXyvRqCyeLEgNZy0t-BiJe20UdvdFxw"
           />
         </div>

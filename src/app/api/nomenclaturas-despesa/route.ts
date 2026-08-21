@@ -25,8 +25,8 @@ export async function GET() {
     });
 
     return NextResponse.json({ mapa, count: items.length });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro ao buscar nomenclaturas de despesa:", error);
-    return NextResponse.json({ mapa: {}, count: 0, error: String(error) }, { status: 500 });
+    return NextResponse.json({ mapa: {}, count: 0, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

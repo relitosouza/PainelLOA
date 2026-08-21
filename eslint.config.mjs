@@ -1,4 +1,12 @@
 import { FlatCompat } from "@eslint/eslintrc";
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
-const config = [{ ignores: [".next/**", "next-env.d.ts"] }, ...compat.extends("next/core-web-vitals", "next/typescript")];
+const config = [
+  { ignores: [".next/**", "next-env.d.ts", ".agents/**", "execution/**", "test-results/**", ".tmp/**"] },
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    rules: {
+      "@next/next/no-page-custom-font": "off",
+    },
+  },
+];
 export default config;
