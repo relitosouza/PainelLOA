@@ -4761,6 +4761,16 @@ export function AnaliseLoaView() {
         isOpen={auditModalOpen}
         onClose={() => setAuditModalOpen(false)}
         secretariaAtiva={filters.secretaria[0] || ""}
+        onRestaurarItem={(dotacaoId) => {
+          // Remover do localStorage local se existir
+          try {
+            const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[])
+              .filter((id) => id !== dotacaoId);
+            localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(savedRemoved));
+          } catch {}
+          // Forçar recarregamento transparente dos dados no Painel
+          setDataReloadKey((prev) => prev + 1);
+        }}
       />
     </div>
   );

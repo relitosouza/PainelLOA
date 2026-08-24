@@ -37,6 +37,7 @@ interface ExclusaoItem {
   subelemento: string | null;
   processo: string | null;
   valorOriginal: number;
+  dadosOriginais?: unknown;
   motivoExclusao: string;
   restaurado: boolean;
   nomeOperador: string;
@@ -47,18 +48,21 @@ interface AuditModalProps {
   isOpen: boolean;
   onClose: () => void;
   secretariaAtiva?: string;
+  onRestaurarItem?: (dotacaoId: string, dadosOriginais?: unknown) => void;
 }
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const dateFormat = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" });
 
-export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }: AuditModalProps) {
+export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva, onRestaurarItem }: AuditModalProps) {
   const [activeTab, setActiveTab] = useState<"alteracoes" | "exclusoes">("alteracoes");
   const [secretariaFiltro, setSecretariaFiltro] = useState(secretariaAtiva || "");
   const [alteracoes, setAlteracoes] = useState<AlteracaoItem[]>([]);
   const [exclusoes, setExclusoes] = useState<ExclusaoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const carregarAuditoria = useCallback(async () => {
     try {
@@ -84,6 +88,55 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
       carregarAuditoria();
     }
   }, [isOpen, carregarAuditoria]);
+
+  const handleRestaurar = async (item: ExclusaoItem) => {
+    const confirmRestore = window.confirm(
+      `Deseja restaurar a dotação "${item.subelemento || item.acao || item.id}" excluída por ${item.nomeOperador}?\n\nEla voltará a ser exibida no Painel Orçamentário com seu valor original.`
+    );
+    if (!confirmRestore) return;
+
+    try {
+      setRestoringId(item.id);
+      const res = await fetch("/api/orcamento/alteracoes/restaurar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exclusaoId: item.id,
+          justificativa: `Restauração de dotação excluída por acidente: ${item.subelemento || item.dotacaoId}`,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Erro ao restaurar dotação");
+      }
+
+      const resData = await res.json();
+
+      // Atualizar lista local de exclusões
+      setExclusoes((prev) => prev.filter((e) => e.id !== item.id));
+
+      // Notificar o componente pai para reincluir o item se necessário
+      if (onRestaurarItem) {
+        onRestaurarItem(item.dotacaoId, resData.dadosOriginais || item.dadosOriginais);
+      }
+
+      setToastMessage({ text: "Dotação restaurada com sucesso!", type: "success" });
+      setTimeout(() => setToastMessage(null), 4000);
+
+      // Recarregar os dados para atualizar os números e abas
+      carregarAuditoria();
+    } catch (err) {
+      console.error("Erro ao restaurar:", err);
+      setToastMessage({
+        text: err instanceof Error ? err.message : "Falha ao restaurar a dotação.",
+        type: "error",
+      });
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -115,7 +168,23 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
-      <div className="bg-surface rounded-2xl shadow-2xl border border-outline-variant w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+      <div className="bg-surface rounded-2xl shadow-2xl border border-outline-variant w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 relative">
+        {/* Toast Notificação */}
+        {toastMessage && (
+          <div
+            className={`absolute top-4 right-14 z-50 px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 animate-in slide-in-from-top-2 duration-200 ${
+              toastMessage.type === "success"
+                ? "bg-emerald-600 text-white border border-emerald-500"
+                : "bg-rose-600 text-white border border-rose-500"
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">
+              {toastMessage.type === "success" ? "check_circle" : "error"}
+            </span>
+            <span>{toastMessage.text}</span>
+          </div>
+        )}
+
         {/* Cabeçalho do Modal */}
         <div className="p-4 border-b border-outline-variant bg-surface-container flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -130,7 +199,7 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
                 </span>
               </div>
               <p className="text-xs text-on-surface-variant">
-                Histórico institucional de alterações de valor, justificativas e exclusões de dotações.
+                Histórico institucional de alterações de valor, justificativas e exclusões de dotações com opção de restauração.
               </p>
             </div>
           </div>
@@ -228,18 +297,18 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
                 Nenhum registro de alteração de valor encontrado.
               </div>
             ) : (
-              <div className="border border-outline-variant rounded-xl overflow-hidden shadow-xs">
-                <table className="w-full text-left text-xs">
+              <div className="border border-outline-variant rounded-xl overflow-x-auto shadow-xs">
+                <table className="w-full text-left text-xs min-w-[900px]">
                   <thead className="bg-surface-container font-bold text-on-surface-variant border-b border-outline-variant">
                     <tr>
-                      <th className="px-3 py-2.5">Data / Hora</th>
-                      <th className="px-3 py-2.5">Operador</th>
-                      <th className="px-3 py-2.5">Secretaria & Ação</th>
-                      <th className="px-3 py-2.5">Subelemento</th>
-                      <th className="px-3 py-2.5 text-right">Valor Anterior</th>
-                      <th className="px-3 py-2.5 text-right">Novo Valor</th>
-                      <th className="px-3 py-2.5 text-right">Diferença</th>
-                      <th className="px-3 py-2.5">Justificativa Institucional</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Data / Hora</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Operador</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Secretaria & Ação</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Subelemento</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Valor Anterior</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Novo Valor</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Diferença</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Justificativa Institucional</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/30">
@@ -292,16 +361,17 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
                 Nenhum registro de dotação excluída encontrado.
               </div>
             ) : (
-              <div className="border border-outline-variant rounded-xl overflow-hidden shadow-xs">
-                <table className="w-full text-left text-xs">
+              <div className="border border-outline-variant rounded-xl overflow-x-auto shadow-xs">
+                <table className="w-full text-left text-xs min-w-[960px]">
                   <thead className="bg-surface-container font-bold text-on-surface-variant border-b border-outline-variant">
                     <tr>
-                      <th className="px-3 py-2.5">Data / Hora</th>
-                      <th className="px-3 py-2.5">Operador</th>
-                      <th className="px-3 py-2.5">Secretaria & Ação</th>
-                      <th className="px-3 py-2.5">Subelemento Excluído</th>
-                      <th className="px-3 py-2.5 text-right">Valor Original</th>
-                      <th className="px-3 py-2.5">Motivo da Exclusão</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Data / Hora</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Operador</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Secretaria & Ação</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Subelemento Excluído</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Valor Original</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Motivo da Exclusão</th>
+                      <th className="px-3 py-2.5 text-center whitespace-nowrap sticky right-0 bg-surface-container">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/30">
@@ -313,21 +383,35 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
                         <td className="px-3 py-2">
                           <div className="font-bold text-on-surface">{e.nomeOperador}</div>
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="font-semibold text-on-surface">{e.secretaria}</div>
-                          {e.acao && <div className="text-[10px] text-on-surface-variant">{e.acao}</div>}
+                        <td className="px-3 py-2 max-w-[200px]">
+                          <div className="font-semibold text-on-surface truncate">{e.secretaria}</div>
+                          {e.acao && <div className="text-[10px] text-on-surface-variant truncate">{e.acao}</div>}
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="font-medium text-rose-700 line-through">{e.subelemento || "—"}</div>
+                        <td className="px-3 py-2 max-w-[200px]">
+                          <div className="font-medium text-rose-700 line-through truncate">{e.subelemento || "—"}</div>
                           {e.natureza && <div className="text-[10px] text-on-surface-variant font-mono">{e.natureza}</div>}
                         </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-on-surface">
+                        <td className="px-3 py-2 text-right font-mono font-bold text-on-surface whitespace-nowrap">
                           {currency.format(e.valorOriginal)}
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="bg-rose-50/50 p-1.5 rounded-md border border-rose-200/50 text-[11px] text-on-surface">
-                            {e.motivoExclusao}
+                        <td className="px-3 py-2 max-w-[200px]">
+                          <div className="bg-rose-50/50 p-1.5 rounded-md border border-rose-200/50 text-[11px] text-on-surface truncate" title={e.motivoExclusao}>
+                            {e.motivoExclusao || "Exclusão de dotação"}
                           </div>
+                        </td>
+                        <td className="px-3 py-2 text-center whitespace-nowrap sticky right-0 bg-surface/95 backdrop-blur-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleRestaurar(e)}
+                            disabled={restoringId === e.id}
+                            title="Restaurar esta dotação excluída por acidente"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-xs active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              {restoringId === e.id ? "sync" : "restore_from_trash"}
+                            </span>
+                            <span>{restoringId === e.id ? "Restaurando..." : "Restaurar"}</span>
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -355,3 +439,4 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva }:
     </div>
   );
 }
+
