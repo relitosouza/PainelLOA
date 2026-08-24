@@ -5,54 +5,6 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setActiveUser } from "@/lib/user-session";
 
-const TEST_PROFILES = [
-  {
-    papel: "ADMIN",
-    label: "Administrador Geral",
-    email: "admin@osasco.sp.gov.br",
-    senha: "Admin@Osasco2027",
-    icon: "shield_person",
-    badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    desc: "Acesso total irrestrito",
-  },
-  {
-    papel: "PLANEJAMENTO",
-    label: "Planejamento LOA",
-    email: "alex.sf@osasco.sp.gov.br",
-    senha: "Plan@Osasco2027",
-    icon: "account_tree",
-    badgeClass: "bg-blue-100 text-blue-800 border-blue-300",
-    desc: "04 - Finanças / Planejamento",
-  },
-  {
-    papel: "TECNICO_SECRETARIA",
-    label: "Técnico de Saúde",
-    email: "tecnico.saude@osasco.sp.gov.br",
-    senha: "Saude@Osasco2027",
-    icon: "health_and_safety",
-    badgeClass: "bg-amber-100 text-amber-800 border-amber-300",
-    desc: "09 - Secretaria da Saúde",
-  },
-  {
-    papel: "TECNICO_SECRETARIA",
-    label: "Técnico de Educação",
-    email: "tecnico.educacao@osasco.sp.gov.br",
-    senha: "Educacao@Osasco2027",
-    icon: "school",
-    badgeClass: "bg-amber-100 text-amber-800 border-amber-300",
-    desc: "08 - Secretaria de Educação",
-  },
-  {
-    papel: "LEITURA",
-    label: "Auditoria / CGM",
-    email: "auditoria@osasco.sp.gov.br",
-    senha: "Consulta@Osasco2027",
-    icon: "visibility",
-    badgeClass: "bg-slate-100 text-slate-800 border-slate-300",
-    desc: "27 - Controladoria Geral",
-  },
-];
-
 export function LoginView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,12 +50,6 @@ export function LoginView() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickLogin = (p: typeof TEST_PROFILES[0]) => {
-    setEmail(p.email);
-    setPassword(p.senha);
-    handleLogin(undefined, p.email, p.senha);
   };
 
   return (
@@ -252,36 +198,6 @@ export function LoginView() {
             </button>
           </form>
 
-          {/* Perfis de Acesso Rápido (Homologação / Demonstração) */}
-          <div className="mt-8 pt-6 border-t border-outline-variant/60">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant mb-3 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px] text-primary">bolt</span>
-              Acesso Rápido por Perfil (Homologação):
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {TEST_PROFILES.map((p) => (
-                <button
-                  key={p.email}
-                  type="button"
-                  onClick={() => handleQuickLogin(p)}
-                  disabled={loading}
-                  className="flex items-center justify-between p-2.5 rounded-xl border border-outline-variant bg-surface-container-low hover:bg-surface-container hover:border-primary/40 text-left transition-all cursor-pointer group"
-                >
-                  <div className="truncate pr-2">
-                    <p className="text-xs font-bold text-on-surface truncate group-hover:text-primary transition-colors">
-                      {p.label}
-                    </p>
-                    <p className="text-[10px] text-on-surface-variant truncate font-mono">
-                      {p.desc}
-                    </p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border shrink-0 ${p.badgeClass}`}>
-                    {p.papel === "TECNICO_SECRETARIA" ? "TÉCNICO" : p.papel}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
       </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { getActiveUser, setActiveUser, clearActiveUser, type ActiveUser, DEFAULT_USER } from "@/lib/user-session";
+import { getActiveUser, clearActiveUser, type ActiveUser, DEFAULT_USER } from "@/lib/user-session";
 
 const ROLE_LABELS: Record<string, { label: string; badgeClass: string; icon: string }> = {
   ADMIN: { label: "Administrador", badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300", icon: "shield_person" },
@@ -14,7 +14,6 @@ const ROLE_LABELS: Record<string, { label: string; badgeClass: string; icon: str
 export function UserProfileMenu() {
   const [user, setUser] = useState<ActiveUser>(DEFAULT_USER);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [availableUsers, setAvailableUsers] = useState<ActiveUser[]>([]);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -29,22 +28,6 @@ export function UserProfileMenu() {
     return () => window.removeEventListener("painel-loa-user-change", handleUserChange);
   }, []);
 
-  useEffect(() => {
-    // Carregar usuários do banco para o alternador rápido
-    const fetchUsers = async () => {
-      try {
-        const res = await fetch("/api/usuarios");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.usuarios && Array.isArray(data.usuarios)) {
-            setAvailableUsers(data.usuarios);
-          }
-        }
-      } catch {}
-    };
-    fetchUsers();
-  }, []);
-
   // Fechar dropdown ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -57,12 +40,6 @@ export function UserProfileMenu() {
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [dropdownOpen]);
-
-  const handleSelectUser = (u: ActiveUser) => {
-    setActiveUser(u);
-    setUser(u);
-    setDropdownOpen(false);
-  };
 
   const handleConfirmLogout = async () => {
     try {
@@ -123,51 +100,18 @@ export function UserProfileMenu() {
             </div>
           </div>
 
-          {/* Alternar Perfil Rápido */}
-          {availableUsers.length > 0 && (
-            <div className="p-3 border-b border-outline-variant/60 max-h-48 overflow-y-auto">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant px-1 mb-2">
-                Alternar Usuário / Perfil:
-              </p>
-              <div className="space-y-1">
-                {availableUsers.map((u) => {
-                  const isCurrent = u.email === user.email;
-                  const uRole = ROLE_LABELS[u.papel] || ROLE_LABELS.ADMIN;
-                  return (
-                    <button
-                      key={u.id || u.email}
-                      type="button"
-                      onClick={() => handleSelectUser(u)}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl text-left text-xs transition-colors cursor-pointer ${
-                        isCurrent
-                          ? "bg-primary/10 text-primary font-bold"
-                          : "hover:bg-surface-container text-on-surface"
-                      }`}
-                    >
-                      <div className="truncate pr-2">
-                        <p className="truncate font-semibold">{u.nome}</p>
-                        <p className="text-[10px] text-on-surface-variant truncate">{u.secretaria || u.cargo || u.email}</p>
-                      </div>
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 ${uRole.badgeClass}`}>
-                        {u.papel}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Ações do Menu */}
           <div className="p-2 bg-surface space-y-1">
-            <Link
-              href="/configuracoes"
-              onClick={() => setDropdownOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
-            >
-              <span className="material-symbols-outlined text-[18px] text-on-surface-variant">settings</span>
-              <span>Gerenciar Usuários & Acessos</span>
-            </Link>
+            {user.papel === "ADMIN" && (
+              <Link
+                href="/configuracoes"
+                onClick={() => setDropdownOpen(false)}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px] text-on-surface-variant">settings</span>
+                <span>Gerenciar Usuários & Acessos</span>
+              </Link>
+            )}
 
             <button
               type="button"

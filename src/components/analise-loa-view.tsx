@@ -14,7 +14,7 @@ import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
 import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
-import { getActiveUser, type ActiveUser, DEFAULT_USER } from "@/lib/user-session";
+import { getActiveUser, type ActiveUser } from "@/lib/user-session";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -118,6 +118,12 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
 
 const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
   item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0);
+
+const getColumnsPreferenceKey = (user: ActiveUser) => {
+  const identity = user.id || user.email || user.nome || "usuario";
+  const safeIdentity = identity.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 80);
+  return `analise_loa_columns_${safeIdentity || "usuario"}`;
+};
 
 const getNatureValidationStatus = (validatedCount: number, totalCount: number): NatureValidationStatus => {
   if (totalCount > 0 && validatedCount === totalCount) return "Validada";
@@ -286,6 +292,7 @@ export function AnaliseLoaView() {
   const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
     () => new Set(ANALYTICAL_COLUMNS.map((column) => column.key))
   );
+  const [columnsSaveState, setColumnsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
@@ -324,7 +331,7 @@ export function AnaliseLoaView() {
   const addNatureTriggerRef = useRef<HTMLElement | null>(null);
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
   // Usuário Ativo
-  const [currentUser, setCurrentUser] = useState<ActiveUser>(DEFAULT_USER);
+  const [currentUser, setCurrentUser] = useState<ActiveUser>(() => getActiveUser());
 
   useEffect(() => {
     setCurrentUser(getActiveUser());
@@ -332,6 +339,67 @@ export function AnaliseLoaView() {
     window.addEventListener("painel-loa-user-change", handleUserChange);
     return () => window.removeEventListener("painel-loa-user-change", handleUserChange);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const preferenceKey = getColumnsPreferenceKey(currentUser);
+    const loadColumnsPreference = async () => {
+      try {
+        const response = await fetch(`/api/configuracoes/layout?chave=${encodeURIComponent(preferenceKey)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data.valor) && isMounted) {
+            const savedColumns = new Set<AnalyticalColumn>(data.valor.filter((column: unknown): column is AnalyticalColumn =>
+              typeof column === "string" && ANALYTICAL_COLUMNS.some((available) => available.key === column)
+            ));
+            ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
+            setVisibleTableColumns(savedColumns);
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn("Falha ao carregar colunas salvas do usuário:", error);
+      }
+
+      try {
+        const saved = localStorage.getItem(`${preferenceKey}_v1`);
+        if (saved && isMounted) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const savedColumns = new Set<AnalyticalColumn>(parsed.filter((column: unknown): column is AnalyticalColumn =>
+              typeof column === "string" && ANALYTICAL_COLUMNS.some((available) => available.key === column)
+            ));
+            ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
+            setVisibleTableColumns(savedColumns);
+          }
+        }
+      } catch { }
+    };
+
+    loadColumnsPreference();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  const saveColumnsPreference = async () => {
+    const columns = ANALYTICAL_COLUMNS.filter((column) => visibleTableColumns.has(column.key)).map((column) => column.key);
+    const preferenceKey = getColumnsPreferenceKey(currentUser);
+    setColumnsSaveState("saving");
+    try {
+      localStorage.setItem(`${preferenceKey}_v1`, JSON.stringify(columns));
+      const response = await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: preferenceKey, valor: columns }),
+      });
+      if (!response.ok) throw new Error("Falha ao salvar preferência");
+      setColumnsSaveState("saved");
+    } catch (error) {
+      console.error("Erro ao salvar colunas do usuário:", error);
+      setColumnsSaveState("error");
+    }
+  };
 
   // Verifica se o usuário atual tem permissão para validar dotações da secretaria
   const canUserValidateSecretaria = (secretariaName?: string) => {
@@ -2860,6 +2928,20 @@ export function AnaliseLoaView() {
                               );
                             })}
                           </div>
+                          <div className="mt-2 flex items-center justify-between gap-2 border-t border-outline-variant/60 px-2 pt-2">
+                            <span className="text-[10px] text-on-surface-variant">
+                              {columnsSaveState === "saved" ? "Preferência salva para este usuário" : columnsSaveState === "error" ? "Não foi possível salvar" : "Salve para manter esta configuração"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={saveColumnsPreference}
+                              disabled={columnsSaveState === "saving"}
+                              className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-[10px] font-bold text-on-primary shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">{columnsSaveState === "saving" ? "sync" : "save"}</span>
+                              {columnsSaveState === "saving" ? "Salvando" : "Salvar"}
+                            </button>
+                          </div>
                         </div>
                       </>
                     )}
@@ -4557,7 +4639,7 @@ export function AnaliseLoaView() {
               </label>
 
               <label className="block text-xs font-bold text-on-surface">
-                Projeto Iniciado
+                Contrato
                 <select
                   value={editSubelementProjetoIniciado}
                   onChange={(event) => setEditSubelementProjetoIniciado(event.target.value)}
