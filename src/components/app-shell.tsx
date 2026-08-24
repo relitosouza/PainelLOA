@@ -13,6 +13,7 @@ import { ExpenseDetailView } from "./expense-detail-view";
 import { AnaliseLoaView } from "./analise-loa-view";
 import { ElaboracaoLoaView } from "./elaboracao-loa-view";
 import { AssistenteLoaPage } from "./assistente-loa-page";
+import { UserProfileMenu } from "./user-profile-menu";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 import { getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
@@ -104,15 +105,8 @@ export function AppShell({ view }: { view: string }) {
             {enabledNavigationKeys.has("assistente-loa") && <Link className={`pb-1 transition-colors ${view === "assistente-loa" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/assistente-loa">Assistente LOA</Link>}
           </div>
         </div>
-        <div className="flex gap-4 items-center">
-          <span className="material-symbols-outlined text-primary">notifications</span>
-          <Image
-            alt="User profile"
-            className="w-8 h-8 rounded-full object-cover"
-            width={32}
-            height={32}
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBDE1_mK6eZnevHIDNtgh5q3IUhCSThIhS8ajWhcpFEWZ6p4rME6G5piJ1vBNDa7l7igIUmmU0CrPBMTqJebycoX6lBIkHw5Jb49wW6sfW8Va3A0O3X__PywcPv5dII7JtvB_AaP3LALiJRMWqdFyIHz1oJ-wUjrfArWRvC0H1rYqff38KRYi7dZy-VTLQeHEADdDj8-hi7Q8Rfb2j9O57KadrXyvRqCyeLEgNZy0t-BiJe20UdvdFxw"
-          />
+        <div className="flex gap-3 items-center">
+          <UserProfileMenu />
         </div>
       </nav>
 

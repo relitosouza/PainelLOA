@@ -14,6 +14,7 @@ import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
 import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
+import { getActiveUser, type ActiveUser, DEFAULT_USER } from "@/lib/user-session";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -99,6 +100,7 @@ interface EditableGroup {
 type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "valorTotal" | "diff" | "status" | "adjusted";
 type AnalyticalColumn = TableSortColumn;
 type NaturezaOption = { codigo: string; nome: string };
+type NatureValidationStatus = "Pendente" | "Parcial" | "Validada";
 type Iniciativa = { id?: string | number; acao?: string; secretaria?: string; programa?: string; despesa?: string; dsIniciativa?: string; programaticaLdo?: string; vinculo?: string; valorFinalPldo27?: number };
 const ADDED_EXPENSES_STORAGE_KEY = "painel_loa_added_expenses_v1";
 const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required?: boolean }> = [
@@ -116,6 +118,12 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
 
 const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
   item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0);
+
+const getNatureValidationStatus = (validatedCount: number, totalCount: number): NatureValidationStatus => {
+  if (totalCount > 0 && validatedCount === totalCount) return "Validada";
+  if (validatedCount > 0) return "Parcial";
+  return "Pendente";
+};
 
 const ACTION_CANONICAL_MAP: Record<string, string> = {
   "0.001": "0.001 - Serviços da Dívida Pública",
@@ -315,10 +323,43 @@ export function AnaliseLoaView() {
   const editSubelementDialogRef = useRef<HTMLDivElement>(null);
   const addNatureTriggerRef = useRef<HTMLElement | null>(null);
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
+  // Usuário Ativo
+  const [currentUser, setCurrentUser] = useState<ActiveUser>(DEFAULT_USER);
+
+  useEffect(() => {
+    setCurrentUser(getActiveUser());
+    const handleUserChange = () => setCurrentUser(getActiveUser());
+    window.addEventListener("painel-loa-user-change", handleUserChange);
+    return () => window.removeEventListener("painel-loa-user-change", handleUserChange);
+  }, []);
+
+  // Verifica se o usuário atual tem permissão para validar dotações da secretaria
+  const canUserValidateSecretaria = (secretariaName?: string) => {
+    if (currentUser.papel === "ADMIN" || currentUser.papel === "PLANEJAMENTO") return true;
+    if (currentUser.papel === "LEITURA") return false;
+    if (currentUser.papel === "TECNICO_SECRETARIA") {
+      if (!currentUser.codigoSecretaria && !currentUser.secretaria) return true;
+      const userCod = currentUser.codigoSecretaria?.trim();
+      const userSec = currentUser.secretaria?.trim().toLowerCase();
+      if (!secretariaName) return true;
+      const itemSec = secretariaName.trim().toLowerCase();
+
+      if (userCod && (itemSec.startsWith(userCod) || itemSec.includes(` ${userCod} `) || itemSec.startsWith(`${userCod} -`) || itemSec.startsWith(`${userCod}.`))) return true;
+      if (userSec && (itemSec.includes(userSec) || userSec.includes(itemSec))) return true;
+      return false;
+    }
+    return false;
+  };
+
   // Estado para Rastrear Linhas Validadas pelo Usuário (sem alteração)
   const [validatedRows, setValidatedRows] = useState<Record<string, boolean>>({});
 
-  const toggleValidateRow = async (rowId: string) => {
+  const toggleValidateRow = async (rowId: string, itemSecretaria?: string) => {
+    if (itemSecretaria && !canUserValidateSecretaria(itemSecretaria)) {
+      alert(`Acesso Restrito: Seu perfil (${currentUser.cargo || currentUser.nome}) possui permissão para validar somente dotações da sua secretaria (${currentUser.secretaria || currentUser.codigoSecretaria || "Setorial"}).`);
+      return;
+    }
+
     const nextState = !validatedRows[rowId];
     const updated = { ...validatedRows, [rowId]: nextState };
     if (!nextState) {
@@ -1376,9 +1417,9 @@ export function AnaliseLoaView() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              nomeOperador: "Técnico Responsável",
-              emailOperador: "planejamento@osasco.sp.gov.br",
-              justificativaGeral: "Ajuste em lote no Painel de Análise LOA",
+              nomeOperador: currentUser.nome || "Técnico Responsável",
+              emailOperador: currentUser.email || null,
+              justificativaGeral: `Ajuste em lote por ${currentUser.nome} (${currentUser.secretaria || "Geral"})`,
               alteracoes: alteracoesPayload.length > 0 ? alteracoesPayload : undefined,
               exclusoes: exclusoesPayload,
             }),
@@ -1894,49 +1935,6 @@ export function AnaliseLoaView() {
     return { label: "Sem alteração", class: "bg-surface-container text-on-surface-variant border-outline-variant" };
   };
 
-  const applyGroupLoa = (group: EditableGroup, newTotal: number) => {
-    const currentTotal = group.children.reduce((sum, item) => sum + item.valLoa, 0);
-    const basisTotal = currentTotal > 0
-      ? currentTotal
-      : group.children.reduce((sum, item) => sum + item.valLdo, 0);
-    const equalShare = group.children.length ? newTotal / group.children.length : 0;
-    let assigned = 0;
-    const allocations = new Map<string, number>();
-
-    group.children.forEach((item, index) => {
-      const basis = currentTotal > 0 ? item.valLoa : item.valLdo;
-      const value = index === group.children.length - 1
-        ? Math.max(0, Math.round((newTotal - assigned) * 100) / 100)
-        : Math.max(0, Math.round((basisTotal > 0 ? newTotal * (basis / basisTotal) : equalShare) * 100) / 100);
-      assigned += value;
-      allocations.set(item.id, value);
-    });
-
-    setRawItems((previous) => previous.map((item) => {
-      const value = allocations.get(item.id);
-      return value === undefined ? item : { ...item, valLoa: value };
-    }));
-    setHasChanges(true);
-  };
-
-  const applyNatureLoa = (items: RawBudgetItem[], newTotal: number) => {
-    const currentTotal = items.reduce((sum, item) => sum + item.valLoa, 0);
-    const basisTotal = currentTotal > 0 ? currentTotal : items.reduce((sum, item) => sum + item.valLdo, 0);
-    const equalShare = items.length ? newTotal / items.length : 0;
-    let assigned = 0;
-    const allocations = new Map<string, number>();
-    items.forEach((item, index) => {
-      const basis = currentTotal > 0 ? item.valLoa : item.valLdo;
-      const value = index === items.length - 1
-        ? Math.max(0, Math.round((newTotal - assigned) * 100) / 100)
-        : Math.max(0, Math.round((newTotal * (basisTotal > 0 ? basis / basisTotal : 0) || equalShare) * 100) / 100);
-      assigned += value;
-      allocations.set(item.id, value);
-    });
-    setRawItems((previous) => previous.map((item) => allocations.has(item.id) ? { ...item, valLoa: allocations.get(item.id)! } : item));
-    setHasChanges(true);
-  };
-
   const getNatureLabel = (value: string, fallback: string) => {
     const label = (value || fallback || "Outros").trim();
     const separator = label.indexOf("-");
@@ -2376,6 +2374,25 @@ export function AnaliseLoaView() {
 
   const collapseAllNodes = () => setExpandedNodes(new Set());
 
+  const expandAllEditGroups = () => {
+    const allGroups = new Set<string>();
+    const allNatures = new Set<string>();
+    paginatedEditableGroups.forEach((group) => {
+      allGroups.add(group.id);
+      group.children.forEach((item) => {
+        const nat = item.natureza || item.elemento || "Outros";
+        allNatures.add(`${group.id}|${nat}`);
+      });
+    });
+    setExpandedEditGroups(allGroups);
+    setExpandedNatureGroups(allNatures);
+  };
+
+  const collapseAllEditGroups = () => {
+    setExpandedEditGroups(new Set());
+    setExpandedNatureGroups(new Set());
+  };
+
   // Filtrar automaticamente ao clicar em um nó da árvore hierárquica
   const handleNodeSelect = (node: TreeNode, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2675,40 +2692,46 @@ export function AnaliseLoaView() {
           return (
             <div key="detalhamento-analitico" className="glass-card p-5 bg-surface border border-outline-variant flex flex-col">
               {/* Barra Superior da Tabela */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-3 border-b border-outline-variant">
-                <div className="flex items-center gap-3">
-                  <div>
+              <div className="flex flex-col gap-4 pb-4 mb-3 border-b border-outline-variant">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="min-w-0">
                     <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
                     <p className="text-[11px] text-on-surface-variant">Dê duplo clique ou edite os valores diretamente nas células</p>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Buscar ação, elemento, subelemento ou processo..."
-                    value={tableSearch}
-                    onChange={(e) => setTableSearch(e.target.value)}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-56"
-                  />
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                      className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${statusFilters.length > 0
-                          ? "border-primary text-primary bg-primary/5 font-bold"
-                          : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
-                        }`}
-                    >
-                      <span className="material-symbols-outlined text-sm">filter_alt</span>
-                      <span>
-                        {statusFilters.length === 0
-                          ? "Status"
-                          : statusFilters.length === 1
-                            ? statusFilters[0]
-                            : `${statusFilters.length} status sel.`}
-                      </span>
-                      <span className="material-symbols-outlined text-xs">
-                        {statusDropdownOpen ? "expand_less" : "expand_more"}
-                      </span>
-                    </button>
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <div className="flex min-w-0 items-center gap-2">
+                    <div className="relative w-[min(20rem,calc(100vw-8rem))] min-w-[14rem]">
+                      <label htmlFor="analytical-table-search" className="sr-only">Buscar no detalhamento analítico</label>
+                      <input
+                        id="analytical-table-search"
+                        type="text"
+                        placeholder="Buscar ação, elemento, subelemento ou processo..."
+                        value={tableSearch}
+                        onChange={(e) => setTableSearch(e.target.value)}
+                        className="min-h-10 w-full rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-xs text-on-surface"
+                      />
+                    </div>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                        className={`min-h-10 whitespace-nowrap px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${statusFilters.length > 0
+                            ? "border-primary text-primary bg-primary/5 font-bold"
+                            : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
+                          }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">filter_alt</span>
+                        <span>
+                          {statusFilters.length === 0
+                            ? "Status"
+                            : statusFilters.length === 1
+                              ? statusFilters[0]
+                              : `${statusFilters.length} status sel.`}
+                        </span>
+                        <span className="material-symbols-outlined text-xs">
+                          {statusDropdownOpen ? "expand_less" : "expand_more"}
+                        </span>
+                      </button>
 
                     {statusDropdownOpen && (
                       <>
@@ -2767,10 +2790,15 @@ export function AnaliseLoaView() {
                         </div>
                       </>
                     )}
+                    </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-outline-variant/70 bg-surface-container-low/40 p-2.5">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Visualização</span>
                   <div className="relative">
                     <button
                       type="button"
@@ -2835,13 +2863,42 @@ export function AnaliseLoaView() {
                         </div>
                       </>
                     )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Estrutura</span>
+                      <div className="flex items-center gap-1 bg-surface-container-low p-0.5 rounded-lg border border-outline-variant">
+                    <button
+                      type="button"
+                      onClick={collapseAllEditGroups}
+                      className="px-2.5 py-1.5 text-xs font-semibold rounded-md text-on-surface hover:bg-surface-container transition-colors flex items-center gap-1"
+                      title="Recolher todas as ações e despesas"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">unfold_less</span>
+                      <span>Recolher Todas</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={expandAllEditGroups}
+                      className="px-2.5 py-1.5 text-xs font-semibold rounded-md text-on-surface hover:bg-surface-container transition-colors flex items-center gap-1"
+                      title="Expandir todas as ações e despesas"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">unfold_more</span>
+                      <span>Expandir Todas</span>
+                    </button>
+                      </div>
+                    </div>
                   </div>
-                  {hasChanges && (
+
+                  <div className="flex flex-wrap items-end justify-end gap-3">
+                    {hasChanges && (
                     <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
                       Alterações não salvas
                     </span>
                   )}
-                  <button
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Alterações</span>
+                      <button
                     onClick={handleSaveEdits}
                     disabled={savingState === "saving"}
                     className={`min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${hasChanges
@@ -2857,15 +2914,19 @@ export function AnaliseLoaView() {
                     <span>
                       {savingState === "saving" ? "Salvando..." : savingState === "saved" ? "Salvo com sucesso!" : "Salvar Alterações"}
                     </span>
-                  </button>
-                  <button
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Exportar</span>
+                      <div className="flex flex-wrap gap-2">
+                      <button
                     onClick={exportToExcel}
                     className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
                   >
                     <span className="material-symbols-outlined text-sm">description</span>
                     Excel
-                  </button>
-                  <button
+                      </button>
+                      <button
                     type="button"
                     onClick={exportDetailedCsv}
                     className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-sky-50 text-sky-700 border border-sky-300 hover:bg-sky-100 transition-colors flex items-center gap-1"
@@ -2873,14 +2934,17 @@ export function AnaliseLoaView() {
                   >
                     <span className="material-symbols-outlined text-sm" aria-hidden="true">csv</span>
                     CSV LOA
-                  </button>
-                  <button
+                      </button>
+                      <button
                     onClick={exportToPDF}
                     className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
                   >
                     <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
                     PDF
-                  </button>
+                      </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2936,6 +3000,13 @@ export function AnaliseLoaView() {
                         }
                         return natureSort.direction === "asc" ? res : -res;
                       });
+                      const validatedNatures = natureGroups.filter(([, items]) => items.length > 0 && items.every((item) => validatedRows[item.id])).length;
+                      const actionValidationStatus = getNatureValidationStatus(validatedNatures, natureGroups.length);
+                      const actionValidationClass = actionValidationStatus === "Validada"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : actionValidationStatus === "Parcial"
+                          ? "bg-amber-100 text-amber-800 border-amber-300"
+                          : "bg-surface-container text-on-surface-variant border-outline-variant";
 
                       return (
                         <Fragment key={group.id}>
@@ -2949,22 +3020,12 @@ export function AnaliseLoaView() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const isExpanding = !expandedEditGroups.has(group.id);
                                     setExpandedEditGroups((previous) => {
                                       const next = new Set(previous);
                                       if (next.has(group.id)) next.delete(group.id);
                                       else next.add(group.id);
                                       return next;
                                     });
-                                    if (isExpanding) {
-                                      setExpandedNatureGroups((prev) => {
-                                        const next = new Set(prev);
-                                        natureGroups.forEach(([natureza]) => {
-                                          next.add(`${group.id}|${natureza}`);
-                                        });
-                                        return next;
-                                      });
-                                    }
                                   }}
                                   className={`min-h-9 min-w-9 rounded-lg flex items-center justify-center shrink-0 transition-all font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${isExpanded
                                       ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/40"
@@ -3016,85 +3077,19 @@ export function AnaliseLoaView() {
                             {visibleTableColumns.has("valLdo") && <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
                               {formatBr(group.valLdo)}
                             </td>}
-                            {visibleTableColumns.has("valLoa") && <td className="p-2 border border-outline-variant/20 bg-surface text-right">
-                              <input
-                                type="text"
-                                value={editingCell?.id === group.id && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(group.valLoa)}
-                                onFocus={() => {
-                                  setEditingCell({ id: group.id, field: "groupValLoa" });
-                                  setTempInputValue(group.valLoa.toFixed(2).replace(".", ","));
-                                }}
-                                onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                onBlur={() => {
-                                  applyGroupLoa(group, parseBr(tempInputValue));
-                                  setEditingCell(null);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter") event.currentTarget.blur();
-                                }}
-                                className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
-                              />
-                            </td>}
+                            {visibleTableColumns.has("valLoa") && (
+                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                                {formatBr(group.valLoa)}
+                              </td>
+                            )}
                             {visibleTableColumns.has("valorReajuste") && (
-                              <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                <input
-                                  type="text"
-                                  value={editingCell?.id === group.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(group.valorReajuste)}
-                                  onFocus={() => {
-                                    setEditingCell({ id: group.id, field: "valorReajuste" });
-                                    setTempInputValue(group.valorReajuste.toFixed(2).replace(".", ","));
-                                  }}
-                                  onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                  onBlur={() => {
-                                    const value = parseBr(tempInputValue);
-                                    if (group.items.length > 0) {
-                                      const portion = value / group.items.length;
-                                      setRawItems((previous) =>
-                                        previous.map((item) => {
-                                          const belongs = group.items.some((gi) => gi.id === item.id);
-                                          return belongs ? { ...item, valorReajuste: portion } : item;
-                                        })
-                                      );
-                                    }
-                                    setHasChanges(true);
-                                    setEditingCell(null);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") event.currentTarget.blur();
-                                  }}
-                                  className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                />
+                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                                {formatBr(group.valorReajuste)}
                               </td>
                             )}
                             {visibleTableColumns.has("valorAditamento") && (
-                              <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                <input
-                                  type="text"
-                                  value={editingCell?.id === group.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(group.valorAditamento)}
-                                  onFocus={() => {
-                                    setEditingCell({ id: group.id, field: "valorAditamento" });
-                                    setTempInputValue(group.valorAditamento.toFixed(2).replace(".", ","));
-                                  }}
-                                  onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                  onBlur={() => {
-                                    const value = parseBr(tempInputValue);
-                                    if (group.items.length > 0) {
-                                      const portion = value / group.items.length;
-                                      setRawItems((previous) =>
-                                        previous.map((item) => {
-                                          const belongs = group.items.some((gi) => gi.id === item.id);
-                                          return belongs ? { ...item, valorAditamento: portion } : item;
-                                        })
-                                      );
-                                    }
-                                    setHasChanges(true);
-                                    setEditingCell(null);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") event.currentTarget.blur();
-                                  }}
-                                  className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                />
+                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                                {formatBr(group.valorAditamento)}
                               </td>
                             )}
                             {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>}
@@ -3105,21 +3100,9 @@ export function AnaliseLoaView() {
                               <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
                             </td>}
                             {visibleTableColumns.has("adjusted") && <td className="p-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => toggleValidateRow(group.id)}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[group.id]
-                                    ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                    : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                  }`}
-                                title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada"}
-                                aria-label={`Validar ação ${group.acao}`}
-                              >
-                                <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                  {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
-                                </span>
-                                <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
-                              </button>
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${actionValidationClass}`}>
+                                {validatedNatures}/{natureGroups.length} Naturezas · {actionValidationStatus}
+                              </span>
                             </td>}
                           </tr>
                           {isExpanded && (
@@ -3490,6 +3473,19 @@ export function AnaliseLoaView() {
                                 const natureTotal = natureLoa + natureReajuste + natureAditamento;
                                 const natureDiff = natureTotal - natureLdo;
                                 const natureStatus = getStatusInfo(natureLdo, natureTotal);
+                                const elementGroups = Array.from(natureItems.reduce((map, item) => {
+                                  const elemento = item.elemento || "Sem elemento";
+                                  map.set(elemento, [...(map.get(elemento) ?? []), item]);
+                                  return map;
+                                }, new Map<string, RawBudgetItem[]>()));
+                                const validatedSubelements = natureItems.filter((item) => validatedRows[item.id]).length;
+                                const validationPercent = natureItems.length > 0 ? Math.round((validatedSubelements / natureItems.length) * 100) : 0;
+                                const validationStatus = getNatureValidationStatus(validatedSubelements, natureItems.length);
+                                const validationStatusClass = validationStatus === "Validada"
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : validationStatus === "Parcial"
+                                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                                    : "bg-surface-container text-on-surface-variant border-outline-variant";
                                 return (
                                   <Fragment key={natureKey}>
                                     <tr className="bg-surface hover:bg-surface-container/60 transition-colors border-b border-outline-variant/20">
@@ -3534,7 +3530,9 @@ export function AnaliseLoaView() {
                                       </td>
                                       {visibleTableColumns.has("elemento") && <td className="p-2.5 text-on-surface-variant font-sans text-xs">
                                         <div className="flex flex-col gap-1 items-start">
-                                          <span>{natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}</span>
+                                          <span>{elementGroups.length} elemento{elementGroups.length === 1 ? "" : "s"} de despesa</span>
+                                          <span className="font-mono text-[10px] font-bold">{validatedSubelements} de {natureItems.length} subelementos validados · {validationPercent}%</span>
+                                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>{validationStatus}</span>
                                           {natureItems.some((i) => i.processo && i.processo !== "—") && (
                                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 dark:text-sky-200 bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-1.5 py-0.5 rounded shadow-2xs" title="Contém processos administrativos vinculados">
                                               <span className="material-symbols-outlined text-[11px]">folder</span>
@@ -3543,99 +3541,49 @@ export function AnaliseLoaView() {
                                           )}
                                         </div>
                                       </td>}
+                                      {visibleTableColumns.has("valLdo") && (
+                                        <td className="p-2.5 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/40 text-xs">
+                                          {formatBr(natureLdo)}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("valLoa") && (
+                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureLoa)}
+                                        </td>
+                                      )}
                                       {visibleTableColumns.has("valorReajuste") && (
-                                        <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                          <input
-                                            type="text"
-                                            value={editingCell?.id === natureKey && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(natureReajuste)}
-                                            onFocus={() => {
-                                              setEditingCell({ id: natureKey, field: "valorReajuste" });
-                                              setTempInputValue(natureReajuste.toFixed(2).replace(".", ","));
-                                            }}
-                                            onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                            onBlur={() => {
-                                              const value = parseBr(tempInputValue);
-                                              if (natureItems.length > 0) {
-                                                const portion = value / natureItems.length;
-                                                setRawItems((previous) =>
-                                                  previous.map((item) => {
-                                                    const belongs = natureItems.some((ni) => ni.id === item.id);
-                                                    return belongs ? { ...item, valorReajuste: portion } : item;
-                                                  })
-                                                );
-                                              }
-                                              setHasChanges(true);
-                                              setEditingCell(null);
-                                            }}
-                                            onKeyDown={(event) => {
-                                              if (event.key === "Enter") event.currentTarget.blur();
-                                            }}
-                                            className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                          />
+                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureReajuste)}
                                         </td>
                                       )}
                                       {visibleTableColumns.has("valorAditamento") && (
-                                        <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                          <input
-                                            type="text"
-                                            value={editingCell?.id === natureKey && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(natureAditamento)}
-                                            onFocus={() => {
-                                              setEditingCell({ id: natureKey, field: "valorAditamento" });
-                                              setTempInputValue(natureAditamento.toFixed(2).replace(".", ","));
-                                            }}
-                                            onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                            onBlur={() => {
-                                              const value = parseBr(tempInputValue);
-                                              if (natureItems.length > 0) {
-                                                const portion = value / natureItems.length;
-                                                setRawItems((previous) =>
-                                                  previous.map((item) => {
-                                                    const belongs = natureItems.some((ni) => ni.id === item.id);
-                                                    return belongs ? { ...item, valorAditamento: portion } : item;
-                                                  })
-                                                );
-                                              }
-                                              setHasChanges(true);
-                                              setEditingCell(null);
-                                            }}
-                                            onKeyDown={(event) => {
-                                              if (event.key === "Enter") event.currentTarget.blur();
-                                            }}
-                                            className="w-28 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                          />
+                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureAditamento)}
                                         </td>
                                       )}
-                                      {visibleTableColumns.has("valorTotal") && <td className="p-2.5 text-right font-mono font-extrabold text-primary text-xs">{formatBr(natureTotal)}</td>}
-                                      {visibleTableColumns.has("valLdo") && <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>}
-                                      {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                        <input
-                                          type="text"
-                                          value={editingCell?.id === natureKey && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(natureLoa)}
-                                          onFocus={() => {
-                                            setEditingCell({ id: natureKey, field: "groupValLoa" });
-                                            setTempInputValue(natureLoa.toFixed(2).replace(".", ","));
-                                          }}
-                                          onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                          onBlur={() => {
-                                            applyNatureLoa(natureItems, parseBr(tempInputValue));
-                                            setEditingCell(null);
-                                          }}
-                                          onKeyDown={(event) => {
-                                            if (event.key === "Enter") event.currentTarget.blur();
-                                          }}
-                                          className="w-32 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                        />
+                                      {visibleTableColumns.has("valorTotal") && (
+                                        <td className="p-2.5 text-right font-mono font-extrabold text-primary text-xs">
+                                          {formatBr(natureTotal)}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("diff") && (
+                                        <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                          {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("status") && (
+                                        <td className="p-2.5 text-center">
+                                          <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("adjusted") && <td className="p-2.5 text-center">
+                                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>
+                                          {validatedSubelements}/{natureItems.length} · {validationStatus}
+                                        </span>
                                       </td>}
-                                      {visibleTableColumns.has("diff") && <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
-                                        {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
-                                      </td>}
-                                      {visibleTableColumns.has("status") && <td className="p-2.5 text-center">
-                                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
-                                      </td>}
-                                      {visibleTableColumns.has("adjusted") && <td className="p-2.5 text-center text-xs text-on-surface-variant/60">—</td>}
                                     </tr>
 
-                                    {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (NETOS) */}
+                                    {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (unidades validáveis) */}
                                     {natureExpanded && natureItems.map((item) => {
                                       return (
                                         <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
@@ -3646,9 +3594,7 @@ export function AnaliseLoaView() {
                                                 <div className="min-w-0 flex-1 flex flex-col items-start gap-1.5">
                                                   {/* Cabeçalho do Subelemento com Botões de Ação alinhados à direita */}
                                                   <div className="w-full flex items-center justify-between gap-2">
-                                                    <span className="text-on-surface font-semibold text-xs leading-snug break-words">
-                                                      {getSubelementLabel(item)}
-                                                    </span>
+                                                    <span className="text-on-surface font-semibold text-xs leading-snug break-words">{getSubelementLabel(item)}</span>
                                                     <div className="flex items-center gap-1 shrink-0 ml-auto">
                                                       <button
                                                         type="button"
@@ -3805,21 +3751,36 @@ export function AnaliseLoaView() {
                                             </span>
                                           </td>}
                                           {visibleTableColumns.has("adjusted") && <td className="p-2 text-center">
-                                            <button
-                                              type="button"
-                                              onClick={() => toggleValidateRow(item.id)}
-                                              className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[item.id]
-                                                  ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                                  : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                                }`}
-                                              title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento"}
-                                              aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
-                                            >
-                                              <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                                {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
-                                              </span>
-                                              <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
-                                            </button>
+                                            {(() => {
+                                              const itemSec = item.orgao || (item as unknown as { secretaria?: string }).secretaria || "";
+                                              const canValidateItem = canUserValidateSecretaria(itemSec);
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  disabled={!canValidateItem}
+                                                  onClick={() => toggleValidateRow(item.id, itemSec)}
+                                                  className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all ${
+                                                    !canValidateItem
+                                                      ? "opacity-60 cursor-not-allowed bg-surface text-on-surface-variant/50 border-outline-variant"
+                                                      : "cursor-pointer "
+                                                  } ${validatedRows[item.id]
+                                                      ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                                      : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                                    }`}
+                                                  title={
+                                                    !canValidateItem
+                                                      ? `Validação restrita ao técnico da ${itemSec || "pasta"}`
+                                                      : validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento"
+                                                  }
+                                                  aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
+                                                >
+                                                  <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                                    {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
+                                                  </span>
+                                                  <span>{validatedRows[item.id] ? "Validado" : "Pendente"}</span>
+                                                </button>
+                                              );
+                                            })()}
                                           </td>}
                                         </tr>
                                       );
