@@ -12,16 +12,16 @@ const ROLE_LABELS: Record<string, { label: string; badgeClass: string; icon: str
 };
 
 export function UserProfileMenu() {
-  const [user, setUser] = useState<ActiveUser>(DEFAULT_USER);
+  const [user, setUser] = useState<ActiveUser>(() => getActiveUser() || DEFAULT_USER);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setUser(getActiveUser());
+    setUser(getActiveUser() || DEFAULT_USER);
 
     const handleUserChange = () => {
-      setUser(getActiveUser());
+      setUser(getActiveUser() || DEFAULT_USER);
     };
 
     window.addEventListener("painel-loa-user-change", handleUserChange);

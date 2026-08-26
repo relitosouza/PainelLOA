@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { BudgetRow, FieldKey } from "@/types/loa";
+import { normalizeUnidadeOrcamentaria } from "./unidades-orcamentarias-catalogo";
 
 const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "CD ORGAO DS ORGAO": "organ",
@@ -122,6 +123,7 @@ export function parseRows(rows: unknown[][]) {
       record[field] = idx !== undefined ? clean(row[idx]) : "";
     }
     record.organ = rowOrgan || currentOrgan;
+    record.budgetUnit = normalizeUnidadeOrcamentaria(record.organ, record.budgetUnit);
     record.value = value;
     records.push(record);
   });

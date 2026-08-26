@@ -17,6 +17,7 @@ import { UserProfileMenu } from "./user-profile-menu";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 import { getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
+import { getActiveUser, setActiveUser } from "@/lib/user-session";
 
 export function AppShell({ view }: { view: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -27,8 +28,32 @@ export function AppShell({ view }: { view: string }) {
     Object.fromEntries(FIELDS.map((field) => [field, []]))
   );
   const [navigationSections, setNavigationSections] = useState<NavigationSection[]>(getNavigationSections());
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const sidebarExpanded = isDesktop ? !sidebarCollapsed : mobileOpen;
   const sidebarId = "primary-sidebar";
+
+  useEffect(() => {
+    // Validar se o usuário está logado
+    const user = getActiveUser();
+    if (!user) {
+      // Tentar validar via API /api/auth/me
+      fetch("/api/auth/me")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.authenticated && data.user) {
+            setActiveUser(data.user);
+            setCheckingAuth(false);
+          } else {
+            window.location.href = "/login";
+          }
+        })
+        .catch(() => {
+          window.location.href = "/login";
+        });
+    } else {
+      setCheckingAuth(false);
+    }
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(min-width: 768px)");
@@ -58,6 +83,17 @@ export function AppShell({ view }: { view: string }) {
   }, []);
 
   const enabledNavigationKeys = new Set(navigationSections.flatMap((section) => section.pages));
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen w-full flex flex-col justify-center items-center bg-surface-container-low p-6 font-body">
+        <div className="flex flex-col items-center gap-4 animate-in fade-in duration-200">
+          <div className="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-on-surface-variant">Carregando painel...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (view === "apresentacao") return <PresentationDashboard />;
 

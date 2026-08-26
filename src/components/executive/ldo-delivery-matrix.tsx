@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 function compactCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {

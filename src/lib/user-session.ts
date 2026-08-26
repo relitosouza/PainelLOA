@@ -17,15 +17,15 @@ export const DEFAULT_USER: ActiveUser = {
   cargo: "Administrador Geral do Sistema",
 };
 
-export function getActiveUser(): ActiveUser {
-  if (typeof window === "undefined") return DEFAULT_USER;
+export function getActiveUser(): ActiveUser | null {
+  if (typeof window === "undefined") return null;
   try {
     const saved = localStorage.getItem(USER_SESSION_STORAGE_KEY);
     if (saved) {
       return JSON.parse(saved) as ActiveUser;
     }
   } catch {}
-  return DEFAULT_USER;
+  return null;
 }
 
 export function setActiveUser(user: ActiveUser) {
@@ -43,3 +43,4 @@ export function clearActiveUser() {
     window.dispatchEvent(new CustomEvent("painel-loa-user-change", { detail: null }));
   } catch {}
 }
+

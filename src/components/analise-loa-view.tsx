@@ -14,7 +14,9 @@ import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
 import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
-import { getActiveUser, type ActiveUser } from "@/lib/user-session";
+import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
+import { openLoaReportWindow, type LoaReportData, type LoaReportGroup } from "@/lib/loa-report-template";
+import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -331,11 +333,11 @@ export function AnaliseLoaView() {
   const addNatureTriggerRef = useRef<HTMLElement | null>(null);
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
   // Usuário Ativo
-  const [currentUser, setCurrentUser] = useState<ActiveUser>(() => getActiveUser());
+  const [currentUser, setCurrentUser] = useState<ActiveUser>(() => getActiveUser() || DEFAULT_USER);
 
   useEffect(() => {
-    setCurrentUser(getActiveUser());
-    const handleUserChange = () => setCurrentUser(getActiveUser());
+    setCurrentUser(getActiveUser() || DEFAULT_USER);
+    const handleUserChange = () => setCurrentUser(getActiveUser() || DEFAULT_USER);
     window.addEventListener("painel-loa-user-change", handleUserChange);
     return () => window.removeEventListener("painel-loa-user-change", handleUserChange);
   }, []);
@@ -919,7 +921,7 @@ export function AnaliseLoaView() {
                   progKey: programStr || groupKey,
                   secretaria: organStr,
                   orgao: organStr,
-                  unidade: unitStr,
+                  unidade: normalizeUnidadeOrcamentaria(organStr, unitStr, programStr || groupKey),
                   programa: programStr,
                   tipoAcao: getActionTypeLabel(actionStr),
                   acao: actionStr,
@@ -989,7 +991,8 @@ export function AnaliseLoaView() {
           let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
           organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
           if (organStr === "01 - CMO" || organStr === "01- CMO") organStr = "01 - CMO";
-          const unitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
+          const rawUnitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
+          const unitStr = normalizeUnidadeOrcamentaria(organStr, rawUnitStr, progKey);
           const functionStr = columns.functionName >= 0 ? String(r[columns.functionName] || "").trim().replace(/^\.+/, "") : "";
           const subfunctionStr = columns.subfunction >= 0 ? String(r[columns.subfunction] || "").trim().replace(/^\.+/, "") : "";
           const programStr = normalizeProgramLabel(String(r[columns.program] || "").trim().replace(/^\.+/, ""));
@@ -1291,7 +1294,7 @@ export function AnaliseLoaView() {
       progKey: `${addExpenseGroup.acao}|${elemento}|${subelementoFinal}`,
       secretaria: addExpenseGroup.secretaria,
       orgao: template?.orgao || addExpenseGroup.secretaria,
-      unidade: template?.unidade || "01",
+      unidade: template?.unidade || normalizeUnidadeOrcamentaria(addExpenseGroup.secretaria, "001"),
       programa: addExpenseGroup.programa,
       tipoAcao: getActionTypeLabel(addExpenseGroup.acao),
       acao: addExpenseGroup.acao,
@@ -2265,157 +2268,100 @@ export function AnaliseLoaView() {
     XLSX.writeFile(workbook, "relatorio-tecnico-orcamento-osasco-2027.xlsx");
   };
 
-  const exportToPDF = async () => {
-    const { jsPDF } = await import("jspdf");
-    const autoTable = (await import("jspdf-autotable")).default;
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 14;
-    const reportDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short" }).format(new Date());
-    type ReportCell = string | { content: string; colSpan?: number; styles?: Record<string, unknown> };
-    type ReportRow = ReportCell[];
-
-    // Carregar imagem do brasão para converter em base64 se disponível
-    try {
-      const img = new Image();
-      img.src = "/brasao.png";
-      await new Promise((resolve) => {
-        img.onload = resolve;
-        img.onerror = resolve;
-      });
-      if (img.complete && img.naturalWidth > 0) {
-        doc.addImage(img, "PNG", margin, 6, 20, 20);
-      }
-    } catch { }
-
-    const programs = Array.from(editableGroups.reduce((map, group) => {
-      const key = group.programa || "Programa não informado";
-      map.set(key, [...(map.get(key) ?? []), group]);
-      return map;
-    }, new Map<string, EditableGroup[]>()));
+  const exportToPDF = () => {
     const secretariats = [...new Set(editableGroups.map((group) => group.secretaria).filter(Boolean))];
     const reportSecretariat = filters.secretaria.length === 1
       ? filters.secretaria[0]
       : secretariats.length === 1
         ? secretariats[0]
-        : secretariats.length > 0 ? secretariats.join(" · ") : "Prefeitura do Município de Osasco";
+        : secretariats.length > 0 ? secretariats.join(" · ") : "11 - SECRETARIA DE SERVIÇOS E OBRAS";
 
-    // Cabeçalho Institucional
-    doc.setFillColor(0, 52, 111);
-    doc.rect(0, 0, pageWidth, 28, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.text("PREFEITURA DO MUNICÍPIO DE OSASCO", margin + 24, 11);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.text(`SECRETARIA: ${reportSecretariat.toUpperCase()}`, margin + 24, 17);
-    doc.text(`RELATÓRIO TÉCNICO ORÇAMENTÁRIO — ANÁLISE LDO x LOA 2027  •  Emitido em: ${reportDate}`, margin + 24, 23);
+    const units = [...new Set(editableGroups.flatMap((g) => g.children.map((c) => c.unidade)).filter(Boolean))];
+    const reportUnit = filters.unidade.length === 1
+      ? filters.unidade[0]
+      : units.length === 1
+        ? units[0]
+        : units.length > 0 ? units.join(" · ") : "01.11.001.00 - Gabinete da Secretaria de Serviços e Obras";
 
-    // Sumário Executivo
-    doc.setTextColor(24, 28, 34);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("1. Detalhamento Analítico e Metas Físicas da LOA 2027", margin, 36);
+    const organs = [...new Set(editableGroups.flatMap((g) => g.children.map((c) => c.orgao)).filter(Boolean))];
+    const reportOrgan = filters.orgao.length === 1
+      ? filters.orgao[0]
+      : organs.length === 1
+        ? organs[0]
+        : organs.length > 0 ? organs.join(" · ") : "Órgão 01 - Prefeitura do Município de Osasco";
 
-    let cursorY = 40;
-    programs.forEach(([programa, groups], programIndex) => {
-      if (cursorY > pageHeight - 45) { doc.addPage(); cursorY = 18; }
-      const programHasAdjustment = groups.some((group) => group.children.some((item) => {
-        const original = originalValuesById.get(item.id) ?? item.valLdo;
-        return Math.abs(item.valLoa - original) > 0.001;
-      }));
-      doc.setTextColor(0, 52, 111);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.text(`Programa: ${programa}${programHasAdjustment ? "  • [POSSUI AJUSTES TÉCNICOS]" : ""}`, margin, cursorY);
-      doc.setDrawColor(0, 52, 111);
-      doc.setLineWidth(0.3);
-      doc.line(margin, cursorY + 2, pageWidth - margin, cursorY + 2);
+    const hasAnyAdjustment = editableGroups.some((group) => group.children.some((item) => {
+      const original = originalValuesById.get(item.id) ?? item.valLdo;
+      return Math.abs(item.valLoa - original) > 0.001 || (item.valorReajuste ?? 0) > 0 || (item.valorAditamento ?? 0) > 0;
+    }));
 
-      const reportBody: ReportRow[] = [];
-      groups.forEach((group) => {
-        const ldoData = getLdoPlanningForGroup(group);
-        const totalFill = [238, 243, 250];
-        const totalText = [0, 52, 111];
-        reportBody.push([
-          { content: `AÇÃO: ${group.acao}\nMeta Física 2027: ${ldoData.custoFisico2027 ?? "—"} (${ldoData.unidadeMedida || "unid."}) • Indicador: ${ldoData.indicador || "—"}`, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: "TOTAL DA AÇÃO", styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valorTotal), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valorTotal - group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: getStatusInfo(group.valLdo, group.valorTotal).label, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-        ]);
-        group.children.forEach((item) => {
-          const original = originalValuesById.get(item.id) ?? item.valLdo;
-          const modified = Math.abs(item.valLoa - original) > 0.001;
-          const diff = getItemLoaTotal(item) - item.valLdo;
-          reportBody.push([
-            `  ↳ ${item.subelemento || item.elemento || "Dotação"}${item.fonteVinculo ? ` (Vínculo: ${item.fonteVinculo})` : ""}${item.processo && item.processo !== "—" ? ` [Proc: ${item.processo}]` : ""}`,
-            item.natureza || item.elemento,
-            currency.format(item.valLdo),
-            currency.format(getItemLoaTotal(item)),
-            diff > 0 ? `+${currency.format(diff)}` : currency.format(diff),
-            validatedRows[item.id] ? "Validado" : "Pendente de validação",
-          ]);
-          if (modified && justifications[item.id]) {
-            reportBody.push([{
-              content: `Motivação Técnica / Justificativa: ${justifications[item.id]}`,
-              colSpan: 6,
-              styles: { fontStyle: "italic", textColor: [91, 63, 12], fillColor: [255, 250, 235] },
-            }]);
+    const totalLdo = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
+    const totalLoa = editableGroups.reduce((acc, g) => acc + g.valLoa, 0);
+    const totalReajuste = editableGroups.reduce((acc, g) => acc + g.valorReajuste, 0);
+    const totalAditamento = editableGroups.reduce((acc, g) => acc + g.valorAditamento, 0);
+    const totalGeral = editableGroups.reduce((acc, g) => acc + g.valorTotal, 0);
+
+    const reportGroups: LoaReportGroup[] = editableGroups.map((group) => {
+      return {
+        groupTitle: group.acao,
+        valLdo: group.valLdo,
+        valLoa: group.valLoa,
+        valorReajuste: group.valorReajuste,
+        valorAditamento: group.valorAditamento,
+        valorTotal: group.valorTotal,
+        items: group.children.map((item) => {
+          const vinculo = item.codigoAplicacao
+            ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+            : item.fonteVinculo || "—";
+
+          const procParts: string[] = [];
+          if (item.subelemento && item.subelemento !== "—" && item.subelemento !== item.natureza && item.subelemento !== item.elemento) {
+            procParts.push(item.subelemento.trim());
           }
-        });
-      });
+          if (item.processo && item.processo !== "—" && item.processo.trim() !== "") {
+            const p = item.processo.trim();
+            procParts.push(p.toLowerCase().startsWith("proc") ? p : `Proc: ${p}`);
+          }
+          if (item.projetoIniciado && item.projetoIniciado !== "—" && item.projetoIniciado.trim() !== "") {
+            procParts.push(`Iniciado: ${item.projetoIniciado.trim()}`);
+          }
+          const obsText = (item.observacao || "").trim() || (justifications[item.id] || "").trim();
+          if (obsText && obsText !== "—" && obsText !== "") {
+            procParts.push(obsText.toLowerCase().startsWith("obs") ? obsText : `Obs: ${obsText}`);
+          }
+          const processoObs = procParts.join(" | ");
 
-      autoTable(doc, {
-        startY: cursorY + 6,
-        margin: { left: margin, right: margin },
-        head: [["AÇÃO / SUBELEMENTO & METAS", "NATUREZA DA DESPESA", "VALOR LDO", "VALOR LOA", "DIFERENÇA", "STATUS"]],
-        body: reportBody,
-        theme: "grid",
-        headStyles: { fillColor: [235, 238, 242], textColor: [20, 24, 30], fontStyle: "bold", fontSize: 7.5 },
-        bodyStyles: { fontSize: 7, textColor: [35, 38, 42], cellPadding: 2, valign: "middle" },
-        alternateRowStyles: { fillColor: [252, 252, 253] },
-        columnStyles: {
-          0: { cellWidth: 85 },
-          1: { cellWidth: 70 },
-          2: { cellWidth: 28, halign: "right" },
-          3: { cellWidth: 28, halign: "right" },
-          4: { cellWidth: 28, halign: "right" },
-          5: { cellWidth: 30, halign: "center" },
-        },
-      });
-      cursorY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY + 40;
-      if (programIndex < programs.length - 1) cursorY += 8;
+          return {
+            natureza: item.natureza || item.elemento || "—",
+            vinculo,
+            processoObs,
+            valLdo: item.valLdo,
+            valLoa: item.valLoa,
+            valorReajuste: item.valorReajuste ?? 0,
+            valorAditamento: item.valorAditamento ?? 0,
+            valorTotal: getItemLoaTotal(item),
+          };
+        }),
+      };
     });
 
-    const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 55;
-    const signatureY = Math.min(finalY + 22, pageHeight - 24);
-    doc.setDrawColor(90, 95, 102);
-    doc.setLineWidth(0.3);
-    doc.line(margin, signatureY, margin + 70, signatureY);
-    doc.line(pageWidth - margin - 70, signatureY, pageWidth - margin, signatureY);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.setTextColor(35, 38, 42);
-    doc.text("Técnico Responsável pelo Planejamento", margin, signatureY + 4, { align: "left" });
-    doc.text("Secretário / Ordenador de Despesa", pageWidth - margin, signatureY + 4, { align: "right" });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(90, 95, 102);
-    doc.text("Assinatura e Matrícula", margin, signatureY + 8);
-    doc.text("Assinatura e Carimbo", pageWidth - margin, signatureY + 8, { align: "right" });
+    const reportData: LoaReportData = {
+      tituloSecretaria: reportSecretariat,
+      unidadeOrcamentaria: reportUnit,
+      orgao: reportOrgan,
+      exercicio: "2027",
+      hasAdjustments: hasAnyAdjustment,
+      totals: {
+        ldo: totalLdo,
+        loa: totalLoa,
+        reajuste: totalReajuste,
+        aditamento: totalAditamento,
+        total: totalGeral,
+      },
+      groups: reportGroups,
+    };
 
-    const pageCount = doc.getNumberOfPages();
-    for (let page = 1; page <= pageCount; page += 1) {
-      doc.setPage(page);
-      doc.setFontSize(6.5);
-      doc.setTextColor(120, 125, 130);
-      doc.text(`Prefeitura de Osasco • Painel LOA 2027 • Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: "right" });
-    }
-    doc.save("relatorio-tecnico-ldo-loa-osasco-2027.pdf");
+    openLoaReportWindow(reportData, true);
   };
 
   // Alternar nó expansível da árvore
@@ -3020,9 +2966,10 @@ export function AnaliseLoaView() {
                       <button
                     onClick={exportToPDF}
                     className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
+                    title="Visualizar e imprimir o relatório no formato oficial da LOA"
                   >
                     <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                    PDF
+                    Relatório Técnico (PDF)
                       </button>
                       </div>
                     </div>

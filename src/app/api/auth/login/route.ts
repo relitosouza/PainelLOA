@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Verificar Hash da senha
-    const inputHash = hashPassword(password);
+    const inputHash = await hashPassword(password);
     if (usuario.senhaHash && usuario.senhaHash !== inputHash) {
       return NextResponse.json(
         { error: "Senha incorreta. Verifique os dados digitados." },
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       telefone: usuario.telefone,
     };
 
-    const token = signSession({
+    const token = await signSession({
       id: usuario.id,
       email: usuario.email,
       papel: usuario.papel,
