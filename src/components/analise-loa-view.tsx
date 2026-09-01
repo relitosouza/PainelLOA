@@ -15,7 +15,7 @@ import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-fi
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
-import { openLoaReportWindow, type LoaReportData, type LoaReportGroup } from "@/lib/loa-report-template";
+import { openLoaReportWindow, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
 import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
 
 // --- Tipos de Filtro ---
@@ -23,6 +23,8 @@ export interface TechnicalFilterState {
   secretaria: string[];
   orgao: string[];
   unidade: string[];
+  funcao: string[];
+  subfuncao: string[];
   programa: string[];
   tipoAcao: string[];
   acao: string[];
@@ -33,6 +35,8 @@ export interface TechnicalFilterState {
   elemento: string[];
   subelemento: string[];
   processo: string[];
+  contrato: string[];
+  observacao: string[];
   search: string;
 }
 
@@ -40,6 +44,8 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   secretaria: [],
   orgao: [],
   unidade: [],
+  funcao: [],
+  subfuncao: [],
   programa: [],
   tipoAcao: [],
   acao: [],
@@ -50,6 +56,8 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   elemento: [],
   subelemento: [],
   processo: [],
+  contrato: [],
+  observacao: [],
   search: "",
 };
 
@@ -74,6 +82,7 @@ export interface RawBudgetItem {
   programaticaLoa?: string;
   codigoAplicacao?: string;
   projetoIniciado?: string;
+  contrato?: string;
   observacao?: string;
   valLdo: number;
   valLoa: number;
@@ -290,6 +299,8 @@ export function AnaliseLoaView() {
   const [natureSort, setNatureSort] = useState<{ column: "natureza" | "subelementos" | "valLdo" | "valLoa" | "diff" | "status"; direction: "asc" | "desc" }>({ column: "natureza", direction: "asc" });
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [scopeTab, setScopeTab] = useState<"todos" | "contratos" | "demais">("todos");
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
   const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
   const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
     () => new Set(ANALYTICAL_COLUMNS.map((column) => column.key))
@@ -813,12 +824,16 @@ export function AnaliseLoaView() {
     filters.secretaria,
     filters.orgao,
     filters.unidade,
+    filters.funcao,
+    filters.subfuncao,
     filters.programa,
     filters.acao,
     filters.natureza,
     filters.fonteVinculo,
     filters.elemento,
     filters.subelemento,
+    filters.contrato,
+    filters.observacao,
     filters.search,
   ]);
 
@@ -979,14 +994,17 @@ export function AnaliseLoaView() {
           link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
           appCode: findCol("codigo_aplicacao", "cod_aplicacao", "codigo de aplicacao", "código de aplicação", "cod. aplicacao", "cod aplicacao", "aplicacao", "aplicação", "cd_aplicacao"),
           obs: findCol("obs.", "obs", "observacao", "observação", "observacoes", "observações", "justificativa"),
-          iniciado: findCol("iniciado", "projeto iniciado", "projeto_iniciado"),
+          iniciado: findCol("contrato", "contratos", "iniciado", "projeto iniciado", "projeto_iniciado", "contrato_iniciado"),
         };
 
         for (let i = 1; i < rows.length; i++) {
           const r = rows[i];
           if (!r || r.length === 0) continue;
 
-          const peca = String(r[columns.piece] || "").trim();
+          const peca = String(r[columns.piece] || "").trim().toUpperCase();
+          // Ignorar linhas da peça LDO para que não sejam geradas linhas de natureza da despesa a partir da LDO
+          if (peca === "LDO") continue;
+
           const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
           let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
           organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
@@ -1081,6 +1099,7 @@ export function AnaliseLoaView() {
               subelemento: subelemStr,
               processo: processStr || "—",
               projetoIniciado: projetoIniciado,
+              contrato: projetoIniciado || undefined,
               observacao: obsStr || undefined,
               valLdo: 0,
               valLoa: 0,
@@ -1088,8 +1107,7 @@ export function AnaliseLoaView() {
           }
 
           const item = loaMap.get(groupKey)!;
-          if (peca === "LDO") item.valLdo += valor;
-          else if (peca === "LOA") item.valLoa += valor;
+          item.valLoa += valor;
         }
 
         // Guardar cópia original inalterada para comparação em modificações
@@ -1347,7 +1365,7 @@ export function AnaliseLoaView() {
     setNewExpenseValor("");
   };
 
-  const handleAllocateBancoProjeto = (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
+  const handleAllocateBancoProjeto = async (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
     const naturezaCodigo = project.natureza.split("-")[0].trim();
     const item: RawBudgetItem = {
       id: `banco-projeto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1370,13 +1388,70 @@ export function AnaliseLoaView() {
       origem: "Banco de Projetos",
       bancoProjetoKey: [project.secretaria, project.objeto, project.natureza, project.valor].join("|"),
     };
+
     setRawItems((previous) => [...previous, item]);
+    setSavedRawItems((previous) => [...previous, item]);
+    setOriginalRawItems((previous) => [...previous, item]);
     setHasChanges(true);
+
+    // Persistir como despesa adicionada na base para ser recarregada em novas sessões
+    try {
+      const existingAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
+        .filter((entry) => entry.id !== item.id);
+      const nextAdded = [...existingAdded, item];
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(nextAdded));
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: nextAdded }),
+      });
+    } catch (err) {
+      console.warn("Aviso ao salvar alocação do banco de projetos:", err);
+    }
   };
 
-  const handleRemoveBancoProjeto = (item: RawBudgetItem) => {
+  const handleRemoveBancoProjeto = async (item: RawBudgetItem) => {
+    if (!window.confirm(`Deseja remover o projeto "${item.acao}" alocado na LOA?`)) return;
+
+    // 1. Atualizar o estado da tela
     setRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
-    setHasChanges(true);
+    setSavedRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+    setOriginalRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+
+    // 2. Remover da lista de despesas adicionadas persistidas
+    try {
+      const savedAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
+        .filter((entry) => entry.id !== item.id);
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(savedAdded));
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "painel_loa_added_expenses",
+          valor: savedAdded,
+        }),
+      });
+    } catch { }
+
+    // 3. Registrar na lista de despesas removidas
+    try {
+      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
+      if (!savedRemoved.includes(item.id)) {
+        const nextRemoved = [...savedRemoved, item.id];
+        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
+        await fetch("/api/configuracoes/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chave: "painel_loa_removed_expenses",
+            valor: nextRemoved,
+          }),
+        });
+      }
+    } catch { }
+
+    setRemovedRawItems((prev) => [...prev.filter((entry) => entry.id !== item.id), item]);
+    setHasChanges(false);
   };
 
   // Confirmar e Gravar Alterações + Justificativas no localStorage
@@ -1497,6 +1572,8 @@ export function AnaliseLoaView() {
           });
         }
 
+        const addedExpensesToPersist = finalItems.filter((i) => i.id.startsWith("manual-") || i.id.startsWith("banco-projeto-"));
+
         const responses = await Promise.all([
           fetch("/api/configuracoes/layout", {
             method: "POST",
@@ -1522,7 +1599,18 @@ export function AnaliseLoaView() {
               valor: financialAdjustments,
             }),
           }),
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_added_expenses",
+              valor: addedExpensesToPersist,
+            }),
+          }),
         ]);
+        try {
+          localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(addedExpensesToPersist));
+        } catch { }
         if (responses.some((response) => !response.ok)) {
           throw new Error("O banco de dados recusou o salvamento das alterações.");
         }
@@ -1564,6 +1652,8 @@ export function AnaliseLoaView() {
         if (fieldToIgnore !== "secretaria" && !match(filters.secretaria, item.secretaria)) return false;
         if (fieldToIgnore !== "orgao" && !match(filters.orgao, item.orgao)) return false;
         if (fieldToIgnore !== "unidade" && !match(filters.unidade, item.unidade)) return false;
+        if (fieldToIgnore !== "funcao" && !match(filters.funcao, item.funcao || "")) return false;
+        if (fieldToIgnore !== "subfuncao" && !match(filters.subfuncao, item.subfuncao || "")) return false;
         if (fieldToIgnore !== "programa" && !match(filters.programa, item.programa)) return false;
         if (fieldToIgnore !== "tipoAcao" && !match(filters.tipoAcao, item.tipoAcao)) return false;
         if (fieldToIgnore !== "acao" && !match(filters.acao, item.acao)) return false;
@@ -1574,6 +1664,8 @@ export function AnaliseLoaView() {
         if (fieldToIgnore !== "elemento" && !match(filters.elemento, item.elemento)) return false;
         if (fieldToIgnore !== "subelemento" && !match(filters.subelemento, item.subelemento)) return false;
         if (fieldToIgnore !== "processo" && !match(filters.processo, item.processo)) return false;
+        if (fieldToIgnore !== "contrato" && !match(filters.contrato, item.contrato || item.projetoIniciado || "")) return false;
+        if (fieldToIgnore !== "observacao" && !match(filters.observacao, item.observacao || "")) return false;
 
         return true;
       });
@@ -1583,6 +1675,8 @@ export function AnaliseLoaView() {
       secretaria: getOptions("secretaria", getItemsForField("secretaria")),
       orgao: getOptions("orgao", getItemsForField("orgao")),
       unidade: getOptions("unidade", getItemsForField("unidade")),
+      funcao: getOptions("funcao", getItemsForField("funcao")),
+      subfuncao: getOptions("subfuncao", getItemsForField("subfuncao")),
       programa: getOptions("programa", getItemsForField("programa")),
       tipoAcao: ["0. Operação Especial", "1. Projeto", "2. Atividade"],
       acao: getOptions("acao", getItemsForField("acao")),
@@ -1598,6 +1692,14 @@ export function AnaliseLoaView() {
       elemento: getOptions("elemento", getItemsForField("elemento")),
       subelemento: getOptions("subelemento", getItemsForField("subelemento")),
       processo: getOptions("processo", getItemsForField("processo")),
+      contrato: Array.from(
+        new Set(
+          getItemsForField("contrato")
+            .map((item) => String(item.contrato || item.projetoIniciado || ""))
+            .filter(Boolean)
+        )
+      ).sort(),
+      observacao: getOptions("observacao", getItemsForField("observacao")),
     };
   }, [rawItems, filters]);
 
@@ -1610,6 +1712,8 @@ export function AnaliseLoaView() {
       if (!match(filters.secretaria, item.secretaria)) return false;
       if (!match(filters.orgao, item.orgao)) return false;
       if (!match(filters.unidade, item.unidade)) return false;
+      if (!match(filters.funcao, item.funcao || "")) return false;
+      if (!match(filters.subfuncao, item.subfuncao || "")) return false;
       if (!match(filters.programa, item.programa)) return false;
       if (!match(filters.tipoAcao, item.tipoAcao)) return false;
       if (!match(filters.acao, item.acao)) return false;
@@ -1620,10 +1724,12 @@ export function AnaliseLoaView() {
       if (!match(filters.elemento, item.elemento)) return false;
       if (!match(filters.subelemento, item.subelemento)) return false;
       if (!match(filters.processo, item.processo)) return false;
+      if (!match(filters.contrato, item.contrato || item.projetoIniciado || "")) return false;
+      if (!match(filters.observacao, item.observacao || "")) return false;
 
       if (filters.search) {
         const query = filters.search.toLowerCase();
-        const fullText = `${item.secretaria} ${item.programa} ${item.acao} ${item.natureza} ${item.subelemento} ${item.processo}`.toLowerCase();
+        const fullText = `${item.secretaria} ${item.funcao || ""} ${item.subfuncao || ""} ${item.programa} ${item.acao} ${item.natureza} ${item.subelemento} ${item.processo} ${item.contrato || item.projetoIniciado || ""} ${item.observacao || ""}`.toLowerCase();
         if (!fullText.includes(query)) return false;
       }
 
@@ -1631,8 +1737,43 @@ export function AnaliseLoaView() {
     });
   }, [rawItems, filters]);
 
+  const isItemContrato = (item: RawBudgetItem) => {
+    const ini = String(item.projetoIniciado || item.contrato || "").trim().toUpperCase();
+    return ini === "SIM";
+  };
+
+  const scopeStats = useMemo(() => {
+    let countTodos = 0;
+    let totalTodos = 0;
+    let countContratos = 0;
+    let totalContratos = 0;
+    let countDemais = 0;
+    let totalDemais = 0;
+
+    filteredItems.forEach((item) => {
+      const total = getItemLoaTotal(item);
+      countTodos++;
+      totalTodos += total;
+      if (isItemContrato(item)) {
+        countContratos++;
+        totalContratos += total;
+      } else {
+        countDemais++;
+        totalDemais += total;
+      }
+    });
+
+    return {
+      todos: { count: countTodos, total: totalTodos },
+      contratos: { count: countContratos, total: totalContratos },
+      demais: { count: countDemais, total: totalDemais },
+    };
+  }, [filteredItems]);
+
   const tableItems = useMemo(() => {
     return filteredItems.filter((item) => {
+      if (scopeTab === "contratos" && !isItemContrato(item)) return false;
+      if (scopeTab === "demais" && isItemContrato(item)) return false;
       if (statusFilters.length > 0) {
         const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, getItemLoaTotal(item)));
         if (!matchesFilter) return false;
@@ -1648,7 +1789,8 @@ export function AnaliseLoaView() {
         item.subelemento.toLowerCase().includes(query)
       );
     });
-  }, [filteredItems, statusFilters, tableSearch]);
+  }, [filteredItems, scopeTab, statusFilters, tableSearch]);
+
 
   const editableGroups = useMemo<EditableGroup[]>(() => {
     const groups = new Map<string, EditableGroup>();
@@ -1671,12 +1813,18 @@ export function AnaliseLoaView() {
         valorTotal: 0,
       };
       group.children.push(item);
-      group.valLdo += item.valLdo;
       group.valLoa += item.valLoa;
       group.valorReajuste += item.valorReajuste ?? 0;
       group.valorAditamento += item.valorAditamento ?? 0;
       group.valorTotal += getItemLoaTotal(item);
       groups.set(groupKey, group);
+    });
+
+    groups.forEach((group) => {
+      const ldoData = getLdoPlanningForGroup(group);
+      if (ldoData?.custoFinanceiro2027 !== undefined && ldoData.custoFinanceiro2027 > 0) {
+        group.valLdo = ldoData.custoFinanceiro2027;
+      }
     });
 
     const getValidated = (item: RawBudgetItem) => validatedRows[item.id] ? 1 : 0;
@@ -1717,7 +1865,7 @@ export function AnaliseLoaView() {
       ...group,
       children: [...group.children].sort(compareChild),
     })).sort(compareGroup);
-  }, [tableItems, tableSort, validatedRows]);
+  }, [tableItems, tableSort, validatedRows, ldoPlanningMap]);
 
   const totalTablePages = useMemo(
     () => Math.max(1, Math.ceil(editableGroups.length / tablePageSize)),
@@ -1731,7 +1879,6 @@ export function AnaliseLoaView() {
 
   // Métricas Recalculadas Instantaneamente para os Cards Superiores
   const metrics = useMemo(() => {
-    let valLdoTotal = 0;
     let valLoaTotal = 0;
     let valLoaVigenteTotal = 0;
     let valorReajusteTotal = 0;
@@ -1740,7 +1887,6 @@ export function AnaliseLoaView() {
     const naturezasSet = new Set<string>();
 
     tableItems.forEach((item) => {
-      valLdoTotal += item.valLdo;
       valLoaTotal += getItemLoaTotal(item);
       valLoaVigenteTotal += item.valLoa;
       valorReajusteTotal += item.valorReajuste ?? 0;
@@ -1749,6 +1895,7 @@ export function AnaliseLoaView() {
       if (item.natureza) naturezasSet.add(item.natureza);
     });
 
+    const valLdoTotal = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
     const diff = valLoaTotal - valLdoTotal;
     const percentExec = valLdoTotal > 0 ? (valLoaTotal / valLdoTotal) * 100 : 100;
 
@@ -1763,7 +1910,7 @@ export function AnaliseLoaView() {
       totalAcoes: acoesSet.size,
       totalNaturezas: naturezasSet.size,
     };
-  }, [tableItems]);
+  }, [tableItems, editableGroups]);
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
@@ -2220,6 +2367,7 @@ export function AnaliseLoaView() {
           Subelemento: item.subelemento || "—",
           "Fonte/Vínculo": item.fonteVinculo || "01",
           Processo: item.processo || "—",
+          "Contrato / Projeto Iniciado": (item.contrato || item.projetoIniciado || "").trim() || "NÃO",
           "Valor Original (R$)": original,
           "Valor LOA Vigente (R$)": item.valLoa,
           "Valor Reajuste (R$)": item.valorReajuste ?? 0,
@@ -2258,7 +2406,22 @@ export function AnaliseLoaView() {
     const wsAcoes = XLSX.utils.json_to_sheet(acoesData);
     const wsAnalitico = XLSX.utils.json_to_sheet(analiticoData);
     XLSX.utils.book_append_sheet(workbook, wsAcoes, "Resumo_Acoes_LOA");
-    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_Analitico");
+
+    // Abas de Contratos e Demais Despesas
+    const analiticoContratos = analiticoData.filter((r) => String(r["Contrato / Projeto Iniciado"] || "").toUpperCase() === "SIM");
+    const analiticoDemais = analiticoData.filter((r) => String(r["Contrato / Projeto Iniciado"] || "").toUpperCase() !== "SIM");
+
+    if (analiticoContratos.length > 0) {
+      const wsContratos = XLSX.utils.json_to_sheet(analiticoContratos);
+      XLSX.utils.book_append_sheet(workbook, wsContratos, "Contratos");
+    }
+    if (analiticoDemais.length > 0) {
+      const wsDemais = XLSX.utils.json_to_sheet(analiticoDemais);
+      XLSX.utils.book_append_sheet(workbook, wsDemais, "Demais_Despesas");
+    }
+
+
+    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_Geral");
 
     if (auditoriaData.length > 0) {
       const wsAuditoria = XLSX.utils.json_to_sheet(auditoriaData);
@@ -2268,101 +2431,190 @@ export function AnaliseLoaView() {
     XLSX.writeFile(workbook, "relatorio-tecnico-orcamento-osasco-2027.xlsx");
   };
 
-  const exportToPDF = () => {
-    const secretariats = [...new Set(editableGroups.map((group) => group.secretaria).filter(Boolean))];
+  const buildReportGroupsFromItems = (items: RawBudgetItem[]): LoaReportGroup[] => {
+    const groupMap = new Map<string, LoaReportGroup>();
+    items.forEach((item) => {
+      const groupKey = [item.programa, item.acao].join("|");
+      if (!groupMap.has(groupKey)) {
+        groupMap.set(groupKey, {
+          groupTitle: item.acao,
+          valLdo: 0,
+          valLoa: 0,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 0,
+          items: [],
+        });
+      }
+      const g = groupMap.get(groupKey)!;
+      g.valLoa += item.valLoa;
+      g.valorReajuste += item.valorReajuste ?? 0;
+      g.valorAditamento += item.valorAditamento ?? 0;
+      g.valorTotal += getItemLoaTotal(item);
+
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "—";
+
+      const procParts: string[] = [];
+      if (item.subelemento && item.subelemento !== "—" && item.subelemento !== item.natureza && item.subelemento !== item.elemento) {
+        procParts.push(item.subelemento.trim());
+      }
+      if (item.processo && item.processo !== "—" && item.processo.trim() !== "") {
+        const p = item.processo.trim();
+        procParts.push(p.toLowerCase().startsWith("proc") ? p : `Proc: ${p}`);
+      }
+      if (item.projetoIniciado && item.projetoIniciado !== "—" && item.projetoIniciado.trim() !== "") {
+        procParts.push(`Iniciado: ${item.projetoIniciado.trim()}`);
+      }
+      const obsText = (item.observacao || "").trim() || (justifications[item.id] || "").trim();
+      if (obsText && obsText !== "—" && obsText !== "") {
+        procParts.push(obsText.toLowerCase().startsWith("obs") ? obsText : `Obs: ${obsText}`);
+      }
+      const processoObs = procParts.join(" | ");
+
+      g.items.push({
+        natureza: item.natureza || item.elemento || "—",
+        vinculo,
+        processoObs,
+        valLdo: item.valLdo,
+        valLoa: item.valLoa,
+        valorReajuste: item.valorReajuste ?? 0,
+        valorAditamento: item.valorAditamento ?? 0,
+        valorTotal: getItemLoaTotal(item),
+      });
+    });
+
+    return Array.from(groupMap.values());
+  };
+
+  const exportToPDF = (targetScope?: "todos" | "contratos" | "demais") => {
+    const selectedScope = targetScope || scopeTab;
+    const secretariats = [...new Set(filteredItems.map((item) => item.secretaria).filter(Boolean))];
     const reportSecretariat = filters.secretaria.length === 1
       ? filters.secretaria[0]
       : secretariats.length === 1
         ? secretariats[0]
         : secretariats.length > 0 ? secretariats.join(" · ") : "11 - SECRETARIA DE SERVIÇOS E OBRAS";
 
-    const units = [...new Set(editableGroups.flatMap((g) => g.children.map((c) => c.unidade)).filter(Boolean))];
+    const units = [...new Set(filteredItems.map((item) => item.unidade).filter(Boolean))];
     const reportUnit = filters.unidade.length === 1
       ? filters.unidade[0]
       : units.length === 1
         ? units[0]
         : units.length > 0 ? units.join(" · ") : "01.11.001.00 - Gabinete da Secretaria de Serviços e Obras";
 
-    const organs = [...new Set(editableGroups.flatMap((g) => g.children.map((c) => c.orgao)).filter(Boolean))];
+    const organs = [...new Set(filteredItems.map((item) => item.orgao).filter(Boolean))];
     const reportOrgan = filters.orgao.length === 1
       ? filters.orgao[0]
       : organs.length === 1
         ? organs[0]
         : organs.length > 0 ? organs.join(" · ") : "Órgão 01 - Prefeitura do Município de Osasco";
 
-    const hasAnyAdjustment = editableGroups.some((group) => group.children.some((item) => {
+    const hasAnyAdjustment = filteredItems.some((item) => {
       const original = originalValuesById.get(item.id) ?? item.valLdo;
       return Math.abs(item.valLoa - original) > 0.001 || (item.valorReajuste ?? 0) > 0 || (item.valorAditamento ?? 0) > 0;
-    }));
-
-    const totalLdo = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
-    const totalLoa = editableGroups.reduce((acc, g) => acc + g.valLoa, 0);
-    const totalReajuste = editableGroups.reduce((acc, g) => acc + g.valorReajuste, 0);
-    const totalAditamento = editableGroups.reduce((acc, g) => acc + g.valorAditamento, 0);
-    const totalGeral = editableGroups.reduce((acc, g) => acc + g.valorTotal, 0);
-
-    const reportGroups: LoaReportGroup[] = editableGroups.map((group) => {
-      return {
-        groupTitle: group.acao,
-        valLdo: group.valLdo,
-        valLoa: group.valLoa,
-        valorReajuste: group.valorReajuste,
-        valorAditamento: group.valorAditamento,
-        valorTotal: group.valorTotal,
-        items: group.children.map((item) => {
-          const vinculo = item.codigoAplicacao
-            ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
-            : item.fonteVinculo || "—";
-
-          const procParts: string[] = [];
-          if (item.subelemento && item.subelemento !== "—" && item.subelemento !== item.natureza && item.subelemento !== item.elemento) {
-            procParts.push(item.subelemento.trim());
-          }
-          if (item.processo && item.processo !== "—" && item.processo.trim() !== "") {
-            const p = item.processo.trim();
-            procParts.push(p.toLowerCase().startsWith("proc") ? p : `Proc: ${p}`);
-          }
-          if (item.projetoIniciado && item.projetoIniciado !== "—" && item.projetoIniciado.trim() !== "") {
-            procParts.push(`Iniciado: ${item.projetoIniciado.trim()}`);
-          }
-          const obsText = (item.observacao || "").trim() || (justifications[item.id] || "").trim();
-          if (obsText && obsText !== "—" && obsText !== "") {
-            procParts.push(obsText.toLowerCase().startsWith("obs") ? obsText : `Obs: ${obsText}`);
-          }
-          const processoObs = procParts.join(" | ");
-
-          return {
-            natureza: item.natureza || item.elemento || "—",
-            vinculo,
-            processoObs,
-            valLdo: item.valLdo,
-            valLoa: item.valLoa,
-            valorReajuste: item.valorReajuste ?? 0,
-            valorAditamento: item.valorAditamento ?? 0,
-            valorTotal: getItemLoaTotal(item),
-          };
-        }),
-      };
     });
 
-    const reportData: LoaReportData = {
-      tituloSecretaria: reportSecretariat,
-      unidadeOrcamentaria: reportUnit,
-      orgao: reportOrgan,
-      exercicio: "2027",
-      hasAdjustments: hasAnyAdjustment,
-      totals: {
-        ldo: totalLdo,
-        loa: totalLoa,
-        reajuste: totalReajuste,
-        aditamento: totalAditamento,
-        total: totalGeral,
-      },
-      groups: reportGroups,
-    };
+    // Totalizadores globais das ações filtradas
+    const totalLdo = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
+    const totalLoa = filteredItems.reduce((acc, i) => acc + i.valLoa, 0);
+    const totalReajuste = filteredItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
+    const totalAditamento = filteredItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
+    const totalGeral = filteredItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0);
 
-    openLoaReportWindow(reportData, true);
+    if (selectedScope === "todos") {
+      // Relatório Completo dividido em 2 Seções Visuais com Subtotais: 1. Contratos e 2. Demais Despesas
+      const contratoItems = filteredItems.filter(isItemContrato);
+      const demaisItems = filteredItems.filter((i) => !isItemContrato(i));
+
+      const contratoGroups = buildReportGroupsFromItems(contratoItems);
+      const demaisGroups = buildReportGroupsFromItems(demaisItems);
+
+      const calcTotals = (items: RawBudgetItem[], ldoVal = 0) => ({
+        ldo: ldoVal,
+        loa: items.reduce((acc, i) => acc + i.valLoa, 0),
+        reajuste: items.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
+        aditamento: items.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
+        total: items.reduce((acc, i) => acc + getItemLoaTotal(i), 0),
+      });
+
+      const sections: LoaReportSection[] = [];
+
+      if (contratoItems.length > 0) {
+        sections.push({
+          sectionKey: "contratos",
+          sectionTitle: "1. Despesas com Contratos e Projetos Iniciados",
+          sectionBadge: "Contratos Vigentes",
+          sectionIcon: "description",
+          totals: calcTotals(contratoItems, 0),
+          groups: contratoGroups,
+        });
+      }
+
+      if (demaisItems.length > 0) {
+        sections.push({
+          sectionKey: "demais",
+          sectionTitle: "2. Demais Despesas Orçamentárias",
+          sectionBadge: "Operacional / Demais",
+          sectionIcon: "folder_open",
+          totals: calcTotals(demaisItems, totalLdo),
+          groups: demaisGroups,
+        });
+      }
+
+      const reportData: LoaReportData = {
+        tituloSecretaria: reportSecretariat,
+        unidadeOrcamentaria: reportUnit,
+        orgao: reportOrgan,
+        exercicio: "2027",
+        hasAdjustments: hasAnyAdjustment,
+        reportScopeTitle: "Consolidado · Contratos e Demais Despesas",
+        totals: {
+          ldo: totalLdo,
+          loa: totalLoa,
+          reajuste: totalReajuste,
+          aditamento: totalAditamento,
+          total: totalGeral,
+        },
+        sections,
+      };
+
+      openLoaReportWindow(reportData, true);
+    } else {
+      // Relatório Específico de Escopo Único (Apenas Contratos OU Apenas Demais)
+      const targetItems = selectedScope === "contratos"
+        ? filteredItems.filter(isItemContrato)
+        : filteredItems.filter((i) => !isItemContrato(i));
+
+      const scopeTitle = selectedScope === "contratos"
+        ? "Contratos e Projetos Iniciados"
+        : "Demais Despesas Orçamentárias";
+
+      const reportGroups = buildReportGroupsFromItems(targetItems);
+      const scopeTotals = {
+        ldo: selectedScope === "contratos" ? 0 : totalLdo,
+        loa: targetItems.reduce((acc, i) => acc + i.valLoa, 0),
+        reajuste: targetItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
+        aditamento: targetItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
+        total: targetItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0),
+      };
+
+      const reportData: LoaReportData = {
+        tituloSecretaria: reportSecretariat,
+        unidadeOrcamentaria: reportUnit,
+        orgao: reportOrgan,
+        exercicio: "2027",
+        hasAdjustments: hasAnyAdjustment,
+        reportScopeTitle: scopeTitle,
+        totals: scopeTotals,
+        groups: reportGroups,
+      };
+
+      openLoaReportWindow(reportData, true);
+    }
   };
+
 
   // Alternar nó expansível da árvore
   const toggleNode = (nodeId: string) => {
@@ -2707,13 +2959,71 @@ export function AnaliseLoaView() {
             <div key="detalhamento-analitico" className="glass-card p-5 bg-surface border border-outline-variant flex flex-col">
               {/* Barra Superior da Tabela */}
               <div className="flex flex-col gap-4 pb-4 mb-3 border-b border-outline-variant">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div className="min-w-0">
-                    <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
+                      <span className="text-xs text-on-surface-variant font-medium">•</span>
+                      <span className="text-xs text-primary font-bold">
+                        {scopeTab === "todos" ? "Todas as Despesas" : scopeTab === "contratos" ? "Contratos & Projetos Iniciados" : "Demais Despesas"}
+                      </span>
+                    </div>
                     <p className="text-[11px] text-on-surface-variant">Dê duplo clique ou edite os valores diretamente nas células</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                    <div className="flex min-w-0 items-center gap-2">
+
+                  {/* Seletor Segmentado de Escopo: Todos / Contratos / Demais */}
+                  <div className="flex items-center gap-1.5 p-1 bg-surface-container-low/70 rounded-xl border border-outline-variant/70 overflow-x-auto shrink-0 shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab("todos")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        scopeTab === "todos"
+                          ? "bg-primary text-on-primary shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">apps</span>
+                      <span>Todos ({scopeStats.todos.count})</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "todos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                        {currency.format(scopeStats.todos.total)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab("contratos")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        scopeTab === "contratos"
+                          ? "bg-amber-600 text-white shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">description</span>
+                      <span>Contratos ({scopeStats.contratos.count})</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "contratos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                        {currency.format(scopeStats.contratos.total)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab("demais")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        scopeTab === "demais"
+                          ? "bg-sky-700 text-white shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">folder_open</span>
+                      <span>Demais ({scopeStats.demais.count})</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "demais" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                        {currency.format(scopeStats.demais.total)}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+
                     <div className="relative w-[min(20rem,calc(100vw-8rem))] min-w-[14rem]">
                       <label htmlFor="analytical-table-search" className="sr-only">Buscar no detalhamento analítico</label>
                       <input
@@ -2807,7 +3117,6 @@ export function AnaliseLoaView() {
                     </div>
                     </div>
                   </div>
-                </div>
 
                 <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-outline-variant/70 bg-surface-container-low/40 p-2.5">
                   <div className="flex flex-wrap items-end gap-3">
@@ -2963,14 +3272,84 @@ export function AnaliseLoaView() {
                     <span className="material-symbols-outlined text-sm" aria-hidden="true">csv</span>
                     CSV LOA
                       </button>
-                      <button
-                    onClick={exportToPDF}
-                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
-                    title="Visualizar e imprimir o relatório no formato oficial da LOA"
-                  >
-                    <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                    Relatório Técnico (PDF)
-                      </button>
+                      <div className="relative">
+                        <div className="inline-flex rounded-lg shadow-xs border border-rose-300 bg-rose-50 text-rose-700">
+                          <button
+                            type="button"
+                            onClick={() => exportToPDF()}
+                            className="min-h-11 px-3 py-1.5 text-xs font-bold hover:bg-rose-100 transition-colors flex items-center gap-1.5 rounded-l-lg border-r border-rose-300/60"
+                            title="Visualizar e imprimir relatório oficial no formato LOA com base na visão atual"
+                          >
+                            <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                            <span>Relatório Técnico (PDF)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPdfMenuOpen((prev) => !prev)}
+                            className="min-h-11 px-2 py-1.5 text-xs font-bold hover:bg-rose-100 transition-colors flex items-center justify-center rounded-r-lg cursor-pointer"
+                            title="Opções de relatório (Completo em 2 blocos, Apenas Contratos ou Apenas Demais)"
+                            aria-expanded={pdfMenuOpen}
+                          >
+                            <span className="material-symbols-outlined text-xs">arrow_drop_down</span>
+                          </button>
+                        </div>
+                        {pdfMenuOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-30 cursor-default"
+                              onClick={() => setPdfMenuOpen(false)}
+                            />
+                            <div className="absolute right-0 z-40 mt-1.5 w-72 rounded-xl border border-outline-variant bg-surface p-1.5 shadow-xl animate-in fade-in zoom-in-95 text-left">
+                              <div className="px-2.5 py-1.5 border-b border-outline-variant/60 mb-1">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Opções de Geração (PDF)</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("todos");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-primary">splitscreen</span>
+                                  <span>Relatório Completo (2 Blocos)</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Contratos e Demais Despesas em blocos com subtotais</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("contratos");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-amber-700">description</span>
+                                  <span>Apenas Contratos</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Projetos iniciados e despesas contratuais</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("demais");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-sky-700">folder_open</span>
+                                  <span>Apenas Demais Despesas</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Demais despesas orçamentárias</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
                       </div>
                     </div>
                   </div>
@@ -3071,13 +3450,13 @@ export function AnaliseLoaView() {
                                   <span className="block whitespace-normal text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
                                     {group.acao || "Sem Ação"}
                                   </span>
-                                  {group.children.some((item) => item.origem === "Banco de Projetos") && (
+                                  {(group.children.some((item) => item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey)) || group.programa === "Banco de Projetos") && (
                                     <span className="mt-1 inline-flex rounded-full bg-secondary-container px-2 py-0.5 text-[9px] font-bold text-on-secondary-container">
                                       Banco de Projetos
                                     </span>
                                   )}
                                 </div>
-                                {group.children.filter((item) => item.origem === "Banco de Projetos").map((item) => (
+                                {group.children.filter((item) => item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey) || group.programa === "Banco de Projetos").map((item) => (
                                   <button
                                     key={item.id}
                                     type="button"
@@ -3558,7 +3937,7 @@ export function AnaliseLoaView() {
                                         </div>
                                       </td>
                                       {visibleTableColumns.has("elemento") && <td className="p-2.5 text-on-surface-variant font-sans text-xs">
-                                        <div className="flex flex-col gap-1 items-start">
+                                         <div className="flex flex-col gap-1 items-start">
                                           <span>{elementGroups.length} elemento{elementGroups.length === 1 ? "" : "s"} de despesa</span>
                                           <span className="font-mono text-[10px] font-bold">{validatedSubelements} de {natureItems.length} subelementos validados · {validationPercent}%</span>
                                           <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>{validationStatus}</span>
@@ -3571,8 +3950,8 @@ export function AnaliseLoaView() {
                                         </div>
                                       </td>}
                                       {visibleTableColumns.has("valLdo") && (
-                                        <td className="p-2.5 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/40 text-xs">
-                                          {formatBr(natureLdo)}
+                                        <td className="p-2.5 text-right font-mono text-on-surface-variant/50 font-medium select-none bg-surface-container-low/40 text-xs">
+                                          0,00
                                         </td>
                                       )}
                                       {visibleTableColumns.has("valLoa") && (
@@ -3712,7 +4091,7 @@ export function AnaliseLoaView() {
                                                 </div>
                                               </div>
                                             </td>
-                                          {visibleTableColumns.has("valLdo") && <td className="p-2 text-right font-mono text-on-surface-variant/60 text-xs">—</td>}
+                                          {visibleTableColumns.has("valLdo") && <td className="p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
                                           {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <input
                                               type="text"

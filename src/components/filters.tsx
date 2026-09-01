@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { FIELDS, type FieldKey } from "@/types/loa";
 import { EMPTY_DASHBOARD_FILTERS, type DashboardFilterState } from "@/lib/dashboard-data";
+import { useFilterVisibility } from "@/hooks/use-filter-visibility";
+import { FilterCustomizePopover } from "@/components/filter-customize-popover";
 
 export const FIELD_LABELS: Record<FieldKey, string> = {
   organ: "Secretaria",
@@ -36,6 +38,22 @@ export function Filters({
   const [openFilterKey, setOpenFilterKey] = useState<FieldKey | null>(null);
   const [filterSearchQuery, setFilterSearchQuery] = useState<Partial<Record<FieldKey, string>>>({});
 
+  const {
+    visibleKeys,
+    toggleField,
+    hideField,
+    showField,
+    showAll,
+    resetToDefault,
+    isVisible,
+    isSaving,
+  } = useFilterVisibility({
+    storageKey: "painel_loa_filters_visibility_global",
+    dbKey: "painel_loa_filters_visibility_global",
+    availableKeys: [...FIELDS],
+    defaultVisibleKeys: [...FIELDS],
+  });
+
   const activeCount =
     FIELDS.reduce((sum, field) => sum + (filters[field]?.length || 0), 0) +
     Number(Boolean(filters.min)) +
@@ -48,6 +66,19 @@ export function Filters({
       [field]: (filters[field] || []).filter((item) => item !== value),
     });
   };
+
+  // Identificar filtros que estão ocultos mas possuem seleções ativas
+  const hiddenActiveFields = FIELDS.filter(
+    (field) => !isVisible(field) && (filters[field] || []).length > 0
+  );
+
+  const filterDefinitions = FIELDS.map((key) => ({
+    key,
+    label: FIELD_LABELS[key] || key,
+    activeCount: (filters[key] || []).length,
+  }));
+
+  const visibleFieldsList = FIELDS.filter((key) => isVisible(key));
 
   return (
     <section className="glass-card p-5 bg-surface border border-outline-variant space-y-4 rounded-xl shadow-sm" data-testid="filters-panel">
@@ -65,7 +96,7 @@ export function Filters({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Search Input */}
           <div className="relative">
             <input
@@ -73,7 +104,7 @@ export function Filters({
               placeholder="Buscar por código, ação, palavra-chave..."
               value={filters.search || ""}
               onChange={(e) => onChange({ ...filters, search: e.target.value })}
-              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
+              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-56 sm:w-64"
               data-testid="filters-search"
             />
             {filters.search && (
@@ -91,7 +122,7 @@ export function Filters({
           <button
             type="button"
             onClick={() => setShowRange((prev) => !prev)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border cursor-pointer ${
               showRange || filters.min || filters.max
                 ? "bg-primary/10 border-primary text-primary font-bold"
                 : "border-outline-variant text-on-surface-variant hover:bg-surface-container/50"
@@ -100,6 +131,16 @@ export function Filters({
           >
             {showRange ? "Ocultar Valores" : "Faixa de Valor"}
           </button>
+
+          {/* Botão de Personalização de Filtros */}
+          <FilterCustomizePopover
+            fields={filterDefinitions}
+            visibleKeys={visibleKeys}
+            onToggleField={toggleField}
+            onShowAll={showAll}
+            onResetDefault={resetToDefault}
+            isSaving={isSaving}
+          />
 
           {/* Total Counter Badge */}
           <div className="text-xs text-on-surface-variant bg-surface-container/60 px-3 py-1.5 rounded-lg border border-outline-variant/60" data-testid="filters-status">
@@ -156,9 +197,42 @@ export function Filters({
         </div>
       )}
 
-      {/* Grade de Filtros Popover Multi-Select (Idêntico ao da página Análise LOA) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-3">
-        {FIELDS.map((key) => {
+      {/* Alerta se houver filtros ocultos com valores aplicados */}
+      {hiddenActiveFields.length > 0 && (
+        <div className="flex items-center justify-between px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm text-amber-600">warning</span>
+            <span>
+              Existem <strong>{hiddenActiveFields.length}</strong> filtro(s) oculto(s) com seleção ativa:{" "}
+              {hiddenActiveFields.map((f) => FIELD_LABELS[f]).join(", ")}.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {hiddenActiveFields.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => showField(f)}
+                className="px-2 py-0.5 bg-amber-600/15 hover:bg-amber-600/25 text-amber-900 dark:text-amber-200 font-semibold rounded text-[11px] cursor-pointer"
+              >
+                Exibir {FIELD_LABELS[f]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Grade de Filtros Popover Multi-Select Dinâmica */}
+      <div
+        className={`grid gap-3 ${
+          visibleFieldsList.length <= 3
+            ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
+            : visibleFieldsList.length <= 6
+            ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+            : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9"
+        }`}
+      >
+        {visibleFieldsList.map((key) => {
           const fieldLabel = FIELD_LABELS[key] || key;
           const selectedValues = (filters[key] || []) as string[];
           const selectedCount = selectedValues.length;
@@ -176,16 +250,19 @@ export function Filters({
 
           return (
             <div key={key} className="relative flex flex-col gap-1" data-testid={`filter-${key}-select`}>
-              <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
-                <span>{fieldLabel}</span>
-                {selectedCount > 0 && (
-                  <span className="text-[10px] text-primary font-extrabold">{selectedCount}</span>
-                )}
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1 truncate">
+                  <span className="truncate">{fieldLabel}</span>
+                  {selectedCount > 0 && (
+                    <span className="text-[10px] text-primary font-extrabold">({selectedCount})</span>
+                  )}
+                </label>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setOpenFilterKey(isOpen ? null : key)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${
+                className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium cursor-pointer ${
                   selectedCount
                     ? "bg-primary/10 border-primary font-bold text-primary"
                     : "bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container/60"
@@ -213,17 +290,31 @@ export function Filters({
                   <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
                     <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
                       <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
-                      {selectedCount > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        {selectedCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onChange({ ...filters, [key]: [] });
+                            }}
+                            className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                          >
+                            Limpar
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
-                            onChange({ ...filters, [key]: [] });
+                            setOpenFilterKey(null);
+                            hideField(key);
                           }}
-                          className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                          title="Ocultar este filtro da barra"
+                          className="text-[10px] text-on-surface-variant hover:text-rose-600 flex items-center gap-0.5 cursor-pointer pl-1 border-l border-outline-variant/60"
                         >
-                          Limpar
+                          <span className="material-symbols-outlined text-xs">visibility_off</span>
+                          <span>Ocultar</span>
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     <input
@@ -236,7 +327,7 @@ export function Filters({
                       className="w-full px-2 py-1 text-xs rounded-md border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
                     />
 
-                    <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+                    <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar">
                       {visibleOptions.length === 0 ? (
                         <p className="text-[11px] text-on-surface-variant p-2 text-center">Nenhuma opção encontrada</p>
                       ) : (
@@ -324,4 +415,3 @@ export function Filters({
     </section>
   );
 }
-

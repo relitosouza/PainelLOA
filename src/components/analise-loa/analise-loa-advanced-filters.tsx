@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import type { TechnicalFilterState } from "../analise-loa-view";
+import { useFilterVisibility } from "@/hooks/use-filter-visibility";
+import { FilterCustomizePopover } from "@/components/filter-customize-popover";
 
 interface AnaliseLoaAdvancedFiltersProps {
   filters: TechnicalFilterState;
@@ -13,6 +15,8 @@ interface AnaliseLoaAdvancedFiltersProps {
 const LABELS_MAP: Record<string, string> = {
   secretaria: "Secretaria",
   unidade: "Unidade",
+  funcao: "Função",
+  subfuncao: "Subfunção",
   programa: "Programa",
   tipoAcao: "Tipo de Ação",
   acao: "Ação",
@@ -23,7 +27,28 @@ const LABELS_MAP: Record<string, string> = {
   elemento: "Mod. Aplicação",
   subelemento: "Subelemento",
   processo: "Processo",
+  contrato: "Contrato",
+  observacao: "Observação",
 };
+
+const ALL_FILTER_KEYS = [
+  "secretaria",
+  "unidade",
+  "funcao",
+  "subfuncao",
+  "programa",
+  "tipoAcao",
+  "acao",
+  "natureza",
+  "fonteVinculo",
+  "categoriaEconomica",
+  "grupoNatureza",
+  "elemento",
+  "subelemento",
+  "processo",
+  "contrato",
+  "observacao",
+];
 
 export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedFilters({
   filters,
@@ -34,42 +59,132 @@ export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedF
   const [openFilterKey, setOpenFilterKey] = useState<string | null>(null);
   const [filterSearchQuery, setFilterSearchQuery] = useState<Record<string, string>>({});
 
-  const filterKeys = (Object.keys(filterOptions) as Array<keyof typeof filterOptions>).filter(
-    (key) => key !== "orgao"
-  );
+  const filterKeys = ALL_FILTER_KEYS.filter((k) => k in filterOptions || k in LABELS_MAP);
+
+  const {
+    visibleKeys,
+    toggleField,
+    hideField,
+    showField,
+    showAll,
+    resetToDefault,
+    isVisible,
+    isSaving,
+  } = useFilterVisibility({
+    storageKey: "painel_loa_filters_visibility_analise",
+    dbKey: "painel_loa_filters_visibility_analise",
+    availableKeys: ALL_FILTER_KEYS,
+    defaultVisibleKeys: ALL_FILTER_KEYS,
+  });
 
   const activeFilterCount =
     filterKeys.reduce((sum, k) => sum + (filters[k as keyof TechnicalFilterState]?.length || 0), 0) +
     Number(Boolean(filters.search));
+
+  const filterDefinitions = filterKeys.map((k) => ({
+    key: k,
+    label: LABELS_MAP[k] || k,
+    activeCount: (filters[k as keyof TechnicalFilterState] || []).length,
+  }));
+
+  const visibleFilterKeysList = filterKeys.filter((k) => isVisible(k));
+
+  // Filtros ocultos que possuem seleções ativas
+  const hiddenActiveFields = filterKeys.filter(
+    (k) => !isVisible(k) && ((filters[k as keyof TechnicalFilterState] || []) as string[]).length > 0
+  );
 
   return (
     <section className="glass-card p-5 bg-surface border border-outline-variant space-y-4 rounded-2xl shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">tune</span>
-          <h3 className="text-sm font-headline font-bold text-on-surface">Filtros Avançados Orçamentários</h3>
+          <div>
+            <h3 className="text-sm font-headline font-bold text-on-surface">Filtros Avançados Orçamentários</h3>
+            <p className="text-[11px] text-on-surface-variant">Personalize as dimensões orçamentárias exibidas</p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            placeholder="Buscar por código, ação, palavra-chave..."
-            value={filters.search}
-            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-            className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar por código, ação, palavra-chave..."
+              value={filters.search}
+              onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+              className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-56 sm:w-64"
+            />
+            {filters.search && (
+              <button
+                type="button"
+                onClick={() => setFilters((prev) => ({ ...prev, search: "" }))}
+                className="absolute right-2 top-1.5 text-xs text-on-surface-variant hover:text-rose-600 font-bold"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* Botão Personalizar Filtros */}
+          <FilterCustomizePopover
+            fields={filterDefinitions}
+            visibleKeys={visibleKeys}
+            onToggleField={toggleField}
+            onShowAll={showAll}
+            onResetDefault={resetToDefault}
+            isSaving={isSaving}
           />
+
           <button
             type="button"
             onClick={() => setFilters(initialFilters)}
-            className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200 cursor-pointer"
+            disabled={!activeFilterCount}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+              activeFilterCount
+                ? "text-rose-600 hover:bg-rose-50 border-rose-200 cursor-pointer"
+                : "text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
+            }`}
           >
             Limpar Filtros
           </button>
         </div>
       </div>
 
-      {/* Grade de Filtros Popover Multi-Select */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {filterKeys.map((key) => {
+      {/* Alerta se houver filtros ocultos com valores aplicados */}
+      {hiddenActiveFields.length > 0 && (
+        <div className="flex items-center justify-between px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm text-amber-600">warning</span>
+            <span>
+              Existem <strong>{hiddenActiveFields.length}</strong> filtro(s) oculto(s) com seleção ativa:{" "}
+              {hiddenActiveFields.map((k) => LABELS_MAP[k] || k).join(", ")}.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {hiddenActiveFields.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => showField(k)}
+                className="px-2 py-0.5 bg-amber-600/15 hover:bg-amber-600/25 text-amber-900 dark:text-amber-200 font-semibold rounded text-[11px] cursor-pointer"
+              >
+                Exibir {LABELS_MAP[k] || k}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Grade de Filtros Popover Multi-Select Dinâmica */}
+      <div
+        className={`grid gap-3 ${
+          visibleFilterKeysList.length <= 3
+            ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3"
+            : visibleFilterKeysList.length <= 6
+            ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+            : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+        }`}
+      >
+        {visibleFilterKeysList.map((key) => {
           const fieldLabel = LABELS_MAP[key] || key;
           const selectedValues = (filters[key as keyof TechnicalFilterState] || []) as string[];
           const selectedCount = selectedValues.length;
@@ -81,7 +196,7 @@ export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedF
           return (
             <div key={key} className="relative flex flex-col gap-1">
               <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
-                <span>{fieldLabel}</span>
+                <span className="truncate">{fieldLabel}</span>
                 {selectedCount > 0 && (
                   <span className="text-[10px] text-primary font-extrabold">{selectedCount}</span>
                 )}
@@ -116,17 +231,31 @@ export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedF
                   <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
                     <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
                       <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
-                      {selectedCount > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        {selectedCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilters((prev) => ({ ...prev, [key]: [] }));
+                            }}
+                            className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                          >
+                            Limpar
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
-                            setFilters((prev) => ({ ...prev, [key]: [] }));
+                            setOpenFilterKey(null);
+                            hideField(key);
                           }}
-                          className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                          title="Ocultar este filtro da barra"
+                          className="text-[10px] text-on-surface-variant hover:text-rose-600 flex items-center gap-0.5 cursor-pointer pl-1 border-l border-outline-variant/60"
                         >
-                          Limpar
+                          <span className="material-symbols-outlined text-xs">visibility_off</span>
+                          <span>Ocultar</span>
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     <input
@@ -139,7 +268,7 @@ export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedF
                       className="w-full px-2 py-1 text-xs rounded-md border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
                     />
 
-                    <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
+                    <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar">
                       {visibleOptions.length === 0 ? (
                         <p className="text-[11px] text-on-surface-variant p-2 text-center">Nenhuma opção encontrada</p>
                       ) : (
@@ -168,7 +297,7 @@ export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedF
                                     };
                                   });
                                 }}
-                                className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
+                                className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer accent-primary"
                               />
                               <span className="truncate min-w-0" title={opt}>{opt}</span>
                             </label>
