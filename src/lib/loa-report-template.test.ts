@@ -98,7 +98,56 @@ describe("LoaReportTemplate", () => {
     expect(html).toContain("Contratos Vigentes");
     expect(html).toContain("Operacional / Demais");
     expect(html).toContain("Total Geral Consolidado (Secretaria)");
+    expect(html).toContain("Somatório integrado de Contratos, Demais Despesas e Banco de Projetos");
     expect(html).toContain("0,00"); // coluna LDO na linha zerada
+  });
+
+  it("deve gerar relatório com 3 seções segregadas incluindo Banco de Projetos Alocados", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "11 - SECRETARIA DE SERVIÇOS E OBRAS",
+      exercicio: "2027",
+      reportScopeTitle: "Consolidado · Contratos, Demais Despesas e Banco de Projetos",
+      totals: {
+        ldo: 0,
+        loa: 180000,
+        reajuste: 0,
+        aditamento: 0,
+        total: 180000,
+      },
+      sections: [
+        {
+          sectionKey: "contratos",
+          sectionTitle: "1. Despesas com Contratos e Projetos Iniciados",
+          sectionBadge: "Contratos Vigentes",
+          sectionIcon: "description",
+          totals: { ldo: 0, loa: 50000, reajuste: 0, aditamento: 0, total: 50000 },
+          groups: [],
+        },
+        {
+          sectionKey: "demais",
+          sectionTitle: "2. Demais Despesas Orçamentárias",
+          sectionBadge: "Operacional / Demais",
+          sectionIcon: "folder_open",
+          totals: { ldo: 0, loa: 70000, reajuste: 0, aditamento: 0, total: 70000 },
+          groups: [],
+        },
+        {
+          sectionKey: "banco-projetos",
+          sectionTitle: "3. Banco de Projetos Alocados",
+          sectionBadge: "Novos Projetos / Alocados",
+          sectionIcon: "account_tree",
+          totals: { ldo: 0, loa: 60000, reajuste: 0, aditamento: 0, total: 60000 },
+          groups: [],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    expect(html).toContain("1. Despesas com Contratos e Projetos Iniciados");
+    expect(html).toContain("2. Demais Despesas Orçamentárias");
+    expect(html).toContain("3. Banco de Projetos Alocados");
+    expect(html).toContain("Novos Projetos / Alocados");
+    expect(html).toContain("account_tree");
   });
 
   it("deve gerar relatório de escopo único quando grupos diretos são informados", () => {

@@ -220,7 +220,7 @@ ${sectionsHtml}
   <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
     <div>
       <h3 class="font-headline-md text-base font-bold text-primary uppercase">Total Geral Consolidado (Secretaria)</h3>
-      <p class="text-xs text-on-surface-variant font-medium">Somatório integrado de Contratos e Demais Despesas Orçamentárias</p>
+      <p class="text-xs text-on-surface-variant font-medium">Somatório integrado de Contratos, Demais Despesas e Banco de Projetos</p>
     </div>
     <div class="flex items-center gap-6 flex-wrap">
       <div class="text-right">

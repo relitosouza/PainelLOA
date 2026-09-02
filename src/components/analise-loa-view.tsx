@@ -2495,7 +2495,7 @@ export function AnaliseLoaView() {
     return Array.from(groupMap.values());
   };
 
-  const exportToPDF = (targetScope?: "todos" | "contratos" | "demais") => {
+  const exportToPDF = (targetScope?: "todos" | "contratos" | "demais" | "banco-projetos") => {
     const selectedScope = targetScope || scopeTab;
     const secretariats = [...new Set(filteredItems.map((item) => item.secretaria).filter(Boolean))];
     const reportSecretariat = filters.secretaria.length === 1
@@ -2547,12 +2547,15 @@ export function AnaliseLoaView() {
     const totalGeral = reportEligibleItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0);
 
     if (selectedScope === "todos") {
-      // Relatório Completo dividido em 2 Seções Visuais com Subtotais: 1. Contratos e 2. Demais Despesas
-      const contratoItems = reportEligibleItems.filter(isItemContrato);
-      const demaisItems = reportEligibleItems.filter((i) => !isItemContrato(i));
+      // Relatório Completo dividido em 3 Seções Visuais com Subtotais:
+      // 1. Contratos, 2. Demais Despesas e 3. Banco de Projetos Alocados
+      const bpItems = reportEligibleItems.filter(isBancoProjetoItem);
+      const contratoItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && isItemContrato(i));
+      const demaisItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && !isItemContrato(i));
 
       const contratoGroups = buildReportGroupsFromItems(contratoItems);
       const demaisGroups = buildReportGroupsFromItems(demaisItems);
+      const bpGroups = buildReportGroupsFromItems(bpItems);
 
       const calcTotals = (items: RawBudgetItem[], ldoVal = 0) => ({
         ldo: ldoVal,
@@ -2586,13 +2589,24 @@ export function AnaliseLoaView() {
         });
       }
 
+      if (bpItems.length > 0) {
+        sections.push({
+          sectionKey: "banco-projetos",
+          sectionTitle: "3. Banco de Projetos Alocados",
+          sectionBadge: "Novos Projetos / Alocados",
+          sectionIcon: "account_tree",
+          totals: calcTotals(bpItems, 0),
+          groups: bpGroups,
+        });
+      }
+
       const reportData: LoaReportData = {
         tituloSecretaria: reportSecretariat,
         unidadeOrcamentaria: reportUnit,
         orgao: reportOrgan,
         exercicio: "2027",
         hasAdjustments: hasAnyAdjustment,
-        reportScopeTitle: "Consolidado · Contratos e Demais Despesas",
+        reportScopeTitle: "Consolidado · Contratos, Demais Despesas e Banco de Projetos",
         totals: {
           ldo: totalLdo,
           loa: totalLoa,
@@ -2605,18 +2619,24 @@ export function AnaliseLoaView() {
 
       openLoaReportWindow(reportData, true);
     } else {
-      // Relatório Específico de Escopo Único (Apenas Contratos OU Apenas Demais)
-      const targetItems = selectedScope === "contratos"
-        ? reportEligibleItems.filter(isItemContrato)
-        : reportEligibleItems.filter((i) => !isItemContrato(i));
+      // Relatório Específico de Escopo Único (Contratos, Demais ou Banco de Projetos)
+      let targetItems: RawBudgetItem[] = [];
+      let scopeTitle = "";
 
-      const scopeTitle = selectedScope === "contratos"
-        ? "Contratos e Projetos Iniciados"
-        : "Demais Despesas Orçamentárias";
+      if (selectedScope === "banco-projetos") {
+        targetItems = reportEligibleItems.filter(isBancoProjetoItem);
+        scopeTitle = "Banco de Projetos Alocados";
+      } else if (selectedScope === "contratos") {
+        targetItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && isItemContrato(i));
+        scopeTitle = "Contratos e Projetos Iniciados";
+      } else {
+        targetItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && !isItemContrato(i));
+        scopeTitle = "Demais Despesas Orçamentárias";
+      }
 
       const reportGroups = buildReportGroupsFromItems(targetItems);
       const scopeTotals = {
-        ldo: selectedScope === "contratos" ? 0 : totalLdo,
+        ldo: selectedScope === "demais" ? totalLdo : 0,
         loa: targetItems.reduce((acc, i) => acc + i.valLoa, 0),
         reajuste: targetItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
         aditamento: targetItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
@@ -3336,9 +3356,9 @@ export function AnaliseLoaView() {
                               >
                                 <div className="flex items-center gap-1.5 font-bold text-on-surface">
                                   <span className="material-symbols-outlined text-sm text-primary">splitscreen</span>
-                                  <span>Relatório Completo (2 Blocos)</span>
+                                  <span>Relatório Completo (3 Blocos)</span>
                                 </div>
-                                <span className="text-[10px] text-on-surface-variant pl-5">Contratos e Demais Despesas em blocos com subtotais</span>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Contratos, Demais Despesas e Banco de Projetos em blocos com subtotais</span>
                               </button>
                               <button
                                 type="button"
@@ -3367,6 +3387,20 @@ export function AnaliseLoaView() {
                                   <span>Apenas Demais Despesas</span>
                                 </div>
                                 <span className="text-[10px] text-on-surface-variant pl-5">Demais despesas orçamentárias</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("banco-projetos");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-emerald-700">account_tree</span>
+                                  <span>Apenas Banco de Projetos</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Projetos alocados na LOA</span>
                               </button>
                             </div>
                           </>
