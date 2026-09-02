@@ -15,7 +15,7 @@ import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-fi
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
-import { openLoaReportWindow, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
+import { openLoaReportWindow, shouldExcludeReportVinculo, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
 import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
 
 // --- Tipos de Filtro ---
@@ -2518,22 +2518,38 @@ export function AnaliseLoaView() {
         ? organs[0]
         : organs.length > 0 ? organs.join(" · ") : "Órgão 01 - Prefeitura do Município de Osasco";
 
-    const hasAnyAdjustment = filteredItems.some((item) => {
+    // Filtragem estrita para o relatório: excluir despesas com vínculo de 5 dígitos (formato 00.00),
+    // exceto quando for item alocado do Banco de Projetos.
+    const isBancoProjetoItem = (item: RawBudgetItem) =>
+      item.origem === "Banco de Projetos" ||
+      item.id.startsWith("banco-projeto-") ||
+      Boolean(item.bancoProjetoKey) ||
+      item.programa === "Banco de Projetos";
+
+    const reportEligibleItems = filteredItems.filter((item) => {
+      const isBP = isBancoProjetoItem(item);
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "";
+      return !shouldExcludeReportVinculo(vinculo, isBP);
+    });
+
+    const hasAnyAdjustment = reportEligibleItems.some((item) => {
       const original = originalValuesById.get(item.id) ?? item.valLdo;
       return Math.abs(item.valLoa - original) > 0.001 || (item.valorReajuste ?? 0) > 0 || (item.valorAditamento ?? 0) > 0;
     });
 
-    // Totalizadores globais das ações filtradas
+    // Totalizadores globais do relatório recalculados sobre os itens elegíveis
     const totalLdo = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
-    const totalLoa = filteredItems.reduce((acc, i) => acc + i.valLoa, 0);
-    const totalReajuste = filteredItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
-    const totalAditamento = filteredItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
-    const totalGeral = filteredItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0);
+    const totalLoa = reportEligibleItems.reduce((acc, i) => acc + i.valLoa, 0);
+    const totalReajuste = reportEligibleItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
+    const totalAditamento = reportEligibleItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
+    const totalGeral = reportEligibleItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0);
 
     if (selectedScope === "todos") {
       // Relatório Completo dividido em 2 Seções Visuais com Subtotais: 1. Contratos e 2. Demais Despesas
-      const contratoItems = filteredItems.filter(isItemContrato);
-      const demaisItems = filteredItems.filter((i) => !isItemContrato(i));
+      const contratoItems = reportEligibleItems.filter(isItemContrato);
+      const demaisItems = reportEligibleItems.filter((i) => !isItemContrato(i));
 
       const contratoGroups = buildReportGroupsFromItems(contratoItems);
       const demaisGroups = buildReportGroupsFromItems(demaisItems);
@@ -2591,8 +2607,8 @@ export function AnaliseLoaView() {
     } else {
       // Relatório Específico de Escopo Único (Apenas Contratos OU Apenas Demais)
       const targetItems = selectedScope === "contratos"
-        ? filteredItems.filter(isItemContrato)
-        : filteredItems.filter((i) => !isItemContrato(i));
+        ? reportEligibleItems.filter(isItemContrato)
+        : reportEligibleItems.filter((i) => !isItemContrato(i));
 
       const scopeTitle = selectedScope === "contratos"
         ? "Contratos e Projetos Iniciados"

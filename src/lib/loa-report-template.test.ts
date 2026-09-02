@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateLoaReportHtml, type LoaReportData } from "./loa-report-template";
+import { generateLoaReportHtml, shouldExcludeReportVinculo, type LoaReportData } from "./loa-report-template";
 
 describe("LoaReportTemplate", () => {
   it("deve gerar relatório com 2 seções segregadas de Contratos e Demais Despesas", () => {
@@ -140,5 +140,24 @@ describe("LoaReportTemplate", () => {
     expect(html).toContain("Apenas Contratos");
     expect(html).toContain("Ação Específica");
     expect(html).toContain("Total Geral");
+  });
+
+  it("deve excluir vínculos no formato 00.00 (5 caracteres) exceto se for Banco de Projetos", () => {
+    // Vínculo no formato 00.00 (5 caracteres) normal -> DEVE excluir
+    expect(shouldExcludeReportVinculo("01.00", false)).toBe(true);
+    expect(shouldExcludeReportVinculo("99.99", false)).toBe(true);
+    expect(shouldExcludeReportVinculo(" 02.10 ", false)).toBe(true);
+
+    // Banco de projetos com formato 00.00 -> NÃO deve excluir
+    expect(shouldExcludeReportVinculo("01.00", true)).toBe(false);
+
+    // Vínculos completos com 11 caracteres (ex: 01.110.0000) -> NÃO deve excluir
+    expect(shouldExcludeReportVinculo("01.110.0000", false)).toBe(false);
+    expect(shouldExcludeReportVinculo("02.500.0000", false)).toBe(false);
+
+    // Outros formatos (ex: apenas 01 ou Tesouro / Próprio) -> NÃO deve excluir
+    expect(shouldExcludeReportVinculo("01", false)).toBe(false);
+    expect(shouldExcludeReportVinculo("Tesouro / Próprio", false)).toBe(false);
+    expect(shouldExcludeReportVinculo(undefined, false)).toBe(false);
   });
 });

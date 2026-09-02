@@ -11,6 +11,17 @@ export interface LoaReportItem {
   valorTotal?: number;
 }
 
+/**
+ * Retorna true se o vínculo fornecido deve ser excluído do relatório (exatamente 5 dígitos no formato 00.00 / XX.XX),
+ * a menos que seja um item proveniente do Banco de Projetos.
+ */
+export function shouldExcludeReportVinculo(vinculo?: string, isBancoProjeto = false): boolean {
+  if (isBancoProjeto) return false;
+  if (!vinculo) return false;
+  const cleanVinculo = vinculo.trim();
+  return /^\d{2}\.\d{2}$/.test(cleanVinculo);
+}
+
 export interface LoaReportGroup {
   groupCode?: string;
   groupTitle: string;
