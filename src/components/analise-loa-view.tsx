@@ -1002,8 +1002,8 @@ export function AnaliseLoaView() {
           if (!r || r.length === 0) continue;
 
           const peca = String(r[columns.piece] || "").trim().toUpperCase();
-          // Ignorar linhas da peça LDO para que não sejam geradas linhas de natureza da despesa a partir da LDO
-          if (peca === "LDO") continue;
+          // Ignora linhas de totalização ou vazias sem identificador de peça
+          if (peca !== "LOA" && peca !== "LDO") continue;
 
           const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
           let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
@@ -1107,7 +1107,11 @@ export function AnaliseLoaView() {
           }
 
           const item = loaMap.get(groupKey)!;
-          item.valLoa += valor;
+          if (peca === "LDO") {
+            item.valLdo += valor;
+          } else {
+            item.valLoa += valor;
+          }
         }
 
         // Guardar cópia original inalterada para comparação em modificações
@@ -1813,6 +1817,7 @@ export function AnaliseLoaView() {
         valorTotal: 0,
       };
       group.children.push(item);
+      group.valLdo += item.valLdo || 0;
       group.valLoa += item.valLoa;
       group.valorReajuste += item.valorReajuste ?? 0;
       group.valorAditamento += item.valorAditamento ?? 0;
@@ -1821,9 +1826,11 @@ export function AnaliseLoaView() {
     });
 
     groups.forEach((group) => {
-      const ldoData = getLdoPlanningForGroup(group);
-      if (ldoData?.custoFinanceiro2027 !== undefined && ldoData.custoFinanceiro2027 > 0) {
-        group.valLdo = ldoData.custoFinanceiro2027;
+      if (group.valLdo === 0) {
+        const ldoData = getLdoPlanningForGroup(group);
+        if (ldoData?.custoFinanceiro2027 !== undefined && ldoData.custoFinanceiro2027 > 0) {
+          group.valLdo = ldoData.custoFinanceiro2027;
+        }
       }
     });
 
