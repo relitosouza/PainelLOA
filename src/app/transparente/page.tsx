@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useDataSource, DataSourceToggle } from "@/components/data-source-toggle";
 import type { DashboardData, BudgetRow } from "@/types/loa";
-import { getPrimaryPageLinks } from "@/lib/page-navigation";
 
 export default function TransparentePage() {
   const statsRef = useRef<HTMLDivElement>(null);
@@ -95,7 +95,6 @@ export default function TransparentePage() {
 
   const totalOfThesePct = saudePct + educacaoPct + obrasPct + mobilidadePct + socialPct;
   const otherPct = Math.max(0, 100 - totalOfThesePct);
-  const primaryLinks = getPrimaryPageLinks("transparente");
 
   const topInvestments = useMemo(() => {
     if (!isReal) {
@@ -136,7 +135,6 @@ export default function TransparentePage() {
 
   return (
     <>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
       <style dangerouslySetInnerHTML={{
         __html: `
         .material-symbols-outlined {
@@ -180,9 +178,11 @@ export default function TransparentePage() {
           {/* Hero Section */}
           <section className="relative min-h-[600px] flex items-center overflow-hidden">
             <div className="absolute inset-0 z-0">
-              <img
+              <Image
                 className="w-full h-full object-cover"
                 alt="A wide panoramic photograph of Osasco, Brazil"
+                fill
+                priority
                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuCRJUoFmAKsZLZsk0IuNN37qjGMZvQJn2NxWyHh0Ljk-dfxYGbtXqtYSq8gclSqJhFTc4dMxhNedyofCfuSw_YfGwjHq1_0r0EL6pM89Pdhx1v_aVjuRjfplHBbrL8fXMHFMxa9bmi9yF6vkzULY2WnwwxoYwHdTPql3YFlZROk0YHADYtAyEGPvKYdAocajiSYMbbNiutOUu0bxtgKIEW5uIkR27ADvRNfs77siRYZODjpLgxLd5JIFTweKPE9uJ9u3Q"
               />
               <div className="absolute inset-0 hero-gradient"></div>

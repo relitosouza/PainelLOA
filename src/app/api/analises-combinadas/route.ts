@@ -8,18 +8,18 @@ export async function GET(req: NextRequest) {
     const exercicio = exercicioParam ? parseInt(exercicioParam) : undefined;
 
     // 1. Verificar disponibilidade das bases
-    const countLdo = await (db as any).ldoReceita.count({
+    const countLdo = await db.ldoReceita.count({
       where: exercicio ? { exercicio } : {},
     });
 
-    const countReceitaArrecadada = await (db as any).receitaArrecadada.count({
+    const countReceitaArrecadada = await db.receitaArrecadada.count({
       where: exercicio ? { exercicio } : {},
     });
 
-    const countLoaDespesas = await (db as any).budgetRecord.count();
+    const countLoaDespesas = await db.budgetRecord.count();
 
     // LOA Receitas: podemos verificar no ArquivoImportacao ou se existe alguma tabela futura
-    const countLoaReceitas = await (db as any).arquivoImportacao.count({
+    const countLoaReceitas = await db.arquivoImportacao.count({
       where: {
         tipoImportacao: "LOA_RECEITAS",
         status: { in: ["CONCLUIDO", "CONCLUIDO_COM_ALERTAS"] },
@@ -51,23 +51,23 @@ export async function GET(req: NextRequest) {
 
     // 2. Obter totais para cálculos rápidos de fallback / resumo
     // LOA Despesas
-    const totalDespesaLoaRaw = await (db as any).budgetRecord.aggregate({
+    const totalDespesaLoaRaw = await db.budgetRecord.aggregate({
       _sum: { value: true },
     });
     const totalDespesaLoa = Number(totalDespesaLoaRaw._sum?.value || 0);
 
     // LDO Receitas
-    const ldoRecords = await (db as any).ldoReceita.findMany({
+    const ldoRecords = await db.ldoReceita.findMany({
       where: exercicio ? { exercicio } : {},
     });
     const totalReceitaLdo = ldoRecords.reduce(
-      (sum: number, r: any) => sum + Number(r.valorTotalLdo || 0),
+      (sum, r) => sum + Number(r.valorTotalLdo || 0),
       0
     );
 
     // LDO por Vínculo consolidado
     const ldoPorVinculoMap: Record<string, { vinculo: string; descricao: string; totalLdo: number }> = {};
-    ldoRecords.forEach((r: any) => {
+    ldoRecords.forEach((r) => {
       const v = r.vinculo || "SEM_VINCULO";
       if (!ldoPorVinculoMap[v]) {
         ldoPorVinculoMap[v] = { vinculo: v, descricao: r.descricaoVinculo || "Sem Descrição", totalLdo: 0 };
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Receita Arrecadada por Vínculo e Média Histórica / Exequível
-    const arrecadadaRecords = await (db as any).receitaArrecadada.findMany({
+    const arrecadadaRecords = await db.receitaArrecadada.findMany({
       select: {
         vinculo: true,
         valor: true,
@@ -85,15 +85,15 @@ export async function GET(req: NextRequest) {
     });
 
     const arrecadadaTotal = arrecadadaRecords.reduce(
-      (sum: number, r: any) => sum + Number(r.valor || 0),
+      (sum, r) => sum + Number(r.valor || 0),
       0
     );
 
-    const exerciciosDisponiveis = [...new Set(arrecadadaRecords.map((r: any) => r.exercicio))];
+    const exerciciosDisponiveis = [...new Set(arrecadadaRecords.map((r) => r.exercicio))];
     const qtdAnosArrecadacao = Math.max(1, exerciciosDisponiveis.length);
 
     const arrecadadaPorVinculoMap: Record<string, { totalArrecadado: number; mediaHistorica: number }> = {};
-    arrecadadaRecords.forEach((r: any) => {
+    arrecadadaRecords.forEach((r) => {
       const v = r.vinculo || "SEM_VINCULO";
       if (!arrecadadaPorVinculoMap[v]) {
         arrecadadaPorVinculoMap[v] = { totalArrecadado: 0, mediaHistorica: 0 };
@@ -162,8 +162,8 @@ export async function GET(req: NextRequest) {
         _sum: { valorFinalPldo27: true },
       });
       totalIniciativas = Number(totalIniciativasRaw._sum?.valorFinalPldo27 || 0);
-    } catch (iniciativaErr: any) {
-      console.error("Erro ao consultar IniciativaEstrategica:", iniciativaErr?.message || iniciativaErr);
+    } catch (iniciativaErr) {
+      console.error("Erro ao consultar IniciativaEstrategica:", iniciativaErr instanceof Error ? iniciativaErr.message : iniciativaErr);
     }
 
     return NextResponse.json({
@@ -189,8 +189,8 @@ export async function GET(req: NextRequest) {
         botao4: tabelaBotao4,
       },
     });
-  } catch (error: any) {
-    console.error("Erro na API de Análises Combinadas:", error?.message || error);
-    return NextResponse.json({ error: "Erro interno ao processar Análises Combinadas", details: String(error) }, { status: 500 });
+  } catch (error) {
+    console.error("Erro na API de Análises Combinadas:", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Erro interno ao processar Análises Combinadas", details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

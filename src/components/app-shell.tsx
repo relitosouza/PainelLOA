@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DashboardView } from "./dashboard-view";
 import { ImportView } from "./import-view";
 import { PresentationDashboard } from "./presentation-dashboard";
@@ -12,9 +13,11 @@ import { ExpenseDetailView } from "./expense-detail-view";
 import { AnaliseLoaView } from "./analise-loa-view";
 import { ElaboracaoLoaView } from "./elaboracao-loa-view";
 import { AssistenteLoaPage } from "./assistente-loa-page";
+import { UserProfileMenu } from "./user-profile-menu";
 import { EMPTY_FILTERS, type FilterState } from "./filters";
 import { FIELDS } from "@/types/loa";
 import { getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
+import { getActiveUser, setActiveUser } from "@/lib/user-session";
 
 export function AppShell({ view }: { view: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -25,8 +28,32 @@ export function AppShell({ view }: { view: string }) {
     Object.fromEntries(FIELDS.map((field) => [field, []]))
   );
   const [navigationSections, setNavigationSections] = useState<NavigationSection[]>(getNavigationSections());
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const sidebarExpanded = isDesktop ? !sidebarCollapsed : mobileOpen;
   const sidebarId = "primary-sidebar";
+
+  useEffect(() => {
+    // Validar se o usuário está logado
+    const user = getActiveUser();
+    if (!user) {
+      // Tentar validar via API /api/auth/me
+      fetch("/api/auth/me")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.authenticated && data.user) {
+            setActiveUser(data.user);
+            setCheckingAuth(false);
+          } else {
+            window.location.href = "/login";
+          }
+        })
+        .catch(() => {
+          window.location.href = "/login";
+        });
+    } else {
+      setCheckingAuth(false);
+    }
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(min-width: 768px)");
@@ -57,6 +84,17 @@ export function AppShell({ view }: { view: string }) {
 
   const enabledNavigationKeys = new Set(navigationSections.flatMap((section) => section.pages));
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen w-full flex flex-col justify-center items-center bg-surface-container-low p-6 font-body">
+        <div className="flex flex-col items-center gap-4 animate-in fade-in duration-200">
+          <div className="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-on-surface-variant">Carregando painel...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (view === "apresentacao") return <PresentationDashboard />;
 
   return (
@@ -86,9 +124,11 @@ export function AppShell({ view }: { view: string }) {
             {sidebarCollapsed ? "menu" : "menu_open"}
           </button>
           <div className="flex items-center gap-2 shrink-0">
-            <img
+            <Image
               src="/brasao.png"
               alt="Brasão de Osasco"
+              width={36}
+              height={36}
               className="h-9 w-auto object-contain"
             />
             <div className="text-lg font-headline font-bold text-primary hidden sm:block">
@@ -101,13 +141,8 @@ export function AppShell({ view }: { view: string }) {
             {enabledNavigationKeys.has("assistente-loa") && <Link className={`pb-1 transition-colors ${view === "assistente-loa" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/assistente-loa">Assistente LOA</Link>}
           </div>
         </div>
-        <div className="flex gap-4 items-center">
-          <span className="material-symbols-outlined text-primary">notifications</span>
-          <img
-            alt="User profile"
-            className="w-8 h-8 rounded-full object-cover"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBDE1_mK6eZnevHIDNtgh5q3IUhCSThIhS8ajWhcpFEWZ6p4rME6G5piJ1vBNDa7l7igIUmmU0CrPBMTqJebycoX6lBIkHw5Jb49wW6sfW8Va3A0O3X__PywcPv5dII7JtvB_AaP3LALiJRMWqdFyIHz1oJ-wUjrfArWRvC0H1rYqff38KRYi7dZy-VTLQeHEADdDj8-hi7Q8Rfb2j9O57KadrXyvRqCyeLEgNZy0t-BiJe20UdvdFxw"
-          />
+        <div className="flex gap-3 items-center">
+          <UserProfileMenu />
         </div>
       </nav>
 

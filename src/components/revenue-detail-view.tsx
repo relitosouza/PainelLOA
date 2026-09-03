@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Image from "next/image";
 
 interface ResumoData {
   totalArrecadado: number;
@@ -319,9 +320,11 @@ export function RevenueDetailView() {
             </div>
           </div>
           <div className="w-full md:w-80 h-64 relative rounded-xl overflow-hidden border border-white/10 group">
-            <img 
+            <Image 
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
-              alt="AI Insight" 
+              alt="AI Insight"
+              width={320}
+              height={256} 
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQJIBwRHVQrO3jK83ot_kWkKT9hrtR2m0SruKrKFJt0z_-fYAB4UDJtfsk07LTFBs4l_aZYT687FthxbF7USVqV0byj1fi2d2V7Ovd5k56glm_sdtgQwnXyTNYQNWNOIRgYcazcvGhPTsfOW-z4A-dO3qYnrIuRq3igYF8P6MevEPKQFz-iB21G9Woftbpedkl5Lk2JyXvsI8lqZct97p69VdbZjXDIkeM3JfFmdf0rOPoU1f9Rm6QEyfg0rmZLDoSEw-suHK7swMw" 
             />
             <div className="absolute inset-0 bg-gradient-to-t from-inverse-surface via-transparent to-transparent"></div>

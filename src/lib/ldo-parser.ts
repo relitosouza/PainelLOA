@@ -44,7 +44,7 @@ export function parseLdoWorkbook(buffer: ArrayBuffer): LdoParseResult {
 
   // Extrai as linhas brutas (raw: true) para que a coluna de valor venha como número puro (Float)
   // e extrai as linhas formatadas (raw: false) para preservar strings puras (Apelido com zeros à esquerda)
-  const rowsRaw = XLSX.utils.sheet_to_json(sheet, { raw: true, header: 1 }) as unknown as any[][];
+  const rowsRaw = XLSX.utils.sheet_to_json(sheet, { raw: true, header: 1 }) as unknown as unknown[][];
   const rowsFormatted = XLSX.utils.sheet_to_json(sheet, { raw: false, header: 1 }) as unknown as string[][];
 
   if (!rowsRaw || rowsRaw.length === 0) {

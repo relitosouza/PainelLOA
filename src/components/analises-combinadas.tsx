@@ -32,8 +32,6 @@ interface TableRow {
 
 export function AnalisesCombinadasSection() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<number | null>(1); // Botão 1 selecionado por padrão
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const [statusBases, setStatusBases] = useState<StatusBases>({
     loaDespesas: { existe: true, count: 100, status: "DISPONIVEL" },
@@ -61,7 +59,6 @@ export function AnalisesCombinadasSection() {
   useEffect(() => {
     async function fetchData() {
       try {
-        setLoading(true);
         const res = await fetch("/api/analises-combinadas");
         if (!res.ok) throw new Error("Falha ao carregar dados das Análises Combinadas.");
         const json = await res.json();
@@ -70,8 +67,6 @@ export function AnalisesCombinadasSection() {
         if (json.tabelas) setTabelas(json.tabelas);
       } catch (err) {
         console.warn("Usando estado fallback para Análises Combinadas:", err);
-      } finally {
-        setLoading(false);
       }
     }
     fetchData();
@@ -217,8 +212,8 @@ export function AnalisesCombinadasSection() {
 
     if (availability.status === "INDISPONIVEL") {
       return (
-        <div className="glass-card p-8 text-center border-l-4 border-l-amber-500 animate-fade-in mt-6 bg-surface">
-          <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+        <div className="glass-card p-8 text-center border border-amber-300 bg-amber-50/20 rounded-2xl animate-fade-in mt-6 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-3">
             <span className="material-symbols-outlined text-2xl">warning</span>
           </div>
           <h4 className="text-base font-bold text-on-surface mb-1">
@@ -227,8 +222,8 @@ export function AnalisesCombinadasSection() {
           <p className="text-sm text-on-surface-variant max-w-lg mx-auto mb-4">
             {availability.warning}
           </p>
-          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-md bg-surface-container text-on-surface-variant border border-outline-variant">
-            <span className="material-symbols-outlined text-[16px]">info</span>
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3.5 py-1.5 rounded-xl bg-surface text-on-surface-variant border border-outline-variant shadow-2xs">
+            <span className="material-symbols-outlined text-[16px] text-amber-700">info</span>
             Bases requeridas: {currentConfig?.bases}
           </div>
         </div>

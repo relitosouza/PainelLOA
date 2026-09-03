@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getNavigationLinks, getNavigationSections, NAVIGATION_SETTINGS_STORAGE_KEY, type NavigationSection } from "@/lib/page-navigation";
+import { clearActiveUser } from "@/lib/user-session";
 import type { FilterState } from "./filters";
 
 export function Sidebar({
@@ -272,6 +273,23 @@ export function Sidebar({
           <span className="material-symbols-outlined text-[20px]">help</span>
           <span className={`${collapsed ? "md:hidden" : ""}`}>Central de Ajuda</span>
         </a>
+        <button
+          type="button"
+          onClick={async () => {
+            setMobileOpen(false);
+            if (window.confirm("Deseja realmente sair e encerrar a sessão atual?")) {
+              try {
+                await fetch("/api/auth/logout", { method: "POST" });
+              } catch {}
+              clearActiveUser();
+              window.location.href = "/login";
+            }
+          }}
+          className="w-full flex items-center gap-3 py-2 px-4 rounded-lg text-sm font-medium transition-all text-rose-300 hover:bg-rose-500/20 hover:text-rose-100 cursor-pointer text-left"
+        >
+          <span className="material-symbols-outlined text-[20px] text-rose-400">logout</span>
+          <span className={`${collapsed ? "md:hidden" : ""}`}>Sair do Sistema</span>
+        </button>
       </div>
     </aside>
   );

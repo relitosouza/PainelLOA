@@ -1,21 +1,30 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
-import { currency, integer, percent } from "@/lib/format";
+import { currency, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
-import { AddElementExpenseDialog } from "./add-element-expense-dialog";
+import { AddElementExpenseDialog, VINCULO_OPTIONS, formatVinculoComAplicacao } from "./add-element-expense-dialog";
 import {
   AnaliseLoaCardsConfigDialog,
   DEFAULT_LAYOUT_CONFIG,
   type AnaliseLoaLayoutConfig,
 } from "./analise-loa-cards-config-dialog";
+import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
+import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
+import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
+import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
+import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
+import { openLoaReportWindow, shouldExcludeReportVinculo, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
+import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
   secretaria: string[];
   orgao: string[];
   unidade: string[];
+  funcao: string[];
+  subfuncao: string[];
   programa: string[];
   tipoAcao: string[];
   acao: string[];
@@ -26,6 +35,8 @@ export interface TechnicalFilterState {
   elemento: string[];
   subelemento: string[];
   processo: string[];
+  contrato: string[];
+  observacao: string[];
   search: string;
 }
 
@@ -33,6 +44,8 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   secretaria: [],
   orgao: [],
   unidade: [],
+  funcao: [],
+  subfuncao: [],
   programa: [],
   tipoAcao: [],
   acao: [],
@@ -43,6 +56,8 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   elemento: [],
   subelemento: [],
   processo: [],
+  contrato: [],
+  observacao: [],
   search: "",
 };
 
@@ -62,8 +77,17 @@ export interface RawBudgetItem {
   elemento: string;
   subelemento: string;
   processo: string;
+  funcao?: string;
+  subfuncao?: string;
+  programaticaLoa?: string;
+  codigoAplicacao?: string;
+  projetoIniciado?: string;
+  contrato?: string;
+  observacao?: string;
   valLdo: number;
   valLoa: number;
+  valorReajuste?: number;
+  valorAditamento?: number;
   origem?: "Banco de Projetos";
   bancoProjetoKey?: string;
 }
@@ -79,12 +103,44 @@ interface EditableGroup {
   children: RawBudgetItem[];
   valLdo: number;
   valLoa: number;
+  valorReajuste: number;
+  valorAditamento: number;
+  valorTotal: number;
 }
 
-type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "diff" | "status" | "adjusted";
+type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "valorTotal" | "diff" | "status" | "adjusted";
+type AnalyticalColumn = TableSortColumn;
 type NaturezaOption = { codigo: string; nome: string };
+type NatureValidationStatus = "Pendente" | "Parcial" | "Validada";
 type Iniciativa = { id?: string | number; acao?: string; secretaria?: string; programa?: string; despesa?: string; dsIniciativa?: string; programaticaLdo?: string; vinculo?: string; valorFinalPldo27?: number };
 const ADDED_EXPENSES_STORAGE_KEY = "painel_loa_added_expenses_v1";
+const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required?: boolean }> = [
+  { key: "acao", label: "Ação", required: true },
+  { key: "elemento", label: "Elemento de Despesa" },
+  { key: "valLdo", label: "Valor LDO" },
+  { key: "valLoa", label: "Valor LOA (Vigente)" },
+  { key: "valorReajuste", label: "Valor Reajuste" },
+  { key: "valorAditamento", label: "Valor Aditamento" },
+  { key: "valorTotal", label: "Valor Total" },
+  { key: "diff", label: "Diferença" },
+  { key: "status", label: "Status" },
+  { key: "adjusted", label: "Validação" },
+];
+
+const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
+  item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0);
+
+const getColumnsPreferenceKey = (user: ActiveUser) => {
+  const identity = user.id || user.email || user.nome || "usuario";
+  const safeIdentity = identity.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 80);
+  return `analise_loa_columns_${safeIdentity || "usuario"}`;
+};
+
+const getNatureValidationStatus = (validatedCount: number, totalCount: number): NatureValidationStatus => {
+  if (totalCount > 0 && validatedCount === totalCount) return "Validada";
+  if (validatedCount > 0) return "Parcial";
+  return "Pendente";
+};
 
 const ACTION_CANONICAL_MAP: Record<string, string> = {
   "0.001": "0.001 - Serviços da Dívida Pública",
@@ -153,7 +209,7 @@ const ACTION_CANONICAL_MAP: Record<string, string> = {
 
 function normalizeActionLabel(value: string) {
   if (!value) return value;
-  const clean = value.trim();
+  const clean = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   const match = clean.match(/^(\d+[\.\d]*|\d+)/);
   const code = match ? match[1] : null;
   if (code && ACTION_CANONICAL_MAP[code]) {
@@ -164,7 +220,7 @@ function normalizeActionLabel(value: string) {
 
 function normalizeProgramLabel(value: string) {
   if (!value) return value;
-  const program = value.trim();
+  const program = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
   return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
 }
@@ -219,22 +275,37 @@ export function AnaliseLoaView() {
   const [dataLoadState, setDataLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [dataLoadError, setDataLoadError] = useState("");
   const [dataReloadKey, setDataReloadKey] = useState(0);
-  const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(0);
+  const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
-  // Estados da Tree View, Tabela, Alterações e Justificativas
+  const loaExpectativaTotal = useMemo(() => {
+    if (filters.secretaria.length === 0) return LOA_EXPECTATIVA_TOTAL;
+    const selected = new Set(filters.secretaria.map(normalizeLoaExpectativaSecretaria));
+    return LOA_EXPECTATIVA.reduce((total, item) => {
+      const name = normalizeLoaExpectativaSecretaria(item.secretaria);
+      return total + (selected.has(name) ? item.valor : 0);
+    }, 0);
+  }, [filters.secretaria]);
+
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
   const [expandedEditGroups, setExpandedEditGroups] = useState<Set<string>>(new Set());
   const [expandedNatureGroups, setExpandedNatureGroups] = useState<Set<string>>(new Set());
+  const [collapsedLdoPlanningGroups, setCollapsedLdoPlanningGroups] = useState<Set<string>>(new Set());
   const [tableSearch, setTableSearch] = useState("");
-  const [openFilterKey, setOpenFilterKey] = useState<string | null>(null);
-  const [filterSearchQuery, setFilterSearchQuery] = useState<Record<string, string>>({});
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(10);
   const [tableSort, setTableSort] = useState<{ column: TableSortColumn; direction: "asc" | "desc" }>({ column: "acao", direction: "asc" });
   const [natureSort, setNatureSort] = useState<{ column: "natureza" | "subelementos" | "valLdo" | "valLoa" | "diff" | "status"; direction: "asc" | "desc" }>({ column: "natureza", direction: "asc" });
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [scopeTab, setScopeTab] = useState<"todos" | "contratos" | "demais">("todos");
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
+  const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
+    () => new Set(ANALYTICAL_COLUMNS.map((column) => column.key))
+  );
+  const [columnsSaveState, setColumnsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
@@ -254,11 +325,17 @@ export function AnaliseLoaView() {
   const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
   const [newExpenseCodigoAplicacao, setNewExpenseCodigoAplicacao] = useState("");
   const [newExpenseProcesso, setNewExpenseProcesso] = useState("");
+  const [newExpenseProjetoIniciado, setNewExpenseProjetoIniciado] = useState("");
+  const [newExpenseObservacao, setNewExpenseObservacao] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
   // Estado para Edição de Subelemento via Modal
   const [editingSubelementItem, setEditingSubelementItem] = useState<RawBudgetItem | null>(null);
   const [editSubelementName, setEditSubelementName] = useState("");
+  const [editSubelementVinculo, setEditSubelementVinculo] = useState("");
+  const [editSubelementCodigoAplicacao, setEditSubelementCodigoAplicacao] = useState("");
   const [editSubelementProcesso, setEditSubelementProcesso] = useState("");
+  const [editSubelementProjetoIniciado, setEditSubelementProjetoIniciado] = useState("");
+  const [editSubelementObservacao, setEditSubelementObservacao] = useState("");
   const [editSubelementValor, setEditSubelementValor] = useState("");
   // Estado para Rastrear Subelementos/Dotações Excluídos
   const [removedRawItems, setRemovedRawItems] = useState<RawBudgetItem[]>([]);
@@ -266,10 +343,104 @@ export function AnaliseLoaView() {
   const editSubelementDialogRef = useRef<HTMLDivElement>(null);
   const addNatureTriggerRef = useRef<HTMLElement | null>(null);
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
+  // Usuário Ativo
+  const [currentUser, setCurrentUser] = useState<ActiveUser>(() => getActiveUser() || DEFAULT_USER);
+
+  useEffect(() => {
+    setCurrentUser(getActiveUser() || DEFAULT_USER);
+    const handleUserChange = () => setCurrentUser(getActiveUser() || DEFAULT_USER);
+    window.addEventListener("painel-loa-user-change", handleUserChange);
+    return () => window.removeEventListener("painel-loa-user-change", handleUserChange);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const preferenceKey = getColumnsPreferenceKey(currentUser);
+    const loadColumnsPreference = async () => {
+      try {
+        const response = await fetch(`/api/configuracoes/layout?chave=${encodeURIComponent(preferenceKey)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data.valor) && isMounted) {
+            const savedColumns = new Set<AnalyticalColumn>(data.valor.filter((column: unknown): column is AnalyticalColumn =>
+              typeof column === "string" && ANALYTICAL_COLUMNS.some((available) => available.key === column)
+            ));
+            ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
+            setVisibleTableColumns(savedColumns);
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn("Falha ao carregar colunas salvas do usuário:", error);
+      }
+
+      try {
+        const saved = localStorage.getItem(`${preferenceKey}_v1`);
+        if (saved && isMounted) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const savedColumns = new Set<AnalyticalColumn>(parsed.filter((column: unknown): column is AnalyticalColumn =>
+              typeof column === "string" && ANALYTICAL_COLUMNS.some((available) => available.key === column)
+            ));
+            ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
+            setVisibleTableColumns(savedColumns);
+          }
+        }
+      } catch { }
+    };
+
+    loadColumnsPreference();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  const saveColumnsPreference = async () => {
+    const columns = ANALYTICAL_COLUMNS.filter((column) => visibleTableColumns.has(column.key)).map((column) => column.key);
+    const preferenceKey = getColumnsPreferenceKey(currentUser);
+    setColumnsSaveState("saving");
+    try {
+      localStorage.setItem(`${preferenceKey}_v1`, JSON.stringify(columns));
+      const response = await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: preferenceKey, valor: columns }),
+      });
+      if (!response.ok) throw new Error("Falha ao salvar preferência");
+      setColumnsSaveState("saved");
+    } catch (error) {
+      console.error("Erro ao salvar colunas do usuário:", error);
+      setColumnsSaveState("error");
+    }
+  };
+
+  // Verifica se o usuário atual tem permissão para validar dotações da secretaria
+  const canUserValidateSecretaria = (secretariaName?: string) => {
+    if (currentUser.papel === "ADMIN" || currentUser.papel === "PLANEJAMENTO") return true;
+    if (currentUser.papel === "LEITURA") return false;
+    if (currentUser.papel === "TECNICO_SECRETARIA") {
+      if (!currentUser.codigoSecretaria && !currentUser.secretaria) return true;
+      const userCod = currentUser.codigoSecretaria?.trim();
+      const userSec = currentUser.secretaria?.trim().toLowerCase();
+      if (!secretariaName) return true;
+      const itemSec = secretariaName.trim().toLowerCase();
+
+      if (userCod && (itemSec.startsWith(userCod) || itemSec.includes(` ${userCod} `) || itemSec.startsWith(`${userCod} -`) || itemSec.startsWith(`${userCod}.`))) return true;
+      if (userSec && (itemSec.includes(userSec) || userSec.includes(itemSec))) return true;
+      return false;
+    }
+    return false;
+  };
+
   // Estado para Rastrear Linhas Validadas pelo Usuário (sem alteração)
   const [validatedRows, setValidatedRows] = useState<Record<string, boolean>>({});
 
-  const toggleValidateRow = async (rowId: string) => {
+  const toggleValidateRow = async (rowId: string, itemSecretaria?: string) => {
+    if (itemSecretaria && !canUserValidateSecretaria(itemSecretaria)) {
+      alert(`Acesso Restrito: Seu perfil (${currentUser.cargo || currentUser.nome}) possui permissão para validar somente dotações da sua secretaria (${currentUser.secretaria || currentUser.codigoSecretaria || "Setorial"}).`);
+      return;
+    }
+
     const nextState = !validatedRows[rowId];
     const updated = { ...validatedRows, [rowId]: nextState };
     if (!nextState) {
@@ -504,10 +675,12 @@ export function AnaliseLoaView() {
     const acaoCodeMatch = acaoClean.match(/^(\d+[\.\d]*|\d+)/);
     const acaoCode = acaoCodeMatch ? acaoCodeMatch[1] : acaoClean;
 
+    type LdoItemMatch = { indicador?: string; produto?: string; unidMedida?: string; custoFisico2027?: number; custoFinanceiro2027?: number };
     const dataIndexes = ldoPlanningJson as {
-      bySecProgAcao: Record<string, any>;
-      byProgAcao: Record<string, any>;
-      byAcao: Record<string, any>;
+      bySecProgAcao?: Record<string, LdoItemMatch>;
+      bySecAcao?: Record<string, LdoItemMatch>;
+      byProgAcao?: Record<string, LdoItemMatch>;
+      byAcao?: Record<string, LdoItemMatch>;
     };
 
     // 2. Busca exata por Secretaria + Programa + Ação
@@ -525,7 +698,7 @@ export function AnaliseLoaView() {
 
     // 3. Busca por Secretaria + Ação (útil quando o programa na LOA foi cadastrado diferente da LDO)
     const keySecAcao = `${secCode}|${acaoCode}`;
-    const secAcaoMatch = (dataIndexes as any).bySecAcao?.[keySecAcao];
+    const secAcaoMatch = dataIndexes.bySecAcao?.[keySecAcao];
     if (secAcaoMatch) {
       return {
         indicador: secAcaoMatch.indicador || secAcaoMatch.produto || "Não informado",
@@ -651,17 +824,21 @@ export function AnaliseLoaView() {
     filters.secretaria,
     filters.orgao,
     filters.unidade,
+    filters.funcao,
+    filters.subfuncao,
     filters.programa,
     filters.acao,
     filters.natureza,
     filters.fonteVinculo,
     filters.elemento,
     filters.subelemento,
+    filters.contrato,
+    filters.observacao,
     filters.search,
   ]);
 
   // Estado para controlar a célula em foco de edição (id + campo: 'valLdo' | 'valLoa')
-  const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" | "groupValLoa" } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "groupValLoa" } | null>(null);
   const [tempInputValue, setTempInputValue] = useState<string>("");
 
   const toggleTableSort = (column: TableSortColumn) => {
@@ -759,7 +936,7 @@ export function AnaliseLoaView() {
                   progKey: programStr || groupKey,
                   secretaria: organStr,
                   orgao: organStr,
-                  unidade: unitStr,
+                  unidade: normalizeUnidadeOrcamentaria(organStr, unitStr, programStr || groupKey),
                   programa: programStr,
                   tipoAcao: getActionTypeLabel(actionStr),
                   acao: actionStr,
@@ -779,38 +956,63 @@ export function AnaliseLoaView() {
         } catch (apiError) {
           console.warn("Não foi possível carregar registros via API:", apiError);
         }
-        const res = await fetch("/loa_new.xlsx");
+        const res = await fetch(`/loa_new.xlsx?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+          },
+        });
         if (!res.ok) throw new Error("Planilha não encontrada");
         const buffer = await res.arrayBuffer();
         const wb = XLSX.read(buffer, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-        const headers = rows[0] ?? [];
-        const columnIndex = (name: string) => headers.map((value, index) => String(value ?? "") === name ? index : -1).filter((index) => index >= 0).pop() ?? -1;
+        const headers = (rows[0] ?? []) as unknown[];
+        const findCol = (...aliases: string[]) => {
+          const targets = aliases.map((a) => a.toLowerCase().trim());
+          for (let idx = headers.length - 1; idx >= 0; idx--) {
+            const h = String(headers[idx] ?? "").toLowerCase().trim();
+            if (targets.includes(h)) return idx;
+          }
+          return -1;
+        };
+
         const columns = {
-          piece: columnIndex("Peça Orçamentária"),
-          programKey: columnIndex("Programática_LOA"),
-          organ: columnIndex("secretaria"),
-          unit: columnIndex("unidade"),
-          program: columnIndex("programa"),
-          action: columnIndex("acao"),
-          nature: columnIndex("natureza"),
-          subelement: columnIndex("desc_sub"),
-          process: columnIndex("processo"),
-          value: columnIndex("valor"),
-          link: columnIndex("Vínculo"),
+          piece: findCol("peça orçamentária", "peca orcamentaria", "peça", "peca"),
+          programKey: findCol("programática_loa", "programatica_loa", "programatica"),
+          organ: findCol("secretaria", "orgao", "órgão", "secretaria_nome"),
+          unit: findCol("unidade", "unid", "cd_unid.-ds_unid."),
+          functionName: findCol("funcao", "função", "cd_função-ds_função", "cd_funcao-ds_funcao"),
+          subfunction: findCol("subfuncao", "subfunção", "cd subfunção-ds_subfunção", "cd subfuncao-ds_subfuncao"),
+          program: findCol("programa", "cd_programa-ds_programa"),
+          action: findCol("acao", "ação", "cd_ação-ds_ação", "cd_acao-ds_acao"),
+          nature: findCol("natureza", "natureza de despesa", "natureza da despesa"),
+          subelement: findCol("desc_sub", "desc sub", "subelemento", "descrição subelemento", "descricao subelemento"),
+          process: findCol("processo", "processo administrativo", "proc.", "proc", "processo_administrativo"),
+          value: findCol("valor", "val_loa", "valor loa", "valor_loa"),
+          link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
+          appCode: findCol("codigo_aplicacao", "cod_aplicacao", "codigo de aplicacao", "código de aplicação", "cod. aplicacao", "cod aplicacao", "aplicacao", "aplicação", "cd_aplicacao"),
+          obs: findCol("obs.", "obs", "observacao", "observação", "observacoes", "observações", "justificativa"),
+          iniciado: findCol("contrato", "contratos", "iniciado", "projeto iniciado", "projeto_iniciado", "contrato_iniciado"),
         };
 
         for (let i = 1; i < rows.length; i++) {
           const r = rows[i];
           if (!r || r.length === 0) continue;
 
-          const peca = String(r[columns.piece] || "").trim();
+          const peca = String(r[columns.piece] || "").trim().toUpperCase();
+          // Ignora linhas de totalização ou vazias sem identificador de peça
+          if (peca !== "LOA" && peca !== "LDO") continue;
+
           const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
           let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
           organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
           if (organStr === "01 - CMO" || organStr === "01- CMO") organStr = "01 - CMO";
-          const unitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
+          const rawUnitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
+          const unitStr = normalizeUnidadeOrcamentaria(organStr, rawUnitStr, progKey);
+          const functionStr = columns.functionName >= 0 ? String(r[columns.functionName] || "").trim().replace(/^\.+/, "") : "";
+          const subfunctionStr = columns.subfunction >= 0 ? String(r[columns.subfunction] || "").trim().replace(/^\.+/, "") : "";
           const programStr = normalizeProgramLabel(String(r[columns.program] || "").trim().replace(/^\.+/, ""));
           const actionStr = normalizeActionLabel(String(r[columns.action] || "").trim().replace(/^\.+/, ""));
           if (!organStr && !programStr && !actionStr) continue;
@@ -821,8 +1023,24 @@ export function AnaliseLoaView() {
             .replace(/^4\.90\.52/, "4.4.90.52");
           const subelemStr = String(r[columns.subelement] || "").trim().replace(/^\.+/, "");
           const processStr = String(r[columns.process] || "").trim().replace(/^\.+/, "");
+          const obsStr = columns.obs >= 0 ? String(r[columns.obs] || "").trim() : "";
+          const iniciadoRaw = columns.iniciado >= 0 ? String(r[columns.iniciado] || "").trim().toUpperCase() : "";
+          const projetoIniciado = iniciadoRaw === "SIM" || iniciadoRaw === "NÃO" || iniciadoRaw === "NAO"
+            ? (iniciadoRaw === "NAO" ? "NÃO" : iniciadoRaw)
+            : undefined;
           const valor = Number(r[columns.value]) || 0;
           const realVinculoStr = String(r[columns.link] || "").trim();
+          let extractedFonte = realVinculoStr;
+          let extractedCodigoAplicacao: string | undefined = columns.appCode >= 0 ? String(r[columns.appCode] || "").trim() || undefined : undefined;
+
+          // Se o vínculo vier no formato composto por pontos (ex.: 01.110.0000)
+          if (realVinculoStr.includes(".") && !extractedCodigoAplicacao) {
+            const vParts = realVinculoStr.split(".");
+            if (vParts.length >= 2) {
+              extractedFonte = vParts[0];
+              extractedCodigoAplicacao = vParts.slice(1).join(".");
+            }
+          }
 
           const natCodeClean = natureStr.split("-")[0].trim();
           const natCodeRaw = natCodeClean.replace(/\D/g, "");
@@ -854,9 +1072,10 @@ export function AnaliseLoaView() {
             ? (grupoNome ? `${parts[0]}.${parts[1]} — ${grupoNome}` : `${parts[0]}.${parts[1]} — Grupo`)
             : "Outros";
           const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
-          const vinculo = realVinculoStr || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
+          const vinculo = extractedFonte || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
+          const codApp = extractedCodigoAplicacao;
 
-          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${subelemStr}`;
+          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${codApp || ""}|${processStr}|${subelemStr}`;
 
           if (!loaMap.has(groupKey)) {
             loaMap.set(groupKey, {
@@ -865,24 +1084,34 @@ export function AnaliseLoaView() {
               secretaria: organStr,
               orgao: organStr,
               unidade: unitStr,
+              funcao: functionStr,
+              subfuncao: subfunctionStr,
+              programaticaLoa: progKey,
               programa: programStr,
               tipoAcao: getActionTypeLabel(actionStr),
               acao: actionStr,
               natureza: natureStr,
               fonteVinculo: vinculo,
+              codigoAplicacao: codApp,
               categoriaEconomica: catEcon,
               grupoNatureza: grpNat,
               elemento: elem,
               subelemento: subelemStr,
               processo: processStr || "—",
+              projetoIniciado: projetoIniciado,
+              contrato: projetoIniciado || undefined,
+              observacao: obsStr || undefined,
               valLdo: 0,
               valLoa: 0,
             });
           }
 
           const item = loaMap.get(groupKey)!;
-          if (peca === "LDO") item.valLdo += valor;
-          else if (peca === "LOA") item.valLoa += valor;
+          if (peca === "LDO") {
+            item.valLdo += valor;
+          } else {
+            item.valLoa += valor;
+          }
         }
 
         // Guardar cópia original inalterada para comparação em modificações
@@ -893,16 +1122,16 @@ export function AnaliseLoaView() {
 
         // 1. Carregar despesas adicionadas manualmente
         try {
-          let addedList: RawBudgetItem[] = [];
+          let apiAddedList: RawBudgetItem[] = [];
           const resAdded = await fetch("/api/configuracoes/layout?chave=painel_loa_added_expenses");
           if (resAdded.ok) {
             const data = await resAdded.json();
-            if (data.success && Array.isArray(data.valor)) addedList = data.valor;
+            if (data.success && Array.isArray(data.valor)) apiAddedList = data.valor;
           }
-          if (!addedList.length) {
-            const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
-            if (savedAddedExpenses) addedList = JSON.parse(savedAddedExpenses) as RawBudgetItem[];
-          }
+          const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
+          const localAddedList = savedAddedExpenses ? JSON.parse(savedAddedExpenses) as RawBudgetItem[] : [];
+          const addedById = new Map([...apiAddedList, ...localAddedList].map((item) => [item.id, item]));
+          const addedList = [...addedById.values()];
           if (addedList.length) {
             itemsArray = [...itemsArray, ...addedList.map(item => ({ ...item, tipoAcao: item.tipoAcao || getActionTypeLabel(item.acao) }))];
           }
@@ -936,11 +1165,6 @@ export function AnaliseLoaView() {
             const data = await resCustom.json();
             if (data.success && data.valor) customMap = data.valor;
           }
-          if (!Object.keys(customMap).length) {
-            const savedCustomLoa = localStorage.getItem("painel_loa_custom_edits_v1");
-            if (savedCustomLoa) customMap = JSON.parse(savedCustomLoa);
-          }
-
           if (Object.keys(customMap).length > 0) {
             itemsArray = itemsArray.map((item) => {
               if (customMap[item.id] !== undefined) {
@@ -950,12 +1174,55 @@ export function AnaliseLoaView() {
             });
           }
 
-          const savedJustifications = localStorage.getItem("painel_loa_justifications_v1");
-          if (savedJustifications) {
-            setJustifications(JSON.parse(savedJustifications));
+          let loadedJustifications: Record<string, string> = {};
+          const resJust = await fetch("/api/configuracoes/layout?chave=painel_loa_justifications");
+          if (resJust.ok) {
+            const data = await resJust.json();
+            if (data.success && data.valor) loadedJustifications = data.valor;
+          }
+          if (Object.keys(loadedJustifications).length > 0) {
+            setJustifications(loadedJustifications);
           }
         } catch (e) {
           console.warn("Erro ao carregar edições salvas:", e);
+        }
+
+        // 3.5. Carregar e aplicar edições personalizadas de subelementos (vínculo, código de aplicação, processo, projeto iniciado, observação)
+        try {
+          let subelementEdits: Record<string, Partial<RawBudgetItem>> = {};
+          const resSub = await fetch("/api/configuracoes/layout?chave=painel_loa_subelement_edits");
+          if (resSub.ok) {
+            const data = await resSub.json();
+            if (data.success && data.valor) subelementEdits = data.valor;
+          }
+          if (!Object.keys(subelementEdits).length) {
+            const savedSub = localStorage.getItem("painel_loa_subelement_edits_v1");
+            if (savedSub) subelementEdits = JSON.parse(savedSub);
+          }
+          if (Object.keys(subelementEdits).length > 0) {
+            itemsArray = itemsArray.map((item) => {
+              if (subelementEdits[item.id]) {
+                return { ...item, ...subelementEdits[item.id] };
+              }
+              return item;
+            });
+          }
+        } catch (e) {
+          console.warn("Erro ao carregar customizações de subelementos:", e);
+        }
+
+        // 3.6. Carregar reajustes e aditamentos digitados no detalhamento analítico
+        try {
+          const response = await fetch("/api/configuracoes/layout?chave=painel_loa_reajustes_aditamentos");
+          if (response.ok) {
+            const data = await response.json();
+            const financialEdits = data.success && data.valor
+              ? data.valor as Record<string, { valorReajuste?: number; valorAditamento?: number }>
+              : {};
+            itemsArray = itemsArray.map((item) => ({ ...item, ...(financialEdits[item.id] || {}) }));
+          }
+        } catch (e) {
+          console.warn("Erro ao carregar reajustes e aditamentos:", e);
         }
 
         // 4. Carregar linhas validadas pelo usuário
@@ -1003,10 +1270,14 @@ export function AnaliseLoaView() {
 
   // Obter a lista de itens modificados em relação aos valores da última gravação
   const modifiedItems = useMemo(() => {
-    const savedMap = new Map(savedRawItems.map((item) => [item.id, item.valLoa]));
+    const savedMap = new Map(savedRawItems.map((item) => [item.id, item]));
     return rawItems.filter((item) => {
-      const savedVal = savedMap.get(item.id);
-      return savedVal !== undefined && Math.abs(item.valLoa - savedVal) > 0.001;
+      const saved = savedMap.get(item.id);
+      return saved !== undefined && (
+        Math.abs(item.valLoa - saved.valLoa) > 0.001 ||
+        Math.abs((item.valorReajuste ?? 0) - (saved.valorReajuste ?? 0)) > 0.001 ||
+        Math.abs((item.valorAditamento ?? 0) - (saved.valorAditamento ?? 0)) > 0.001
+      );
     });
   }, [rawItems, savedRawItems]);
 
@@ -1019,18 +1290,6 @@ export function AnaliseLoaView() {
     setSaveModalOpen(true);
   };
 
-  const openAddExpense = (group: EditableGroup, natureza?: string) => {
-    setAddExpenseGroup(group);
-    const nat = natureza || group.children[0]?.natureza || group.children[0]?.elemento || "";
-    setAddElementContext(natureza ? { group, natureza } : null);
-    setNewExpenseNatureza(nat);
-    setNewExpenseSubelemento("");
-    setNewExpenseVinculo("01");
-    setNewExpenseCodigoAplicacao("");
-    setNewExpenseProcesso("");
-    setNewExpenseValor("");
-  };
-
   // Cancelar a edição e reverter todos os campos editados ao valor anterior (antes de abrir o modal)
   const handleCancelSaveModal = () => {
     setRawItems(JSON.parse(JSON.stringify(savedRawItems)));
@@ -1039,10 +1298,10 @@ export function AnaliseLoaView() {
     setSaveModalOpen(false);
   };
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!addExpenseGroup) return;
     const value = parseBr(newExpenseValor);
-    if (value <= 0) return;
+    if (isNaN(value) || value < 0) return;
 
     const naturezaFinal = addElementContext ? addElementContext.natureza : newExpenseNatureza;
     if (!naturezaFinal) return;
@@ -1057,7 +1316,7 @@ export function AnaliseLoaView() {
       progKey: `${addExpenseGroup.acao}|${elemento}|${subelementoFinal}`,
       secretaria: addExpenseGroup.secretaria,
       orgao: template?.orgao || addExpenseGroup.secretaria,
-      unidade: template?.unidade || "01",
+      unidade: template?.unidade || normalizeUnidadeOrcamentaria(addExpenseGroup.secretaria, "001"),
       programa: addExpenseGroup.programa,
       tipoAcao: getActionTypeLabel(addExpenseGroup.acao),
       acao: addExpenseGroup.acao,
@@ -1068,18 +1327,37 @@ export function AnaliseLoaView() {
       elemento,
       subelemento: subelementoFinal,
       processo: newExpenseProcesso.trim() || (newExpenseCodigoAplicacao.trim() ? `CA: ${newExpenseCodigoAplicacao.trim()}` : "—"),
+      codigoAplicacao: newExpenseCodigoAplicacao.trim() || undefined,
+      projetoIniciado: newExpenseProjetoIniciado || undefined,
+      observacao: newExpenseObservacao.trim() || undefined,
       valLdo: 0,
       valLoa: value,
     };
 
+    const existingManualItems = rawItems.filter((i) => i.id.startsWith("manual-") && i.id !== newItem.id);
+    const addedList = [...existingManualItems, newItem];
+
     setRawItems((previous) => [...previous, newItem]);
+    setSavedRawItems((previous) => [...previous, newItem]);
+    setOriginalRawItems((previous) => [...previous, newItem]);
+
     try {
-      const saved = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([...saved, newItem]));
-    } catch {
-      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify([newItem]));
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(addedList));
+    } catch { }
+
+    try {
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: addedList }),
+      });
+    } catch (err) {
+      console.error("Erro ao salvar despesa no banco:", err);
     }
+
+    const natureKey = `${addExpenseGroup.id}|${naturezaFinal}`;
     setExpandedEditGroups((previous) => new Set(previous).add(addExpenseGroup.id));
+    setExpandedNatureGroups((previous) => new Set(previous).add(natureKey));
     setHasChanges(true);
     setAddExpenseGroup(null);
     setAddElementContext(null);
@@ -1091,7 +1369,7 @@ export function AnaliseLoaView() {
     setNewExpenseValor("");
   };
 
-  const handleAllocateBancoProjeto = (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
+  const handleAllocateBancoProjeto = async (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
     const naturezaCodigo = project.natureza.split("-")[0].trim();
     const item: RawBudgetItem = {
       id: `banco-projeto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1114,13 +1392,70 @@ export function AnaliseLoaView() {
       origem: "Banco de Projetos",
       bancoProjetoKey: [project.secretaria, project.objeto, project.natureza, project.valor].join("|"),
     };
+
     setRawItems((previous) => [...previous, item]);
+    setSavedRawItems((previous) => [...previous, item]);
+    setOriginalRawItems((previous) => [...previous, item]);
     setHasChanges(true);
+
+    // Persistir como despesa adicionada na base para ser recarregada em novas sessões
+    try {
+      const existingAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
+        .filter((entry) => entry.id !== item.id);
+      const nextAdded = [...existingAdded, item];
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(nextAdded));
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: nextAdded }),
+      });
+    } catch (err) {
+      console.warn("Aviso ao salvar alocação do banco de projetos:", err);
+    }
   };
 
-  const handleRemoveBancoProjeto = (item: RawBudgetItem) => {
+  const handleRemoveBancoProjeto = async (item: RawBudgetItem) => {
+    if (!window.confirm(`Deseja remover o projeto "${item.acao}" alocado na LOA?`)) return;
+
+    // 1. Atualizar o estado da tela
     setRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
-    setHasChanges(true);
+    setSavedRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+    setOriginalRawItems((previous) => previous.filter((entry) => entry.id !== item.id));
+
+    // 2. Remover da lista de despesas adicionadas persistidas
+    try {
+      const savedAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
+        .filter((entry) => entry.id !== item.id);
+      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(savedAdded));
+      await fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chave: "painel_loa_added_expenses",
+          valor: savedAdded,
+        }),
+      });
+    } catch { }
+
+    // 3. Registrar na lista de despesas removidas
+    try {
+      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
+      if (!savedRemoved.includes(item.id)) {
+        const nextRemoved = [...savedRemoved, item.id];
+        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
+        await fetch("/api/configuracoes/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chave: "painel_loa_removed_expenses",
+            valor: nextRemoved,
+          }),
+        });
+      }
+    } catch { }
+
+    setRemovedRawItems((prev) => [...prev.filter((entry) => entry.id !== item.id), item]);
+    setHasChanges(false);
   };
 
   // Confirmar e Gravar Alterações + Justificativas no localStorage
@@ -1128,6 +1463,7 @@ export function AnaliseLoaView() {
     try {
       // Separar os itens modificados em: com justificativa e sem justificativa
       const savedMap = new Map(savedRawItems.map((item) => [item.id, item.valLoa]));
+      const savedItemsMap = new Map(savedRawItems.map((item) => [item.id, item]));
 
       const itemsToRevert: string[] = [];
       const validJustifications: Record<string, string> = { ...justifications };
@@ -1155,8 +1491,13 @@ export function AnaliseLoaView() {
       // Atualizar lista final de itens (revertendo os sem justificativa ao valor salvo + restaurando removidos sem justificativa)
       let finalItems = rawItems.map((item) => {
         if (itemsToRevert.includes(item.id)) {
-          const savedVal = savedMap.get(item.id) ?? item.valLdo;
-          return { ...item, valLoa: savedVal };
+          const saved = savedItemsMap.get(item.id);
+          return {
+            ...item,
+            valLoa: saved?.valLoa ?? item.valLdo,
+            valorReajuste: saved?.valorReajuste ?? 0,
+            valorAditamento: saved?.valorAditamento ?? 0,
+          };
         }
         return item;
       });
@@ -1171,28 +1512,117 @@ export function AnaliseLoaView() {
 
       setSavingState("saving");
 
-      // Gravar no localStorage e Banco de Dados
+      // Gravar alterações e justificativas no Banco de Dados
       const customMap: Record<string, number> = {};
+      const financialAdjustments: Record<string, { valorReajuste: number; valorAditamento: number }> = {};
       finalItems.forEach((item) => {
         customMap[item.id] = item.valLoa;
+        financialAdjustments[item.id] = {
+          valorReajuste: item.valorReajuste ?? 0,
+          valorAditamento: item.valorAditamento ?? 0,
+        };
       });
 
-      localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
-      localStorage.setItem("painel_loa_justifications_v1", JSON.stringify(validJustifications));
       setJustifications(validJustifications);
 
-      // Persistir no Banco de Dados
+      // Persistir no Banco de Dados (Tabelas Relacionais de Auditoria + Fallback de Layout)
       try {
-        await fetch("/api/configuracoes/layout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chave: "painel_loa_custom_edits",
-            valor: customMap,
+        const alteracoesPayload = modifiedItems
+          .filter((item) => !itemsToRevert.includes(item.id))
+          .map((item) => ({
+            dotacaoId: item.id,
+            exercicio: 2027,
+            secretaria: item.secretaria,
+            programa: item.programa,
+            acao: item.acao,
+            natureza: item.natureza,
+            subelemento: item.subelemento,
+            processo: item.processo,
+            apelido: "apelido" in item ? String((item as Record<string, unknown>).apelido) : null,
+            valorAnterior: savedMap.get(item.id) ?? item.valLdo,
+            valorNovo: item.valLoa,
+            justificativa: validJustifications[item.id] || "Ajuste orçamentário aprovado",
+            tipoAlteracao: "AJUSTE_VALOR",
+          }));
+
+        const exclusoesPayload = removedRawItems
+          .filter((item) => !restoredFromRemoval.some((r) => r.id === item.id))
+          .map((item) => ({
+            dotacaoId: item.id,
+            exercicio: 2027,
+            secretaria: item.secretaria,
+            programa: item.programa,
+            acao: item.acao,
+            natureza: item.natureza,
+            subelemento: item.subelemento,
+            processo: item.processo,
+            apelido: "apelido" in item ? String((item as Record<string, unknown>).apelido) : null,
+            valorOriginal: item.valLoa,
+            dadosOriginais: item,
+            motivoExclusao: validJustifications[item.id] || "Exclusão de dotação",
+          }));
+
+        if (alteracoesPayload.length > 0 || exclusoesPayload.length > 0) {
+          void fetch("/api/orcamento/alteracoes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nomeOperador: currentUser.nome || "Técnico Responsável",
+              emailOperador: currentUser.email || null,
+              justificativaGeral: `Ajuste em lote por ${currentUser.nome} (${currentUser.secretaria || "Geral"})`,
+              alteracoes: alteracoesPayload.length > 0 ? alteracoesPayload : undefined,
+              exclusoes: exclusoesPayload,
+            }),
+          });
+        }
+
+        const addedExpensesToPersist = finalItems.filter((i) => i.id.startsWith("manual-") || i.id.startsWith("banco-projeto-"));
+
+        const responses = await Promise.all([
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_custom_edits",
+              valor: customMap,
+            }),
           }),
-        });
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_justifications",
+              valor: validJustifications,
+            }),
+          }),
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_reajustes_aditamentos",
+              valor: financialAdjustments,
+            }),
+          }),
+          fetch("/api/configuracoes/layout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chave: "painel_loa_added_expenses",
+              valor: addedExpensesToPersist,
+            }),
+          }),
+        ]);
+        try {
+          localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(addedExpensesToPersist));
+        } catch { }
+        if (responses.some((response) => !response.ok)) {
+          throw new Error("O banco de dados recusou o salvamento das alterações.");
+        }
       } catch (err) {
         console.error("Erro ao persistir edições no banco:", err);
+        setSavingState("idle");
+        setSaveError("Não foi possível salvar as alterações no banco de dados.");
+        return;
       }
 
       setHasChanges(false);
@@ -1226,6 +1656,8 @@ export function AnaliseLoaView() {
         if (fieldToIgnore !== "secretaria" && !match(filters.secretaria, item.secretaria)) return false;
         if (fieldToIgnore !== "orgao" && !match(filters.orgao, item.orgao)) return false;
         if (fieldToIgnore !== "unidade" && !match(filters.unidade, item.unidade)) return false;
+        if (fieldToIgnore !== "funcao" && !match(filters.funcao, item.funcao || "")) return false;
+        if (fieldToIgnore !== "subfuncao" && !match(filters.subfuncao, item.subfuncao || "")) return false;
         if (fieldToIgnore !== "programa" && !match(filters.programa, item.programa)) return false;
         if (fieldToIgnore !== "tipoAcao" && !match(filters.tipoAcao, item.tipoAcao)) return false;
         if (fieldToIgnore !== "acao" && !match(filters.acao, item.acao)) return false;
@@ -1236,6 +1668,8 @@ export function AnaliseLoaView() {
         if (fieldToIgnore !== "elemento" && !match(filters.elemento, item.elemento)) return false;
         if (fieldToIgnore !== "subelemento" && !match(filters.subelemento, item.subelemento)) return false;
         if (fieldToIgnore !== "processo" && !match(filters.processo, item.processo)) return false;
+        if (fieldToIgnore !== "contrato" && !match(filters.contrato, item.contrato || item.projetoIniciado || "")) return false;
+        if (fieldToIgnore !== "observacao" && !match(filters.observacao, item.observacao || "")) return false;
 
         return true;
       });
@@ -1245,6 +1679,8 @@ export function AnaliseLoaView() {
       secretaria: getOptions("secretaria", getItemsForField("secretaria")),
       orgao: getOptions("orgao", getItemsForField("orgao")),
       unidade: getOptions("unidade", getItemsForField("unidade")),
+      funcao: getOptions("funcao", getItemsForField("funcao")),
+      subfuncao: getOptions("subfuncao", getItemsForField("subfuncao")),
       programa: getOptions("programa", getItemsForField("programa")),
       tipoAcao: ["0. Operação Especial", "1. Projeto", "2. Atividade"],
       acao: getOptions("acao", getItemsForField("acao")),
@@ -1260,6 +1696,14 @@ export function AnaliseLoaView() {
       elemento: getOptions("elemento", getItemsForField("elemento")),
       subelemento: getOptions("subelemento", getItemsForField("subelemento")),
       processo: getOptions("processo", getItemsForField("processo")),
+      contrato: Array.from(
+        new Set(
+          getItemsForField("contrato")
+            .map((item) => String(item.contrato || item.projetoIniciado || ""))
+            .filter(Boolean)
+        )
+      ).sort(),
+      observacao: getOptions("observacao", getItemsForField("observacao")),
     };
   }, [rawItems, filters]);
 
@@ -1272,6 +1716,8 @@ export function AnaliseLoaView() {
       if (!match(filters.secretaria, item.secretaria)) return false;
       if (!match(filters.orgao, item.orgao)) return false;
       if (!match(filters.unidade, item.unidade)) return false;
+      if (!match(filters.funcao, item.funcao || "")) return false;
+      if (!match(filters.subfuncao, item.subfuncao || "")) return false;
       if (!match(filters.programa, item.programa)) return false;
       if (!match(filters.tipoAcao, item.tipoAcao)) return false;
       if (!match(filters.acao, item.acao)) return false;
@@ -1282,10 +1728,12 @@ export function AnaliseLoaView() {
       if (!match(filters.elemento, item.elemento)) return false;
       if (!match(filters.subelemento, item.subelemento)) return false;
       if (!match(filters.processo, item.processo)) return false;
+      if (!match(filters.contrato, item.contrato || item.projetoIniciado || "")) return false;
+      if (!match(filters.observacao, item.observacao || "")) return false;
 
       if (filters.search) {
         const query = filters.search.toLowerCase();
-        const fullText = `${item.secretaria} ${item.programa} ${item.acao} ${item.natureza} ${item.subelemento} ${item.processo}`.toLowerCase();
+        const fullText = `${item.secretaria} ${item.funcao || ""} ${item.subfuncao || ""} ${item.programa} ${item.acao} ${item.natureza} ${item.subelemento} ${item.processo} ${item.contrato || item.projetoIniciado || ""} ${item.observacao || ""}`.toLowerCase();
         if (!fullText.includes(query)) return false;
       }
 
@@ -1293,14 +1741,45 @@ export function AnaliseLoaView() {
     });
   }, [rawItems, filters]);
 
+  const isItemContrato = (item: RawBudgetItem) => {
+    const ini = String(item.projetoIniciado || item.contrato || "").trim().toUpperCase();
+    return ini === "SIM";
+  };
+
+  const scopeStats = useMemo(() => {
+    let countTodos = 0;
+    let totalTodos = 0;
+    let countContratos = 0;
+    let totalContratos = 0;
+    let countDemais = 0;
+    let totalDemais = 0;
+
+    filteredItems.forEach((item) => {
+      const total = getItemLoaTotal(item);
+      countTodos++;
+      totalTodos += total;
+      if (isItemContrato(item)) {
+        countContratos++;
+        totalContratos += total;
+      } else {
+        countDemais++;
+        totalDemais += total;
+      }
+    });
+
+    return {
+      todos: { count: countTodos, total: totalTodos },
+      contratos: { count: countContratos, total: totalContratos },
+      demais: { count: countDemais, total: totalDemais },
+    };
+  }, [filteredItems]);
+
   const tableItems = useMemo(() => {
     return filteredItems.filter((item) => {
+      if (scopeTab === "contratos" && !isItemContrato(item)) return false;
+      if (scopeTab === "demais" && isItemContrato(item)) return false;
       if (statusFilters.length > 0) {
-        const original = originalValuesById.get(item.id) ?? item.valLdo;
-        const adjusted = Math.abs(item.valLoa - original) > 0.001;
-        const matchesFilter = statusFilters.some((filter) =>
-          filter === "Ajustado" ? adjusted : filter === getStatusLabel(item.valLdo, item.valLoa)
-        );
+        const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, getItemLoaTotal(item)));
         if (!matchesFilter) return false;
       }
       if (!tableSearch) return true;
@@ -1314,7 +1793,8 @@ export function AnaliseLoaView() {
         item.subelemento.toLowerCase().includes(query)
       );
     });
-  }, [filteredItems, originalValuesById, statusFilters, tableSearch]);
+  }, [filteredItems, scopeTab, statusFilters, tableSearch]);
+
 
   const editableGroups = useMemo<EditableGroup[]>(() => {
     const groups = new Map<string, EditableGroup>();
@@ -1332,17 +1812,29 @@ export function AnaliseLoaView() {
         children: [],
         valLdo: 0,
         valLoa: 0,
+        valorReajuste: 0,
+        valorAditamento: 0,
+        valorTotal: 0,
       };
       group.children.push(item);
-      group.valLdo += item.valLdo;
+      group.valLdo += item.valLdo || 0;
       group.valLoa += item.valLoa;
+      group.valorReajuste += item.valorReajuste ?? 0;
+      group.valorAditamento += item.valorAditamento ?? 0;
+      group.valorTotal += getItemLoaTotal(item);
       groups.set(groupKey, group);
     });
 
-    const getAdjusted = (item: RawBudgetItem) => {
-      const original = originalValuesById.get(item.id) ?? item.valLdo;
-      return Math.abs(item.valLoa - original) > 0.001 ? 1 : 0;
-    };
+    groups.forEach((group) => {
+      if (group.valLdo === 0) {
+        const ldoData = getLdoPlanningForGroup(group);
+        if (ldoData?.custoFinanceiro2027 !== undefined && ldoData.custoFinanceiro2027 > 0) {
+          group.valLdo = ldoData.custoFinanceiro2027;
+        }
+      }
+    });
+
+    const getValidated = (item: RawBudgetItem) => validatedRows[item.id] ? 1 : 0;
     const compareText = (left: string, right: string) => left.localeCompare(right, "pt-BR", { numeric: true, sensitivity: "base" });
     const compareGroup = (left: EditableGroup, right: EditableGroup) => {
       const leftFromBank = left.children.some((item) => item.origem === "Banco de Projetos");
@@ -1353,9 +1845,12 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
       else if (tableSort.column === "valLdo") result = left.valLdo - right.valLdo;
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
-      else if (tableSort.column === "diff") result = (left.valLoa - left.valLdo) - (right.valLoa - right.valLdo);
-      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valLoa), getStatusLabel(right.valLdo, right.valLoa));
-      else result = left.children.reduce((sum, item) => sum + getAdjusted(item), 0) - right.children.reduce((sum, item) => sum + getAdjusted(item), 0);
+      else if (tableSort.column === "valorReajuste") result = left.valorReajuste - right.valorReajuste;
+      else if (tableSort.column === "valorAditamento") result = left.valorAditamento - right.valorAditamento;
+      else if (tableSort.column === "valorTotal") result = left.valorTotal - right.valorTotal;
+      else if (tableSort.column === "diff") result = (left.valorTotal - left.valLdo) - (right.valorTotal - right.valLdo);
+      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valorTotal), getStatusLabel(right.valLdo, right.valorTotal));
+      else result = Number(Boolean(validatedRows[left.id])) - Number(Boolean(validatedRows[right.id]));
       return tableSort.direction === "asc" ? result : -result;
     };
     const compareChild = (left: RawBudgetItem, right: RawBudgetItem) => {
@@ -1364,9 +1859,12 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
       else if (tableSort.column === "valLdo") result = left.valLdo - right.valLdo;
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
-      else if (tableSort.column === "diff") result = (left.valLoa - left.valLdo) - (right.valLoa - right.valLdo);
-      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valLoa), getStatusLabel(right.valLdo, right.valLoa));
-      else result = getAdjusted(left) - getAdjusted(right);
+      else if (tableSort.column === "valorReajuste") result = (left.valorReajuste ?? 0) - (right.valorReajuste ?? 0);
+      else if (tableSort.column === "valorAditamento") result = (left.valorAditamento ?? 0) - (right.valorAditamento ?? 0);
+      else if (tableSort.column === "valorTotal") result = getItemLoaTotal(left) - getItemLoaTotal(right);
+      else if (tableSort.column === "diff") result = (getItemLoaTotal(left) - left.valLdo) - (getItemLoaTotal(right) - right.valLdo);
+      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, getItemLoaTotal(left)), getStatusLabel(right.valLdo, getItemLoaTotal(right)));
+      else result = getValidated(left) - getValidated(right);
       return tableSort.direction === "asc" ? result : -result;
     };
 
@@ -1374,7 +1872,7 @@ export function AnaliseLoaView() {
       ...group,
       children: [...group.children].sort(compareChild),
     })).sort(compareGroup);
-  }, [originalValuesById, tableItems, tableSort]);
+  }, [tableItems, tableSort, validatedRows, ldoPlanningMap]);
 
   const totalTablePages = useMemo(
     () => Math.max(1, Math.ceil(editableGroups.length / tablePageSize)),
@@ -1388,38 +1886,49 @@ export function AnaliseLoaView() {
 
   // Métricas Recalculadas Instantaneamente para os Cards Superiores
   const metrics = useMemo(() => {
-    let valLdoTotal = 0;
     let valLoaTotal = 0;
+    let valLoaVigenteTotal = 0;
+    let valorReajusteTotal = 0;
+    let valorAditamentoTotal = 0;
     const acoesSet = new Set<string>();
     const naturezasSet = new Set<string>();
 
     tableItems.forEach((item) => {
-      valLdoTotal += item.valLdo;
-      valLoaTotal += item.valLoa;
+      valLoaTotal += getItemLoaTotal(item);
+      valLoaVigenteTotal += item.valLoa;
+      valorReajusteTotal += item.valorReajuste ?? 0;
+      valorAditamentoTotal += item.valorAditamento ?? 0;
       if (item.acao) acoesSet.add(item.acao);
       if (item.natureza) naturezasSet.add(item.natureza);
     });
 
+    const valLdoTotal = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
     const diff = valLoaTotal - valLdoTotal;
     const percentExec = valLdoTotal > 0 ? (valLoaTotal / valLdoTotal) * 100 : 100;
 
     return {
       valLdoTotal,
       valLoaTotal,
+      valLoaVigenteTotal,
+      valorReajusteTotal,
+      valorAditamentoTotal,
       diff,
       percentExec,
       totalAcoes: acoesSet.size,
       totalNaturezas: naturezasSet.size,
     };
-  }, [tableItems]);
+  }, [tableItems, editableGroups]);
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
-    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; ldo: number; loa: number; diff: number; count: number }>();
+    const map = new Map<string, { subelemento: string; acao: string; secretaria: string; natureza: string; fonteVinculo: string; codigoAplicacao: string; processo: string; projetoIniciado: string; observacao: string; ldo: number; loa: number; diff: number; count: number }>();
 
     filteredItems.forEach((item) => {
       const name = item.subelemento && item.subelemento.trim() !== "" ? item.subelemento : item.natureza || "Outros / Sem Subelemento";
-      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${name}`;
+      const vinculo = item.fonteVinculo || "01";
+      const codApp = item.codigoAplicacao || "";
+      const proc = item.processo && item.processo !== "—" ? item.processo : "";
+      const key = `${item.secretaria}_${item.acao}_${item.natureza || ""}_${vinculo}_${codApp}_${proc}_${name}`;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -1427,6 +1936,11 @@ export function AnaliseLoaView() {
           acao: item.acao || "",
           secretaria: item.secretaria || "",
           natureza: item.natureza || "",
+          fonteVinculo: vinculo,
+          codigoAplicacao: codApp,
+          processo: proc,
+          projetoIniciado: item.projetoIniciado || "",
+          observacao: item.observacao || "",
           ldo: 0,
           loa: 0,
           diff: 0,
@@ -1485,7 +1999,8 @@ export function AnaliseLoaView() {
     let reduzido = 0;
 
     filteredItems.forEach((item) => {
-      const diff = item.valLoa - item.valLdo;
+      const itemTotal = getItemLoaTotal(item);
+      const diff = itemTotal - item.valLdo;
       if (diff > maiorAumento.val) {
         maiorAumento = { item: `${item.acao} — ${item.subelemento || item.natureza}`, val: diff };
       }
@@ -1493,8 +2008,8 @@ export function AnaliseLoaView() {
         maiorReducao = { item: `${item.acao} — ${item.subelemento || item.natureza}`, val: diff };
       }
 
-      if (item.valLdo === 0 && item.valLoa > 0) novasDotacoes++;
-      if (item.valLdo > 0 && item.valLoa === 0) dotacoesRemovidas++;
+      if (item.valLdo === 0 && itemTotal > 0) novasDotacoes++;
+      if (item.valLdo > 0 && itemTotal === 0) dotacoesRemovidas++;
 
       if (diff > 0) suplementado += diff;
       if (diff < 0) reduzido += Math.abs(diff);
@@ -1645,49 +2160,6 @@ export function AnaliseLoaView() {
     return { label: "Sem alteração", class: "bg-surface-container text-on-surface-variant border-outline-variant" };
   };
 
-  const applyGroupLoa = (group: EditableGroup, newTotal: number) => {
-    const currentTotal = group.children.reduce((sum, item) => sum + item.valLoa, 0);
-    const basisTotal = currentTotal > 0
-      ? currentTotal
-      : group.children.reduce((sum, item) => sum + item.valLdo, 0);
-    const equalShare = group.children.length ? newTotal / group.children.length : 0;
-    let assigned = 0;
-    const allocations = new Map<string, number>();
-
-    group.children.forEach((item, index) => {
-      const basis = currentTotal > 0 ? item.valLoa : item.valLdo;
-      const value = index === group.children.length - 1
-        ? Math.max(0, Math.round((newTotal - assigned) * 100) / 100)
-        : Math.max(0, Math.round((basisTotal > 0 ? newTotal * (basis / basisTotal) : equalShare) * 100) / 100);
-      assigned += value;
-      allocations.set(item.id, value);
-    });
-
-    setRawItems((previous) => previous.map((item) => {
-      const value = allocations.get(item.id);
-      return value === undefined ? item : { ...item, valLoa: value };
-    }));
-    setHasChanges(true);
-  };
-
-  const applyNatureLoa = (items: RawBudgetItem[], newTotal: number) => {
-    const currentTotal = items.reduce((sum, item) => sum + item.valLoa, 0);
-    const basisTotal = currentTotal > 0 ? currentTotal : items.reduce((sum, item) => sum + item.valLdo, 0);
-    const equalShare = items.length ? newTotal / items.length : 0;
-    let assigned = 0;
-    const allocations = new Map<string, number>();
-    items.forEach((item, index) => {
-      const basis = currentTotal > 0 ? item.valLoa : item.valLdo;
-      const value = index === items.length - 1
-        ? Math.max(0, Math.round((newTotal - assigned) * 100) / 100)
-        : Math.max(0, Math.round((newTotal * (basisTotal > 0 ? basis / basisTotal : 0) || equalShare) * 100) / 100);
-      assigned += value;
-      allocations.set(item.id, value);
-    });
-    setRawItems((previous) => previous.map((item) => allocations.has(item.id) ? { ...item, valLoa: allocations.get(item.id)! } : item));
-    setHasChanges(true);
-  };
-
   const getNatureLabel = (value: string, fallback: string) => {
     const label = (value || fallback || "Outros").trim();
     const separator = label.indexOf("-");
@@ -1731,8 +2203,6 @@ export function AnaliseLoaView() {
       const savedAdded = (JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[])
         .filter((entry) => entry.id !== item.id);
       localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(savedAdded));
-
-      // Sincronizar com o banco de dados
       await fetch("/api/configuracoes/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1757,23 +2227,6 @@ export function AnaliseLoaView() {
           body: JSON.stringify({
             chave: "painel_loa_removed_expenses",
             valor: nextRemoved,
-          }),
-        });
-      }
-    } catch { }
-
-    // 4. Se tiver edição de valor gravada para esse ID, limpar
-    try {
-      const customMap = JSON.parse(localStorage.getItem("painel_loa_custom_edits_v1") || "{}");
-      if (customMap[item.id] !== undefined) {
-        delete customMap[item.id];
-        localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(customMap));
-        await fetch("/api/configuracoes/layout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chave: "painel_loa_custom_edits",
-            valor: customMap,
           }),
         });
       }
@@ -1818,6 +2271,74 @@ export function AnaliseLoaView() {
   );
 
   // Funções de exportação
+  const exportDetailedCsv = () => {
+    const extractCode = (value?: string) => value?.trim().match(/^[\d.]+/)?.[0] ?? "";
+    const classificationKey = (item: RawBudgetItem) => [item.secretaria, item.unidade, item.programa, item.acao].join("|");
+    const classificationByContext = new Map<string, RawBudgetItem>();
+    const classificationByAction = new Map<string, RawBudgetItem>();
+    rawItems.forEach((item) => {
+      if (!item.programaticaLoa) return;
+      classificationByContext.set(classificationKey(item), item);
+      if (!classificationByAction.has(item.acao)) classificationByAction.set(item.acao, item);
+    });
+    const headers = [
+      "UG", "secretaria", "unidade", "funcao", "subfuncao", "programa", "acao", "natureza",
+      "Programática_LOA", "secretaria", "unidade", "funcao", "subfuncao", "programa", "acao",
+      "natureza", "desc_sub", "processo", " valor ", "Peça Orçamentária", "Vínculo",
+      "Tipo de despesa", "INICIADO", "OBS.",
+    ];
+    const escapeCell = (value: string | number) => {
+      const text = String(value ?? "");
+      return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const rows = tableItems.map((item) => {
+      const reference = classificationByContext.get(classificationKey(item)) || classificationByAction.get(item.acao);
+      const functionName = item.funcao || reference?.funcao || "";
+      const subfunction = item.subfuncao || reference?.subfuncao || "";
+      const programaticaLoa = item.programaticaLoa || reference?.programaticaLoa || "";
+      const secretariaCode = extractCode(item.secretaria);
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "";
+      return [
+        secretariaCode,
+        secretariaCode,
+        extractCode(item.unidade),
+        extractCode(functionName),
+        extractCode(subfunction),
+        extractCode(item.programa),
+        extractCode(item.acao),
+        extractCode(item.natureza),
+        programaticaLoa,
+        item.secretaria,
+        item.unidade,
+        functionName,
+        subfunction,
+        item.programa,
+        item.acao,
+        item.natureza,
+        item.subelemento || "",
+        item.processo || "",
+        getItemLoaTotal(item),
+        "LOA",
+        vinculo,
+        item.tipoAcao || getActionTypeLabel(item.acao),
+        item.projetoIniciado || "",
+        item.observacao || (justifications[item.id] || "").trim(),
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map(escapeCell).join(";")).join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "detalhamento-analitico-editavel.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const exportToExcel = () => {
     // 1. Aba: Visão Geral das Ações Orçamentárias
     const acoesData = editableGroups.map((group) => {
@@ -1827,10 +2348,13 @@ export function AnaliseLoaView() {
         Programa: group.programa,
         Ação: group.acao,
         "Valor LDO (R$)": group.valLdo,
-        "Valor LOA (R$)": group.valLoa,
-        "Diferença Nominal (R$)": group.valLoa - group.valLdo,
-        "Variação (%)": group.valLdo > 0 ? ((group.valLoa - group.valLdo) / group.valLdo) * 100 : 0,
-        Status: getStatusInfo(group.valLdo, group.valLoa).label,
+        "Valor LOA Vigente (R$)": group.valLoa,
+        "Valor Reajuste (R$)": group.valorReajuste,
+        "Valor Aditamento (R$)": group.valorAditamento,
+        "Valor Total (R$)": group.valorTotal,
+        "Diferença Nominal (R$)": group.valorTotal - group.valLdo,
+        "Variação (%)": group.valLdo > 0 ? ((group.valorTotal - group.valLdo) / group.valLdo) * 100 : 0,
+        Status: getStatusInfo(group.valLdo, group.valorTotal).label,
         Indicador: ldoData.indicador || "Não informado",
         "Unidade de Medida": ldoData.unidadeMedida || "Unidade",
         "Meta Física 2027": ldoData.custoFisico2027 ?? 0,
@@ -1841,7 +2365,6 @@ export function AnaliseLoaView() {
     const analiticoData = editableGroups.flatMap((group) =>
       group.children.map((item) => {
         const original = originalValuesById.get(item.id) ?? item.valLdo;
-        const adjusted = Math.abs(item.valLoa - original) > 0.001;
         return {
           Secretaria: item.secretaria,
           Programa: item.programa,
@@ -1851,10 +2374,14 @@ export function AnaliseLoaView() {
           Subelemento: item.subelemento || "—",
           "Fonte/Vínculo": item.fonteVinculo || "01",
           Processo: item.processo || "—",
+          "Contrato / Projeto Iniciado": (item.contrato || item.projetoIniciado || "").trim() || "NÃO",
           "Valor Original (R$)": original,
-          "Valor LOA Editável (R$)": item.valLoa,
-          "Diferença (R$)": item.valLoa - original,
-          "Item Ajustado": adjusted ? "SIM" : "NÃO",
+          "Valor LOA Vigente (R$)": item.valLoa,
+          "Valor Reajuste (R$)": item.valorReajuste ?? 0,
+          "Valor Aditamento (R$)": item.valorAditamento ?? 0,
+          "Valor Total (R$)": getItemLoaTotal(item),
+          "Diferença Total - LDO (R$)": getItemLoaTotal(item) - item.valLdo,
+          "Validado pelo usuário": validatedRows[item.id] ? "SIM" : "NÃO",
           "Justificativa do Ajuste": (justifications[item.id] || "").trim() || "—",
         };
       })
@@ -1874,6 +2401,7 @@ export function AnaliseLoaView() {
         Ação: item.acao,
         "Natureza da Despesa": item.natureza || item.elemento,
         Subelemento: item.subelemento || "—",
+        "Fonte/Vínculo": item.fonteVinculo || "01",
         "Valor Original (R$)": origVal,
         "Novo Valor LOA (R$)": isRemoved ? 0 : item.valLoa,
         "Diferença (R$)": isRemoved ? -origVal : item.valLoa - origVal,
@@ -1885,7 +2413,22 @@ export function AnaliseLoaView() {
     const wsAcoes = XLSX.utils.json_to_sheet(acoesData);
     const wsAnalitico = XLSX.utils.json_to_sheet(analiticoData);
     XLSX.utils.book_append_sheet(workbook, wsAcoes, "Resumo_Acoes_LOA");
-    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_Analitico");
+
+    // Abas de Contratos e Demais Despesas
+    const analiticoContratos = analiticoData.filter((r) => String(r["Contrato / Projeto Iniciado"] || "").toUpperCase() === "SIM");
+    const analiticoDemais = analiticoData.filter((r) => String(r["Contrato / Projeto Iniciado"] || "").toUpperCase() !== "SIM");
+
+    if (analiticoContratos.length > 0) {
+      const wsContratos = XLSX.utils.json_to_sheet(analiticoContratos);
+      XLSX.utils.book_append_sheet(workbook, wsContratos, "Contratos");
+    }
+    if (analiticoDemais.length > 0) {
+      const wsDemais = XLSX.utils.json_to_sheet(analiticoDemais);
+      XLSX.utils.book_append_sheet(workbook, wsDemais, "Demais_Despesas");
+    }
+
+
+    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_Geral");
 
     if (auditoriaData.length > 0) {
       const wsAuditoria = XLSX.utils.json_to_sheet(auditoriaData);
@@ -1895,158 +2438,226 @@ export function AnaliseLoaView() {
     XLSX.writeFile(workbook, "relatorio-tecnico-orcamento-osasco-2027.xlsx");
   };
 
-  const exportToPDF = async () => {
-    const { jsPDF } = await import("jspdf");
-    const autoTable = (await import("jspdf-autotable")).default;
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 14;
-    const reportDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short" }).format(new Date());
-    type ReportCell = string | { content: string; colSpan?: number; styles?: Record<string, unknown> };
-    type ReportRow = ReportCell[];
-
-    // Carregar imagem do brasão para converter em base64 se disponível
-    try {
-      const img = new Image();
-      img.src = "/brasao.png";
-      await new Promise((resolve) => {
-        img.onload = resolve;
-        img.onerror = resolve;
-      });
-      if (img.complete && img.naturalWidth > 0) {
-        doc.addImage(img, "PNG", margin, 6, 20, 20);
+  const buildReportGroupsFromItems = (items: RawBudgetItem[]): LoaReportGroup[] => {
+    const groupMap = new Map<string, LoaReportGroup>();
+    items.forEach((item) => {
+      const groupKey = [item.programa, item.acao].join("|");
+      if (!groupMap.has(groupKey)) {
+        groupMap.set(groupKey, {
+          groupTitle: item.acao,
+          valLdo: 0,
+          valLoa: 0,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 0,
+          items: [],
+        });
       }
-    } catch { }
+      const g = groupMap.get(groupKey)!;
+      g.valLoa += item.valLoa;
+      g.valorReajuste += item.valorReajuste ?? 0;
+      g.valorAditamento += item.valorAditamento ?? 0;
+      g.valorTotal += getItemLoaTotal(item);
 
-    const programs = Array.from(editableGroups.reduce((map, group) => {
-      const key = group.programa || "Programa não informado";
-      map.set(key, [...(map.get(key) ?? []), group]);
-      return map;
-    }, new Map<string, EditableGroup[]>()));
-    const secretariats = [...new Set(editableGroups.map((group) => group.secretaria).filter(Boolean))];
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "—";
+
+      const procParts: string[] = [];
+      if (item.subelemento && item.subelemento !== "—" && item.subelemento !== item.natureza && item.subelemento !== item.elemento) {
+        procParts.push(item.subelemento.trim());
+      }
+      if (item.processo && item.processo !== "—" && item.processo.trim() !== "") {
+        const p = item.processo.trim();
+        procParts.push(p.toLowerCase().startsWith("proc") ? p : `Proc: ${p}`);
+      }
+      if (item.projetoIniciado && item.projetoIniciado !== "—" && item.projetoIniciado.trim() !== "") {
+        procParts.push(`Iniciado: ${item.projetoIniciado.trim()}`);
+      }
+      const obsText = (item.observacao || "").trim() || (justifications[item.id] || "").trim();
+      if (obsText && obsText !== "—" && obsText !== "") {
+        procParts.push(obsText.toLowerCase().startsWith("obs") ? obsText : `Obs: ${obsText}`);
+      }
+      const processoObs = procParts.join(" | ");
+
+      g.items.push({
+        natureza: item.natureza || item.elemento || "—",
+        vinculo,
+        processoObs,
+        valLdo: item.valLdo,
+        valLoa: item.valLoa,
+        valorReajuste: item.valorReajuste ?? 0,
+        valorAditamento: item.valorAditamento ?? 0,
+        valorTotal: getItemLoaTotal(item),
+      });
+    });
+
+    return Array.from(groupMap.values());
+  };
+
+  const exportToPDF = (targetScope?: "todos" | "contratos" | "demais" | "banco-projetos") => {
+    const selectedScope = targetScope || scopeTab;
+    const secretariats = [...new Set(filteredItems.map((item) => item.secretaria).filter(Boolean))];
     const reportSecretariat = filters.secretaria.length === 1
       ? filters.secretaria[0]
       : secretariats.length === 1
         ? secretariats[0]
-        : secretariats.length > 0 ? secretariats.join(" · ") : "Prefeitura do Município de Osasco";
+        : secretariats.length > 0 ? secretariats.join(" · ") : "11 - SECRETARIA DE SERVIÇOS E OBRAS";
 
-    // Cabeçalho Institucional
-    doc.setFillColor(0, 52, 111);
-    doc.rect(0, 0, pageWidth, 28, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.text("PREFEITURA DO MUNICÍPIO DE OSASCO", margin + 24, 11);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.text(`SECRETARIA: ${reportSecretariat.toUpperCase()}`, margin + 24, 17);
-    doc.text(`RELATÓRIO TÉCNICO ORÇAMENTÁRIO — ANÁLISE LDO x LOA 2027  •  Emitido em: ${reportDate}`, margin + 24, 23);
+    const units = [...new Set(filteredItems.map((item) => item.unidade).filter(Boolean))];
+    const reportUnit = filters.unidade.length === 1
+      ? filters.unidade[0]
+      : units.length === 1
+        ? units[0]
+        : units.length > 0 ? units.join(" · ") : "01.11.001.00 - Gabinete da Secretaria de Serviços e Obras";
 
-    // Sumário Executivo
-    doc.setTextColor(24, 28, 34);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("1. Detalhamento Analítico e Metas Físicas da LOA 2027", margin, 36);
+    const organs = [...new Set(filteredItems.map((item) => item.orgao).filter(Boolean))];
+    const reportOrgan = filters.orgao.length === 1
+      ? filters.orgao[0]
+      : organs.length === 1
+        ? organs[0]
+        : organs.length > 0 ? organs.join(" · ") : "Órgão 01 - Prefeitura do Município de Osasco";
 
-    let cursorY = 40;
-    programs.forEach(([programa, groups], programIndex) => {
-      if (cursorY > pageHeight - 45) { doc.addPage(); cursorY = 18; }
-      const programHasAdjustment = groups.some((group) => group.children.some((item) => {
-        const original = originalValuesById.get(item.id) ?? item.valLdo;
-        return Math.abs(item.valLoa - original) > 0.001;
-      }));
-      doc.setTextColor(0, 52, 111);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.text(`Programa: ${programa}${programHasAdjustment ? "  • [POSSUI AJUSTES TÉCNICOS]" : ""}`, margin, cursorY);
-      doc.setDrawColor(0, 52, 111);
-      doc.setLineWidth(0.3);
-      doc.line(margin, cursorY + 2, pageWidth - margin, cursorY + 2);
+    // Filtragem estrita para o relatório: excluir despesas com vínculo de 5 dígitos (formato 00.00),
+    // exceto quando for item alocado do Banco de Projetos.
+    const isBancoProjetoItem = (item: RawBudgetItem) =>
+      item.origem === "Banco de Projetos" ||
+      item.id.startsWith("banco-projeto-") ||
+      Boolean(item.bancoProjetoKey) ||
+      item.programa === "Banco de Projetos";
 
-      const reportBody: ReportRow[] = [];
-      groups.forEach((group) => {
-        const ldoData = getLdoPlanningForGroup(group);
-        const totalFill = [238, 243, 250];
-        const totalText = [0, 52, 111];
-        reportBody.push([
-          { content: `AÇÃO: ${group.acao}\nMeta Física 2027: ${ldoData.custoFisico2027 ?? "—"} (${ldoData.unidadeMedida || "unid."}) • Indicador: ${ldoData.indicador || "—"}`, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: "TOTAL DA AÇÃO", styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valLoa), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: currency.format(group.valLoa - group.valLdo), styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-          { content: getStatusInfo(group.valLdo, group.valLoa).label, styles: { fontStyle: "bold", fillColor: totalFill, textColor: totalText } },
-        ]);
-        group.children.forEach((item) => {
-          const original = originalValuesById.get(item.id) ?? item.valLdo;
-          const adjusted = Math.abs(item.valLoa - original) > 0.001;
-          const diff = item.valLoa - original;
-          reportBody.push([
-            `  ↳ ${item.subelemento || item.elemento || "Dotação"}`,
-            item.natureza || item.elemento,
-            currency.format(item.valLdo),
-            currency.format(item.valLoa),
-            diff > 0 ? `+${currency.format(diff)}` : currency.format(diff),
-            adjusted ? "Ajustado" : "Conforme LDO",
-          ]);
-          if (adjusted && justifications[item.id]) {
-            reportBody.push([{
-              content: `Motivação Técnica / Justificativa: ${justifications[item.id]}`,
-              colSpan: 6,
-              styles: { fontStyle: "italic", textColor: [91, 63, 12], fillColor: [255, 250, 235] },
-            }]);
-          }
-        });
-      });
-
-      autoTable(doc, {
-        startY: cursorY + 6,
-        margin: { left: margin, right: margin },
-        head: [["AÇÃO / SUBELEMENTO & METAS", "NATUREZA DA DESPESA", "VALOR LDO", "VALOR LOA", "DIFERENÇA", "STATUS"]],
-        body: reportBody,
-        theme: "grid",
-        headStyles: { fillColor: [235, 238, 242], textColor: [20, 24, 30], fontStyle: "bold", fontSize: 7.5 },
-        bodyStyles: { fontSize: 7, textColor: [35, 38, 42], cellPadding: 2, valign: "middle" },
-        alternateRowStyles: { fillColor: [252, 252, 253] },
-        columnStyles: {
-          0: { cellWidth: 85 },
-          1: { cellWidth: 70 },
-          2: { cellWidth: 28, halign: "right" },
-          3: { cellWidth: 28, halign: "right" },
-          4: { cellWidth: 28, halign: "right" },
-          5: { cellWidth: 30, halign: "center" },
-        },
-      });
-      cursorY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY + 40;
-      if (programIndex < programs.length - 1) cursorY += 8;
+    const reportEligibleItems = filteredItems.filter((item) => {
+      const isBP = isBancoProjetoItem(item);
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "";
+      return !shouldExcludeReportVinculo(vinculo, isBP);
     });
 
-    const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 55;
-    const signatureY = Math.min(finalY + 22, pageHeight - 24);
-    doc.setDrawColor(90, 95, 102);
-    doc.setLineWidth(0.3);
-    doc.line(margin, signatureY, margin + 70, signatureY);
-    doc.line(pageWidth - margin - 70, signatureY, pageWidth - margin, signatureY);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.setTextColor(35, 38, 42);
-    doc.text("Técnico Responsável pelo Planejamento", margin, signatureY + 4, { align: "left" });
-    doc.text("Secretário / Ordenador de Despesa", pageWidth - margin, signatureY + 4, { align: "right" });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(90, 95, 102);
-    doc.text("Assinatura e Matrícula", margin, signatureY + 8);
-    doc.text("Assinatura e Carimbo", pageWidth - margin, signatureY + 8, { align: "right" });
+    const hasAnyAdjustment = reportEligibleItems.some((item) => {
+      const original = originalValuesById.get(item.id) ?? item.valLdo;
+      return Math.abs(item.valLoa - original) > 0.001 || (item.valorReajuste ?? 0) > 0 || (item.valorAditamento ?? 0) > 0;
+    });
 
-    const pageCount = doc.getNumberOfPages();
-    for (let page = 1; page <= pageCount; page += 1) {
-      doc.setPage(page);
-      doc.setFontSize(6.5);
-      doc.setTextColor(120, 125, 130);
-      doc.text(`Prefeitura de Osasco • Painel LOA 2027 • Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: "right" });
+    // Totalizadores globais do relatório recalculados sobre os itens elegíveis
+    const totalLdo = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
+    const totalLoa = reportEligibleItems.reduce((acc, i) => acc + i.valLoa, 0);
+    const totalReajuste = reportEligibleItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
+    const totalAditamento = reportEligibleItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
+    const totalGeral = reportEligibleItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0);
+
+    if (selectedScope === "todos") {
+      // Relatório Completo dividido em 3 Seções Visuais com Subtotais:
+      // 1. Contratos, 2. Demais Despesas e 3. Banco de Projetos Alocados
+      const bpItems = reportEligibleItems.filter(isBancoProjetoItem);
+      const contratoItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && isItemContrato(i));
+      const demaisItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && !isItemContrato(i));
+
+      const contratoGroups = buildReportGroupsFromItems(contratoItems);
+      const demaisGroups = buildReportGroupsFromItems(demaisItems);
+      const bpGroups = buildReportGroupsFromItems(bpItems);
+
+      const calcTotals = (items: RawBudgetItem[], ldoVal = 0) => ({
+        ldo: ldoVal,
+        loa: items.reduce((acc, i) => acc + i.valLoa, 0),
+        reajuste: items.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
+        aditamento: items.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
+        total: items.reduce((acc, i) => acc + getItemLoaTotal(i), 0),
+      });
+
+      const sections: LoaReportSection[] = [];
+
+      if (contratoItems.length > 0) {
+        sections.push({
+          sectionKey: "contratos",
+          sectionTitle: "1. Despesas com Contratos e Projetos Iniciados",
+          sectionBadge: "Contratos Vigentes",
+          sectionIcon: "description",
+          totals: calcTotals(contratoItems, 0),
+          groups: contratoGroups,
+        });
+      }
+
+      if (demaisItems.length > 0) {
+        sections.push({
+          sectionKey: "demais",
+          sectionTitle: "2. Demais Despesas Orçamentárias",
+          sectionBadge: "Operacional / Demais",
+          sectionIcon: "folder_open",
+          totals: calcTotals(demaisItems, totalLdo),
+          groups: demaisGroups,
+        });
+      }
+
+      if (bpItems.length > 0) {
+        sections.push({
+          sectionKey: "banco-projetos",
+          sectionTitle: "3. Banco de Projetos Alocados",
+          sectionBadge: "Novos Projetos / Alocados",
+          sectionIcon: "account_tree",
+          totals: calcTotals(bpItems, 0),
+          groups: bpGroups,
+        });
+      }
+
+      const reportData: LoaReportData = {
+        tituloSecretaria: reportSecretariat,
+        unidadeOrcamentaria: reportUnit,
+        orgao: reportOrgan,
+        exercicio: "2027",
+        hasAdjustments: hasAnyAdjustment,
+        reportScopeTitle: "Consolidado · Contratos, Demais Despesas e Banco de Projetos",
+        totals: {
+          ldo: totalLdo,
+          loa: totalLoa,
+          reajuste: totalReajuste,
+          aditamento: totalAditamento,
+          total: totalGeral,
+        },
+        sections,
+      };
+
+      openLoaReportWindow(reportData, true);
+    } else {
+      // Relatório Específico de Escopo Único (Contratos, Demais ou Banco de Projetos)
+      let targetItems: RawBudgetItem[] = [];
+      let scopeTitle = "";
+
+      if (selectedScope === "banco-projetos") {
+        targetItems = reportEligibleItems.filter(isBancoProjetoItem);
+        scopeTitle = "Banco de Projetos Alocados";
+      } else if (selectedScope === "contratos") {
+        targetItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && isItemContrato(i));
+        scopeTitle = "Contratos e Projetos Iniciados";
+      } else {
+        targetItems = reportEligibleItems.filter((i) => !isBancoProjetoItem(i) && !isItemContrato(i));
+        scopeTitle = "Demais Despesas Orçamentárias";
+      }
+
+      const reportGroups = buildReportGroupsFromItems(targetItems);
+      const scopeTotals = {
+        ldo: selectedScope === "demais" ? totalLdo : 0,
+        loa: targetItems.reduce((acc, i) => acc + i.valLoa, 0),
+        reajuste: targetItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
+        aditamento: targetItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
+        total: targetItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0),
+      };
+
+      const reportData: LoaReportData = {
+        tituloSecretaria: reportSecretariat,
+        unidadeOrcamentaria: reportUnit,
+        orgao: reportOrgan,
+        exercicio: "2027",
+        hasAdjustments: hasAnyAdjustment,
+        reportScopeTitle: scopeTitle,
+        totals: scopeTotals,
+        groups: reportGroups,
+      };
+
+      openLoaReportWindow(reportData, true);
     }
-    doc.save("relatorio-tecnico-ldo-loa-osasco-2027.pdf");
   };
+
 
   // Alternar nó expansível da árvore
   const toggleNode = (nodeId: string) => {
@@ -2071,6 +2682,25 @@ export function AnaliseLoaView() {
   };
 
   const collapseAllNodes = () => setExpandedNodes(new Set());
+
+  const expandAllEditGroups = () => {
+    const allGroups = new Set<string>();
+    const allNatures = new Set<string>();
+    paginatedEditableGroups.forEach((group) => {
+      allGroups.add(group.id);
+      group.children.forEach((item) => {
+        const nat = item.natureza || item.elemento || "Outros";
+        allNatures.add(`${group.id}|${nat}`);
+      });
+    });
+    setExpandedEditGroups(allGroups);
+    setExpandedNatureGroups(allNatures);
+  };
+
+  const collapseAllEditGroups = () => {
+    setExpandedEditGroups(new Set());
+    setExpandedNatureGroups(new Set());
+  };
 
   // Filtrar automaticamente ao clicar em um nó da árvore hierárquica
   const handleNodeSelect = (node: TreeNode, e: React.MouseEvent) => {
@@ -2213,6 +2843,14 @@ export function AnaliseLoaView() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setAuditModalOpen(true)}
+            className="flex min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 transition-colors shadow-sm sm:w-auto cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-base text-emerald-700">history_edu</span>
+            Auditoria Orçamentária
+          </button>
+          <button
+            type="button"
             onClick={() => setCardsConfigModalOpen(true)}
             className="flex min-h-11 w-full items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-surface border border-outline-variant text-on-surface hover:bg-surface-container transition-colors shadow-sm sm:w-auto"
           >
@@ -2230,19 +2868,43 @@ export function AnaliseLoaView() {
       </header>
 
       {dataLoadState === "loading" && rawItems.length === 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant" role="status" aria-live="polite">
-          <span className="material-symbols-outlined animate-spin text-primary" aria-hidden="true">progress_activity</span>
-          <span>Carregando dados da análise...</span>
+        <div className="space-y-4 my-2 animate-in fade-in" role="status" aria-live="polite">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="glass-card bg-surface p-4 rounded-xl border border-outline-variant/60 space-y-2">
+                <div className="h-3 w-20 bg-surface-container-high/70 rounded animate-pulse" />
+                <div className="h-6 w-28 bg-surface-container-high/90 rounded animate-pulse" />
+                <div className="h-2.5 w-16 bg-surface-container-high/50 rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+          <div className="glass-card bg-surface p-6 rounded-2xl border border-outline-variant/60 space-y-3">
+            <div className="h-4 w-48 bg-surface-container-high/80 rounded animate-pulse" />
+            <div className="h-10 w-full bg-surface-container-high/50 rounded-xl animate-pulse" />
+            <div className="space-y-2 pt-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-8 w-full bg-surface-container-high/40 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          </div>
         </div>
       )}
       {dataLoadState === "error" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-error/40 bg-error-container px-4 py-3 text-sm text-on-error-container sm:flex-row sm:items-center sm:justify-between" role="alert">
-          <div>
-            <p className="font-semibold">Não foi possível carregar todos os dados da análise.</p>
-            <p className="mt-1 text-xs">{dataLoadError || "Verifique a conexão e tente novamente."}</p>
+        <div className="flex flex-col gap-3 rounded-2xl border border-error/40 bg-error-container/40 p-5 text-sm text-on-error-container sm:flex-row sm:items-center sm:justify-between my-4 animate-in fade-in" role="alert">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-xl text-rose-600 shrink-0 mt-0.5">error</span>
+            <div>
+              <p className="font-bold text-on-surface">Não foi possível carregar os dados da análise orçamentária.</p>
+              <p className="mt-0.5 text-xs text-on-surface-variant">{dataLoadError || "Verifique sua conexão ou tente recarregar a planilha."}</p>
+            </div>
           </div>
-          <button type="button" onClick={() => setDataReloadKey((value) => value + 1)} className="min-h-11 shrink-0 rounded-lg border border-error/40 bg-surface px-4 py-2 text-xs font-bold text-on-error-container hover:bg-error-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error">
-            Tentar novamente
+          <button
+            type="button"
+            onClick={() => setDataReloadKey((value) => value + 1)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">refresh</span>
+            <span>Tentar Novamente</span>
           </button>
         </div>
       )}
@@ -2254,421 +2916,36 @@ export function AnaliseLoaView() {
         // Seção 1: Painel da Receita Orçamentária
         if (sectionId === "painel-receita") {
           return (
-            <div key="painel-receita" className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                <span className="material-symbols-outlined text-sm text-emerald-600">account_balance_wallet</span>
-                <span>Painel da Receita Orçamentária</span>
-              </div>
-              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                {layoutConfig.receitaKpisOrder.map((kpiId) => {
-                  if (layoutConfig.visibility[kpiId] === false) return null;
-
-                  if (kpiId === "rec-ldo") {
-                    return (
-                      <div key="rec-ldo" className="glass-card bg-surface p-4 border-t-2 border-t-emerald-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(ldoReceitaTotal)}
-                        </h3>
-                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">Receita Planejada LDO</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-loa") {
-                    return (
-                      <div key="rec-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(0)}
-                        </h3>
-                        <p className="text-[10px] text-blue-700 font-semibold mt-1">Receita Fixada LOA</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-diff") {
-                    const recLdo = ldoReceitaTotal;
-                    const recLoa = 0;
-                    const recDiff = recLoa - recLdo;
-                    const isGreater = recDiff > 0;
-                    const isSmaller = recDiff < 0;
-
-                    return (
-                      <div key="rec-diff" className={`glass-card bg-surface p-4 border-t-2 ${isGreater ? "border-t-rose-500 bg-rose-50/20" : isSmaller ? "border-t-emerald-500" : "border-t-gray-400"} shadow-sm`}>
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
-                        <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${isGreater ? "text-rose-600" : isSmaller ? "text-emerald-600" : "text-on-surface"}`}>
-                          {isGreater ? "▲" : isSmaller ? "▼" : "—"} {currency.format(Math.abs(recDiff))}
-                        </h3>
-                        <p className="text-[10px] text-on-surface-variant mt-1">
-                          {isGreater ? "⚠️ LOA maior que a LDO (+ Excesso)" : isSmaller ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-exec") {
-                    return (
-                      <div key="rec-exec" className="glass-card bg-surface p-4 border-t-2 border-t-purple-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {percent.format(ldoReceitaTotal > 0 ? 0 : 1)}
-                        </h3>
-                        <p className="text-[10px] text-purple-700 font-semibold mt-1">Transformado em LOA</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-maior") {
-                    return (
-                      <div key="rec-maior" className="glass-card bg-surface p-4 border-t-2 border-t-teal-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Maior Arrecadação LDO</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(0)}
-                        </h3>
-                        <p className="text-[10px] text-teal-700 font-semibold mt-1">Maior Fonte LDO</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "rec-fontes") {
-                    return (
-                      <div key="rec-fontes" className="glass-card bg-surface p-4 border-t-2 border-t-amber-600 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total Fontes / Vínculos</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {integer.format(61)}
-                        </h3>
-                        <p className="text-[10px] text-amber-700 font-semibold mt-1">Fontes de Recurso LDO</p>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-              </section>
-            </div>
+            <AnaliseLoaReceitaKpis
+              key="painel-receita"
+              layoutConfig={layoutConfig}
+              ldoReceitaTotal={ldoReceitaTotal}
+            />
           );
         }
 
         // Seção 2: Painel da Despesa Orçamentária
         if (sectionId === "painel-despesa") {
           return (
-            <div key="painel-despesa" className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                <span className="material-symbols-outlined text-sm text-blue-600">payments</span>
-                <span>Painel da Despesa Orçamentária</span>
-              </div>
-              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                {layoutConfig.despesaKpisOrder.map((kpiId) => {
-                  if (layoutConfig.visibility[kpiId] === false) return null;
-
-                  if (kpiId === "desp-ldo") {
-                    return (
-                      <div key="desp-ldo" className="glass-card bg-surface p-4 border-t-2 border-t-emerald-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LDO</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(metrics.valLdoTotal)}
-                        </h3>
-                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">Despesa Planejada</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-loa") {
-                    return (
-                      <div key="desp-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(metrics.valLoaTotal)}
-                        </h3>
-                        <p className="text-[10px] text-blue-700 font-semibold mt-1">Despesa Fixada</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-diff") {
-                    return (
-                      <div key="desp-diff" className={`glass-card bg-surface p-4 border-t-2 ${metrics.diff > 0 ? "border-t-rose-500 bg-rose-50/20" : metrics.diff < 0 ? "border-t-emerald-500" : "border-t-gray-400"} shadow-sm`}>
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Diferença (LOA - LDO)</p>
-                        <h3 className={`text-lg font-headline font-extrabold flex items-center gap-1 ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
-                          {metrics.diff > 0 ? "▲" : metrics.diff < 0 ? "▼" : "—"} {currency.format(Math.abs(metrics.diff))}
-                        </h3>
-                        <p className="text-[10px] text-on-surface-variant mt-1">
-                          {metrics.diff > 0 ? "⚠️ LOA maior que a LDO (+ Excesso)" : metrics.diff < 0 ? "LOA menor que a LDO (- Redução)" : "Valores equivalentes"}
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-expectativa") {
-                    return (
-                      <div key="desp-expectativa" className="glass-card bg-surface p-4 border-t-2 border-t-purple-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Expectativa LOA</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {currency.format(metrics.valLoaTotal)}
-                        </h3>
-                        <p className="text-[10px] text-purple-700 font-semibold mt-1">Expectativa LOA Fixada</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-exec") {
-                    return (
-                      <div key="desp-exec" className="glass-card bg-surface p-4 border-t-2 border-t-teal-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {percent.format(metrics.percentExec / 100)}
-                        </h3>
-                        <p className="text-[10px] text-teal-700 font-semibold mt-1">Transformado em LOA</p>
-                      </div>
-                    );
-                  }
-
-                  if (kpiId === "desp-naturezas") {
-                    return (
-                      <div key="desp-naturezas" className="glass-card bg-surface p-4 border-t-2 border-t-amber-500 shadow-sm">
-                        <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total de Naturezas</p>
-                        <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                          {integer.format(metrics.totalNaturezas)}
-                        </h3>
-                        <p className="text-[10px] text-on-surface-variant mt-1">Classificações econômicas</p>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-              </section>
-            </div>
+            <AnaliseLoaDespesaKpis
+              key="painel-despesa"
+              layoutConfig={layoutConfig}
+              loaExpectativaTotal={loaExpectativaTotal}
+              metrics={metrics}
+            />
           );
         }
 
         // Seção 3: Filtros Avançados Orçamentários
         if (sectionId === "filtros-avancados") {
           return (
-            <section key="filtros-avancados" className="glass-card p-5 bg-surface border border-outline-variant space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">tune</span>
-                  <h3 className="text-sm font-headline font-bold text-on-surface">Filtros Avançados Orçamentários</h3>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    placeholder="Buscar por código, ação, palavra-chave..."
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-2 focus:ring-primary w-64"
-                  />
-                  <button
-                    onClick={() => setFilters(INITIAL_FILTERS)}
-                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200"
-                  >
-                    Limpar Filtros
-                  </button>
-                </div>
-              </div>
-
-              {/* Grade de Filtros Popover Multi-Select */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
-                  .filter((key) => key !== "orgao")
-                  .map((key) => {
-                    const labels: Record<string, string> = {
-                      secretaria: "Secretaria",
-                      unidade: "Unidade",
-                      programa: "Programa",
-                      tipoAcao: "Tipo de Ação",
-                      acao: "Ação",
-                      natureza: "Natureza",
-                      fonteVinculo: "Fonte / Vínculo",
-                      categoriaEconomica: "Cat. Despesa",
-                      grupoNatureza: "Grupo Despesa",
-                      elemento: "Mod. Aplicação",
-                      subelemento: "Subelemento",
-                      processo: "Processo",
-                    };
-
-                    const fieldLabel = labels[key] || key;
-                    const selectedValues = (filters[key] || []) as string[];
-                    const selectedCount = selectedValues.length;
-                    const allOptions = filterOptions[key] || [];
-                    const searchQ = (filterSearchQuery[key] || "").toLowerCase();
-                    const visibleOptions = allOptions.filter((opt) => opt.toLowerCase().includes(searchQ));
-                    const isOpen = openFilterKey === key;
-
-                    return (
-                      <div key={key} className="relative flex flex-col gap-1">
-                        <label className="text-[11px] font-bold text-on-surface-variant flex items-center justify-between">
-                          <span>{fieldLabel}</span>
-                          {selectedCount > 0 && (
-                            <span className="text-[10px] text-primary font-extrabold">{selectedCount}</span>
-                          )}
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setOpenFilterKey(isOpen ? null : key)}
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-1 transition-colors w-full font-medium ${selectedCount
-                              ? "bg-primary/10 border-primary font-bold text-primary"
-                              : "bg-surface border-outline-variant text-on-surface-variant hover:bg-surface-container/60"
-                            }`}
-                        >
-                          <span className="truncate">
-                            {selectedCount === 0
-                              ? "Todos"
-                              : selectedCount === 1
-                                ? selectedValues[0]
-                                : `${selectedCount} sel.`}
-                          </span>
-                          <span className="material-symbols-outlined text-xs shrink-0">
-                            {isOpen ? "expand_less" : "expand_more"}
-                          </span>
-                        </button>
-
-                        {isOpen && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-30"
-                              onClick={() => setOpenFilterKey(null)}
-                            />
-                            <div className="absolute left-0 top-full mt-1 w-64 max-w-xs bg-surface rounded-xl shadow-2xl border border-outline-variant p-2.5 z-40 space-y-2 animate-in fade-in zoom-in-95">
-                              <div className="flex items-center justify-between border-b border-outline-variant/60 pb-1.5">
-                                <span className="text-[11px] font-bold text-on-surface">Filtrar {fieldLabel}</span>
-                                {selectedCount > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFilters((prev) => ({ ...prev, [key]: [] }));
-                                    }}
-                                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
-                                  >
-                                    Limpar
-                                  </button>
-                                )}
-                              </div>
-
-                              <input
-                                type="text"
-                                placeholder={`Buscar ${fieldLabel.toLowerCase()}...`}
-                                value={filterSearchQuery[key] || ""}
-                                onChange={(e) =>
-                                  setFilterSearchQuery((prev) => ({ ...prev, [key]: e.target.value }))
-                                }
-                                className="w-full px-2 py-1 text-xs rounded-md border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-
-                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-1">
-                                {visibleOptions.length === 0 ? (
-                                  <p className="text-[11px] text-on-surface-variant p-2 text-center">Nenhuma opção encontrada</p>
-                                ) : (
-                                  visibleOptions.map((opt) => {
-                                    const isChecked = selectedValues.includes(opt);
-                                    return (
-                                      <label
-                                        key={opt}
-                                        className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors ${isChecked
-                                            ? "bg-primary/10 text-primary font-semibold"
-                                            : "hover:bg-surface-container/60 text-on-surface"
-                                          }`}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={isChecked}
-                                          onChange={() => {
-                                            setFilters((prev) => {
-                                              const current = (prev[key] || []) as string[];
-                                              return {
-                                                ...prev,
-                                                [key]: isChecked
-                                                  ? current.filter((v) => v !== opt)
-                                                  : [...current, opt],
-                                              };
-                                            });
-                                          }}
-                                          className="rounded border-outline-variant text-primary focus:ring-primary h-3.5 w-3.5"
-                                        />
-                                        <span className="truncate min-w-0" title={opt}>{opt}</span>
-                                      </label>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-
-              {/* Badges de Filtros Ativos */}
-              {(() => {
-                const activeFilterCount =
-                  Object.keys(filterOptions)
-                    .filter((k) => k !== "orgao")
-                    .reduce((sum, k) => sum + (filters[k as keyof TechnicalFilterState]?.length || 0), 0) +
-                  Number(Boolean(filters.search));
-
-                if (!activeFilterCount) return null;
-
-                const labelsMap: Record<string, string> = {
-                  secretaria: "Secretaria",
-                  unidade: "Unidade",
-                  programa: "Programa",
-                  tipoAcao: "Tipo de Ação",
-                  acao: "Ação",
-                  natureza: "Natureza",
-                  fonteVinculo: "Fonte / Vínculo",
-                  categoriaEconomica: "Cat. Despesa",
-                  grupoNatureza: "Grupo Despesa",
-                  elemento: "Mod. Aplicação",
-                  subelemento: "Subelemento",
-                  processo: "Processo",
-                };
-
-                return (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/40">
-                    <span className="text-[11px] font-bold text-on-surface-variant mr-1">Filtros ativos:</span>
-                    {(Object.keys(filterOptions) as Array<keyof typeof filterOptions>)
-                      .filter((k) => k !== "orgao")
-                      .flatMap((k) =>
-                        ((filters[k] || []) as string[]).map((val) => (
-                          <span
-                            key={`${k}-${val}`}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20"
-                          >
-                            <strong>{labelsMap[k] || k}:</strong> {val}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFilters((prev) => ({
-                                  ...prev,
-                                  [k]: (prev[k] as string[]).filter((v) => v !== val),
-                                }));
-                              }}
-                              className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    {filters.search && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-full border border-primary/20">
-                        <strong>Busca:</strong> "{filters.search}"
-                        <button
-                          type="button"
-                          onClick={() => setFilters((prev) => ({ ...prev, search: "" }))}
-                          className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer text-xs"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-            </section>
+            <AnaliseLoaAdvancedFilters
+              key="filtros-avancados"
+              filters={filters}
+              setFilters={setFilters}
+              initialFilters={INITIAL_FILTERS}
+              filterOptions={filterOptions}
+            />
           );
         }
 
@@ -2724,40 +3001,104 @@ export function AnaliseLoaView() {
           return (
             <div key="detalhamento-analitico" className="glass-card p-5 bg-surface border border-outline-variant flex flex-col">
               {/* Barra Superior da Tabela */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-3 border-b border-outline-variant">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
+              <div className="flex flex-col gap-4 pb-4 mb-3 border-b border-outline-variant">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-headline font-bold text-on-surface">Detalhamento Analítico Editável</h3>
+                      <span className="text-xs text-on-surface-variant font-medium">•</span>
+                      <span className="text-xs text-primary font-bold">
+                        {scopeTab === "todos" ? "Todas as Despesas" : scopeTab === "contratos" ? "Contratos & Projetos Iniciados" : "Demais Despesas"}
+                      </span>
+                    </div>
                     <p className="text-[11px] text-on-surface-variant">Dê duplo clique ou edite os valores diretamente nas células</p>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Buscar ação, elemento, subelemento ou processo..."
-                    value={tableSearch}
-                    onChange={(e) => setTableSearch(e.target.value)}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface w-56"
-                  />
-                  <div className="relative">
+
+                  {/* Seletor Segmentado de Escopo: Todos / Contratos / Demais */}
+                  <div className="flex items-center gap-1.5 p-1 bg-surface-container-low/70 rounded-xl border border-outline-variant/70 overflow-x-auto shrink-0 shadow-xs">
                     <button
                       type="button"
-                      onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                      className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${statusFilters.length > 0
-                          ? "border-primary text-primary bg-primary/5 font-bold"
-                          : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
-                        }`}
+                      onClick={() => setScopeTab("todos")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        scopeTab === "todos"
+                          ? "bg-primary text-on-primary shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
                     >
-                      <span className="material-symbols-outlined text-sm">filter_alt</span>
-                      <span>
-                        {statusFilters.length === 0
-                          ? "Status/Ajustado"
-                          : statusFilters.length === 1
-                            ? statusFilters[0]
-                            : `${statusFilters.length} status sel.`}
-                      </span>
-                      <span className="material-symbols-outlined text-xs">
-                        {statusDropdownOpen ? "expand_less" : "expand_more"}
+                      <span className="material-symbols-outlined text-[15px]">apps</span>
+                      <span>Todos ({scopeStats.todos.count})</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "todos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                        {currency.format(scopeStats.todos.total)}
                       </span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab("contratos")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        scopeTab === "contratos"
+                          ? "bg-amber-600 text-white shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">description</span>
+                      <span>Contratos ({scopeStats.contratos.count})</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "contratos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                        {currency.format(scopeStats.contratos.total)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab("demais")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        scopeTab === "demais"
+                          ? "bg-sky-700 text-white shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">folder_open</span>
+                      <span>Demais ({scopeStats.demais.count})</span>
+                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "demais" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                        {currency.format(scopeStats.demais.total)}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+
+                    <div className="relative w-[min(20rem,calc(100vw-8rem))] min-w-[14rem]">
+                      <label htmlFor="analytical-table-search" className="sr-only">Buscar no detalhamento analítico</label>
+                      <input
+                        id="analytical-table-search"
+                        type="text"
+                        placeholder="Buscar ação, elemento, subelemento ou processo..."
+                        value={tableSearch}
+                        onChange={(e) => setTableSearch(e.target.value)}
+                        className="min-h-10 w-full rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-xs text-on-surface"
+                      />
+                    </div>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                        className={`min-h-10 whitespace-nowrap px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1.5 font-semibold transition-colors bg-surface ${statusFilters.length > 0
+                            ? "border-primary text-primary bg-primary/5 font-bold"
+                            : "border-outline-variant text-on-surface-variant hover:bg-surface-container"
+                          }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">filter_alt</span>
+                        <span>
+                          {statusFilters.length === 0
+                            ? "Status"
+                            : statusFilters.length === 1
+                              ? statusFilters[0]
+                              : `${statusFilters.length} status sel.`}
+                        </span>
+                        <span className="material-symbols-outlined text-xs">
+                          {statusDropdownOpen ? "expand_less" : "expand_more"}
+                        </span>
+                      </button>
 
                     {statusDropdownOpen && (
                       <>
@@ -2767,7 +3108,7 @@ export function AnaliseLoaView() {
                         />
                         <div className="absolute left-0 mt-1.5 w-52 bg-surface rounded-xl shadow-xl border border-outline-variant p-2 z-30 space-y-1 animate-in fade-in zoom-in-95">
                           <div className="flex items-center justify-between px-2 py-1 border-b border-outline-variant/60 mb-1">
-                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por Status/Ajustado</span>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Filtrar por status</span>
                             {statusFilters.length > 0 && (
                               <button
                                 type="button"
@@ -2784,7 +3125,6 @@ export function AnaliseLoaView() {
                             { label: "Nova Dotação", badge: "bg-blue-100 text-blue-800 border-blue-300" },
                             { label: "Removida", badge: "bg-amber-100 text-amber-800 border-amber-300" },
                             { label: "Sem alteração", badge: "bg-gray-100 text-gray-700 border-gray-300" },
-                            { label: "Ajustado", badge: "bg-amber-100 text-amber-800 border-amber-300" },
                           ].map((st) => {
                             const checked = statusFilters.includes(st.label);
                             return (
@@ -2817,16 +3157,128 @@ export function AnaliseLoaView() {
                         </div>
                       </>
                     )}
+                    </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  {hasChanges && (
+                <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-outline-variant/70 bg-surface-container-low/40 p-2.5">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Visualização</span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setColumnsDropdownOpen((open) => !open)}
+                      className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-surface text-on-surface border border-outline-variant hover:bg-surface-container transition-colors flex items-center gap-1.5"
+                      aria-expanded={columnsDropdownOpen}
+                      aria-haspopup="menu"
+                    >
+                      <span className="material-symbols-outlined text-sm" aria-hidden="true">view_column</span>
+                      <span>Colunas</span>
+                      <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] text-primary">
+                        {visibleTableColumns.size}/{ANALYTICAL_COLUMNS.length}
+                      </span>
+                    </button>
+                    {columnsDropdownOpen && (
+                      <>
+                        <button
+                          type="button"
+                          className="fixed inset-0 z-20 cursor-default"
+                          onClick={() => setColumnsDropdownOpen(false)}
+                          aria-label="Fechar seleção de colunas"
+                        />
+                        <div className="absolute right-0 z-30 mt-1.5 w-64 rounded-xl border border-outline-variant bg-surface p-2 shadow-xl" role="menu" aria-label="Selecionar colunas visíveis">
+                          <div className="flex items-center justify-between border-b border-outline-variant/60 px-2 pb-2 pt-1">
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-on-surface-variant">Colunas visíveis</span>
+                            <button
+                              type="button"
+                              onClick={() => setVisibleTableColumns(new Set(ANALYTICAL_COLUMNS.map((column) => column.key)))}
+                              className="text-[10px] font-bold text-primary hover:underline"
+                            >
+                              Mostrar todas
+                            </button>
+                          </div>
+                          <div className="mt-1 space-y-0.5">
+                            {ANALYTICAL_COLUMNS.map((column) => {
+                              const checked = visibleTableColumns.has(column.key);
+                              return (
+                                <label
+                                  key={column.key}
+                                  className={`flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs ${column.required ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-surface-container"}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={column.required}
+                                    onChange={() => {
+                                      setVisibleTableColumns((current) => {
+                                        const next = new Set(current);
+                                        if (next.has(column.key)) next.delete(column.key);
+                                        else next.add(column.key);
+                                        return next;
+                                      });
+                                    }}
+                                    className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+                                  />
+                                  <span className="flex-1 text-on-surface">{column.label}</span>
+                                  {column.required && <span className="text-[9px] font-bold uppercase text-on-surface-variant">Fixa</span>}
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-2 flex items-center justify-between gap-2 border-t border-outline-variant/60 px-2 pt-2">
+                            <span className="text-[10px] text-on-surface-variant">
+                              {columnsSaveState === "saved" ? "Preferência salva para este usuário" : columnsSaveState === "error" ? "Não foi possível salvar" : "Salve para manter esta configuração"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={saveColumnsPreference}
+                              disabled={columnsSaveState === "saving"}
+                              className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-[10px] font-bold text-on-primary shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">{columnsSaveState === "saving" ? "sync" : "save"}</span>
+                              {columnsSaveState === "saving" ? "Salvando" : "Salvar"}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Estrutura</span>
+                      <div className="flex items-center gap-1 bg-surface-container-low p-0.5 rounded-lg border border-outline-variant">
+                    <button
+                      type="button"
+                      onClick={collapseAllEditGroups}
+                      className="px-2.5 py-1.5 text-xs font-semibold rounded-md text-on-surface hover:bg-surface-container transition-colors flex items-center gap-1"
+                      title="Recolher todas as ações e despesas"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">unfold_less</span>
+                      <span>Recolher Todas</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={expandAllEditGroups}
+                      className="px-2.5 py-1.5 text-xs font-semibold rounded-md text-on-surface hover:bg-surface-container transition-colors flex items-center gap-1"
+                      title="Expandir todas as ações e despesas"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">unfold_more</span>
+                      <span>Expandir Todas</span>
+                    </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-end justify-end gap-3">
+                    {hasChanges && (
                     <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
                       Alterações não salvas
                     </span>
                   )}
-                  <button
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Alterações</span>
+                      <button
                     onClick={handleSaveEdits}
                     disabled={savingState === "saving"}
                     className={`min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm ${hasChanges
@@ -2842,28 +3294,122 @@ export function AnaliseLoaView() {
                     <span>
                       {savingState === "saving" ? "Salvando..." : savingState === "saved" ? "Salvo com sucesso!" : "Salvar Alterações"}
                     </span>
-                  </button>
-                  <button
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Exportar</span>
+                      <div className="flex flex-wrap gap-2">
+                      <button
                     onClick={exportToExcel}
                     className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
                   >
                     <span className="material-symbols-outlined text-sm">description</span>
                     Excel
-                  </button>
-                  <button
-                    onClick={exportToPDF}
-                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center gap-1"
+                      </button>
+                      <button
+                    type="button"
+                    onClick={exportDetailedCsv}
+                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-sky-50 text-sky-700 border border-sky-300 hover:bg-sky-100 transition-colors flex items-center gap-1"
+                    title="Exportar os registros visíveis no mesmo modelo da planilha LOA"
                   >
-                    <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                    PDF
-                  </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high transition-colors flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-sm">print</span>
-                    Imprimir
-                  </button>
+                    <span className="material-symbols-outlined text-sm" aria-hidden="true">csv</span>
+                    CSV LOA
+                      </button>
+                      <div className="relative">
+                        <div className="inline-flex rounded-lg shadow-xs border border-rose-300 bg-rose-50 text-rose-700">
+                          <button
+                            type="button"
+                            onClick={() => exportToPDF()}
+                            className="min-h-11 px-3 py-1.5 text-xs font-bold hover:bg-rose-100 transition-colors flex items-center gap-1.5 rounded-l-lg border-r border-rose-300/60"
+                            title="Visualizar e imprimir relatório oficial no formato LOA com base na visão atual"
+                          >
+                            <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                            <span>Relatório Técnico (PDF)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPdfMenuOpen((prev) => !prev)}
+                            className="min-h-11 px-2 py-1.5 text-xs font-bold hover:bg-rose-100 transition-colors flex items-center justify-center rounded-r-lg cursor-pointer"
+                            title="Opções de relatório (Completo em 2 blocos, Apenas Contratos ou Apenas Demais)"
+                            aria-expanded={pdfMenuOpen}
+                          >
+                            <span className="material-symbols-outlined text-xs">arrow_drop_down</span>
+                          </button>
+                        </div>
+                        {pdfMenuOpen && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-30 cursor-default"
+                              onClick={() => setPdfMenuOpen(false)}
+                            />
+                            <div className="absolute right-0 z-40 mt-1.5 w-72 rounded-xl border border-outline-variant bg-surface p-1.5 shadow-xl animate-in fade-in zoom-in-95 text-left">
+                              <div className="px-2.5 py-1.5 border-b border-outline-variant/60 mb-1">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-on-surface-variant">Opções de Geração (PDF)</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("todos");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-primary">splitscreen</span>
+                                  <span>Relatório Completo (3 Blocos)</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Contratos, Demais Despesas e Banco de Projetos em blocos com subtotais</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("contratos");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-amber-700">description</span>
+                                  <span>Apenas Contratos</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Projetos iniciados e despesas contratuais</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("demais");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-sky-700">folder_open</span>
+                                  <span>Apenas Demais Despesas</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Demais despesas orçamentárias</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPdfMenuOpen(false);
+                                  exportToPDF("banco-projetos");
+                                }}
+                                className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                                  <span className="material-symbols-outlined text-sm text-emerald-700">account_tree</span>
+                                  <span>Apenas Banco de Projetos</span>
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant pl-5">Projetos alocados na LOA</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2874,24 +3420,23 @@ export function AnaliseLoaView() {
                   <thead className="bg-sky-50/70 dark:bg-sky-950/40 sticky top-0 z-10 text-[11px] font-bold text-sky-900 dark:text-sky-200 border-b border-sky-100 dark:border-sky-900/50">
                     <tr>
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[300px] min-w-[260px] sm:w-[450px] sm:min-w-[350px]">{renderSortHeader("acao", "Ação")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[100px] min-w-[90px] sm:w-[110px] sm:min-w-[100px]">{renderSortHeader("elemento", "Elemento de Despesa")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Editável)", "text-right")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>
-                      <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Ajustado / Validado", "text-center")}</th>
+                      {visibleTableColumns.has("elemento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[100px] min-w-[90px] sm:w-[110px] sm:min-w-[100px]">{renderSortHeader("elemento", "Elemento de Despesa")}</th>}
+                      {visibleTableColumns.has("valLdo") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>}
+                      {visibleTableColumns.has("valLoa") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Vigente)", "text-right")}</th>}
+                      {visibleTableColumns.has("valorReajuste") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Valor Reajuste", "text-right")}</th>}
+                      {visibleTableColumns.has("valorAditamento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Valor Aditamento", "text-right")}</th>}
+                      {visibleTableColumns.has("valorTotal") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorTotal", "Valor Total", "text-right")}</th>}
+                      {visibleTableColumns.has("diff") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>}
+                      {visibleTableColumns.has("status") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>}
+                      {visibleTableColumns.has("adjusted") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
                     {paginatedEditableGroups.map((group) => {
                       const isExpanded = expandedEditGroups.has(group.id);
-                      const diff = group.valLoa - group.valLdo;
-                      const status = getStatusInfo(group.valLdo, group.valLoa);
+                      const diff = group.valorTotal - group.valLdo;
+                      const status = getStatusInfo(group.valLdo, group.valorTotal);
                       const diffColor = diff > 0 ? "text-emerald-600 font-bold" : diff < 0 ? "text-rose-600 font-bold" : "text-gray-400";
-                      const groupAdjusted = group.children.some((item) => {
-                        const original = originalValuesById.get(item.id) ?? item.valLdo;
-                        return Math.abs(item.valLoa - original) > 0.001;
-                      });
                       const natureGroups = Array.from(group.children.reduce((map, item) => {
                         const key = item.natureza || item.elemento || "Outros";
                         map.set(key, [...(map.get(key) ?? []), item]);
@@ -2920,6 +3465,13 @@ export function AnaliseLoaView() {
                         }
                         return natureSort.direction === "asc" ? res : -res;
                       });
+                      const validatedNatures = natureGroups.filter(([, items]) => items.length > 0 && items.every((item) => validatedRows[item.id])).length;
+                      const actionValidationStatus = getNatureValidationStatus(validatedNatures, natureGroups.length);
+                      const actionValidationClass = actionValidationStatus === "Validada"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : actionValidationStatus === "Parcial"
+                          ? "bg-amber-100 text-amber-800 border-amber-300"
+                          : "bg-surface-container text-on-surface-variant border-outline-variant";
 
                       return (
                         <Fragment key={group.id}>
@@ -2932,12 +3484,14 @@ export function AnaliseLoaView() {
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <button
                                   type="button"
-                                  onClick={() => setExpandedEditGroups((previous) => {
-                                    const next = new Set(previous);
-                                    if (next.has(group.id)) next.delete(group.id);
-                                    else next.add(group.id);
-                                    return next;
-                                  })}
+                                  onClick={() => {
+                                    setExpandedEditGroups((previous) => {
+                                      const next = new Set(previous);
+                                      if (next.has(group.id)) next.delete(group.id);
+                                      else next.add(group.id);
+                                      return next;
+                                    });
+                                  }}
                                   className={`min-h-9 min-w-9 rounded-lg flex items-center justify-center shrink-0 transition-all font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${isExpanded
                                       ? "bg-sky-700 text-white shadow-sm ring-2 ring-sky-400/40"
                                       : "border border-sky-300 bg-white text-sky-700 hover:bg-sky-100 dark:bg-slate-900 dark:text-sky-300 dark:border-sky-700"
@@ -2953,13 +3507,13 @@ export function AnaliseLoaView() {
                                   <span className="block whitespace-normal text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
                                     {group.acao || "Sem Ação"}
                                   </span>
-                                  {group.children.some((item) => item.origem === "Banco de Projetos") && (
+                                  {(group.children.some((item) => item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey)) || group.programa === "Banco de Projetos") && (
                                     <span className="mt-1 inline-flex rounded-full bg-secondary-container px-2 py-0.5 text-[9px] font-bold text-on-secondary-container">
                                       Banco de Projetos
                                     </span>
                                   )}
                                 </div>
-                                {group.children.filter((item) => item.origem === "Banco de Projetos").map((item) => (
+                                {group.children.filter((item) => item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey) || group.programa === "Banco de Projetos").map((item) => (
                                   <button
                                     key={item.id}
                                     type="button"
@@ -2982,289 +3536,308 @@ export function AnaliseLoaView() {
                                 </button>
                               </div>
                             </td>
-                            <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
+                            {visibleTableColumns.has("elemento") && <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
                               {group.elemento}
-                            </td>
-                            <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
+                            </td>}
+                            {visibleTableColumns.has("valLdo") && <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
                               {formatBr(group.valLdo)}
-                            </td>
-                            <td className="p-2 border border-outline-variant/20 bg-surface text-right">
-                              <input
-                                type="text"
-                                value={editingCell?.id === group.id && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(group.valLoa)}
-                                onFocus={() => {
-                                  setEditingCell({ id: group.id, field: "groupValLoa" });
-                                  setTempInputValue(group.valLoa.toFixed(2).replace(".", ","));
-                                }}
-                                onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                onBlur={() => {
-                                  applyGroupLoa(group, parseBr(tempInputValue));
-                                  setEditingCell(null);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter") event.currentTarget.blur();
-                                }}
-                                className="w-32 text-right px-2 py-1 rounded-lg border border-primary/50 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white dark:border-primary/60"
-                              />
-                            </td>
-                            <td className={`p-3 text-right font-semibold ${diffColor}`}>
+                            </td>}
+                            {visibleTableColumns.has("valLoa") && (
+                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                                {formatBr(group.valLoa)}
+                              </td>
+                            )}
+                            {visibleTableColumns.has("valorReajuste") && (
+                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                                {formatBr(group.valorReajuste)}
+                              </td>
+                            )}
+                            {visibleTableColumns.has("valorAditamento") && (
+                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                                {formatBr(group.valorAditamento)}
+                              </td>
+                            )}
+                            {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>}
+                            {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-semibold ${diffColor}`}>
                               {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
-                            </td>
-                            <td className="p-3 text-center">
+                            </td>}
+                            {visibleTableColumns.has("status") && <td className="p-3 text-center">
                               <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
-                            </td>
-                            <td className="p-3 text-center">
-                              {groupAdjusted ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
-                                  <span className="material-symbols-outlined text-[12px]">edit</span>
-                                  <span>Ajustado</span>
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleValidateRow(group.id)}
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[group.id]
-                                      ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                      : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                    }`}
-                                  title={validatedRows[group.id] ? "Ação validada! Clique para desmarcar" : "Marcar esta ação como validada (sem alterações necessárias)"}
-                                  aria-label={`Validar ação ${group.acao}`}
-                                >
-                                  <span className={`material-symbols-outlined text-[14px] ${validatedRows[group.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                    {validatedRows[group.id] ? "check_circle" : "radio_button_unchecked"}
-                                  </span>
-                                  <span>{validatedRows[group.id] ? "Validado" : "Validar"}</span>
-                                </button>
-                              )}
-                            </td>
+                            </td>}
+                            {visibleTableColumns.has("adjusted") && <td className="p-3 text-center">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${actionValidationClass}`}>
+                                {validatedNatures}/{natureGroups.length} Naturezas · {actionValidationStatus}
+                              </span>
+                            </td>}
                           </tr>
                           {isExpanded && (
                             <Fragment>
                               {/* BLOCO PLANEJAMENTO LDO - 2027 */}
                               <tr className="bg-surface-container-lowest/80 border-b border-outline-variant/30">
-                                <td colSpan={7} className="p-3 pl-8 sm:pl-12">
-                                  <div className="rounded-xl border border-primary/20 bg-surface p-4 shadow-sm space-y-3 dark:bg-surface-container-low">
-                                    {/* Header do Bloco */}
-                                    <div className="flex items-center justify-between border-b border-outline-variant/30 pb-2">
-                                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
-                                        Planejamento LDO — 2027
-                                      </span>
-                                      {editingLdoPlanningGroupKey === group.id ? (
-                                        <div className="flex items-center gap-2">
+                                <td colSpan={visibleTableColumns.size} className="p-3 pl-8 sm:pl-12">
+                                  {(() => {
+                                    const isLdoPlanningCollapsed = collapsedLdoPlanningGroups.has(group.id);
+                                    return (
+                                      <div className="rounded-xl border border-primary/20 bg-surface p-3.5 shadow-sm dark:bg-surface-container-low transition-all">
+                                        {/* Header do Accordion */}
+                                        <div className={`flex items-center justify-between ${isLdoPlanningCollapsed ? "" : "border-b border-outline-variant/30 pb-2.5 mb-3"}`}>
                                           <button
                                             type="button"
-                                            onClick={() => setEditingLdoPlanningGroupKey(null)}
-                                            className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                                            onClick={() => {
+                                              setCollapsedLdoPlanningGroups((prev) => {
+                                                const next = new Set(prev);
+                                                if (next.has(group.id)) next.delete(group.id);
+                                                else next.add(group.id);
+                                                return next;
+                                              });
+                                            }}
+                                            className="flex items-center gap-2 text-left group/accordion cursor-pointer hover:opacity-85 transition-all focus-visible:outline-none"
+                                            aria-expanded={!isLdoPlanningCollapsed}
                                           >
-                                            Cancelar
+                                            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary transition-transform">
+                                              <span className="material-symbols-outlined text-[16px] font-bold">
+                                                {isLdoPlanningCollapsed ? "expand_more" : "expand_less"}
+                                              </span>
+                                            </div>
+                                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary font-headline">
+                                              Planejamento LDO — 2027
+                                            </span>
+                                            <span className="text-[10px] text-on-surface-variant font-mono bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant/40">
+                                              {isLdoPlanningCollapsed ? "Clique para expandir" : "Recolher"}
+                                            </span>
                                           </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleSaveLdoPlanning(group)}
-                                            className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm"
-                                          >
-                                            Salvar LDO
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleStartEditLdoPlanning(group)}
-                                          className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                                        >
-                                          <span className="material-symbols-outlined text-xs">edit</span>
-                                          Editar LDO
-                                        </button>
-                                      )}
-                                    </div>
 
-                                    {editingLdoPlanningGroupKey === group.id ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                                        {/* Card 1: Indicador (Edição) */}
-                                        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
-                                          <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
-                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                              <span className="material-symbols-outlined text-xs">analytics</span>
-                                            </div>
-                                            <span>Indicador</span>
-                                          </label>
-                                          <input
-                                            id="edit-ldo-indicador"
-                                            type="text"
-                                            value={editLdoIndicador}
-                                            onChange={(e) => setEditLdoIndicador(e.target.value)}
-                                            placeholder="Ex: Taxa de atendimento..."
-                                            className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                          />
-                                          <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
-                                        </div>
-
-                                        {/* Card 2: Unidade de Medida (Edição) */}
-                                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
-                                          <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                              <span className="material-symbols-outlined text-xs">straighten</span>
-                                            </div>
-                                            <span>Unidade de Medida</span>
-                                          </label>
-                                          <input
-                                            id="edit-ldo-unidade"
-                                            type="text"
-                                            value={editLdoUnidadeMedida}
-                                            onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
-                                            placeholder="Ex: %, Unidade, Alunos..."
-                                            className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                          />
-                                          <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
+                                          {/* Ações de Edição */}
+                                          <div className="flex items-center gap-2">
+                                            {editingLdoPlanningGroupKey === group.id ? (
+                                              <div className="flex items-center gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setEditingLdoPlanningGroupKey(null)}
+                                                  className="rounded-lg border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+                                                >
+                                                  Cancelar
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleSaveLdoPlanning(group)}
+                                                  className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-on-primary hover:bg-primary/90 transition-colors shadow-sm cursor-pointer"
+                                                >
+                                                  Salvar LDO
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setCollapsedLdoPlanningGroups((prev) => {
+                                                    const next = new Set(prev);
+                                                    next.delete(group.id);
+                                                    return next;
+                                                  });
+                                                  handleStartEditLdoPlanning(group);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer"
+                                              >
+                                                <span className="material-symbols-outlined text-xs">edit</span>
+                                                Editar LDO
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
 
-                                        {/* Card 3: Custo Físico 2027 (Edição) */}
-                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
-                                          <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
-                                            <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                                              <span className="material-symbols-outlined text-xs">pie_chart</span>
-                                            </div>
-                                            <span>Custo Físico 2027</span>
-                                          </label>
-                                          <input
-                                            id="edit-ldo-custo-fisico"
-                                            type="text"
-                                            value={editLdoCustoFisico}
-                                            onChange={(e) => setEditLdoCustoFisico(e.target.value)}
-                                            placeholder="0"
-                                            className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                          />
-                                          <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
-                                        </div>
-
-                                        {/* Card 4: Custo Financeiro LOA (Edição) */}
-                                        {(() => {
-                                          const valorCustoFin = group.valLoa;
-                                          const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
-                                          const diffValor = valorCustoFin - totalNaturezas;
-                                          const hasDiff = Math.abs(diffValor) > 0.01;
-                                          return (
-                                            <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
-                                              <div className="flex items-center justify-between">
-                                                <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
-                                                    <span className="material-symbols-outlined text-xs">payments</span>
+                                        {/* Conteúdo do Accordion */}
+                                        {!isLdoPlanningCollapsed && (
+                                          editingLdoPlanningGroupKey === group.id ? (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                              {/* Card 1: Indicador (Edição) */}
+                                              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30">
+                                                <label htmlFor="edit-ldo-indicador" className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                                    <span className="material-symbols-outlined text-xs">analytics</span>
                                                   </div>
-                                                  <span>Custo Financeiro LOA</span>
+                                                  <span>Indicador</span>
                                                 </label>
-                                                {hasDiff && (
-                                                  <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
-                                                    <span className="material-symbols-outlined text-[10px]">warning</span>
-                                                    Divergente
-                                                  </span>
-                                                )}
+                                                <input
+                                                  id="edit-ldo-indicador"
+                                                  type="text"
+                                                  value={editLdoIndicador}
+                                                  onChange={(e) => setEditLdoIndicador(e.target.value)}
+                                                  placeholder="Ex: Taxa de atendimento..."
+                                                  className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                />
+                                                <p className="text-[9px] text-on-surface-variant">Desempenho da Ação</p>
                                               </div>
-                                              <input
-                                                id="edit-ldo-custo-fin"
-                                                type="text"
-                                                value={editLdoCustoFinanceiro}
-                                                onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
-                                                placeholder={formatBr(group.valLoa)}
-                                                className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
-                                              />
-                                              {hasDiff ? (
-                                                <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
-                                                  Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
-                                                </p>
-                                              ) : (
-                                                <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
-                                              )}
-                                            </div>
-                                          );
-                                        })()}
-                                      </div>
-                                    ) : (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                                        {(() => {
-                                          const data = getLdoPlanningForGroup(group);
-                                          const formattedCustoFisico = data.custoFisico2027 != null
-                                            ? data.custoFisico2027.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
-                                            : "0";
-                                          const valorCustoFin = group.valLoa;
-                                          const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
-                                          const diffValor = valorCustoFin - totalNaturezas;
-                                          const hasDiff = Math.abs(diffValor) > 0.01;
 
-                                          return (
-                                            <>
-                                              {/* Card 1: Indicador (Visualização) */}
-                                              <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
-                                                <div>
-                                                  <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
-                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                                                      <span className="material-symbols-outlined text-sm">analytics</span>
-                                                    </div>
-                                                    <span>Indicador</span>
+                                              {/* Card 2: Unidade de Medida (Edição) */}
+                                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                                <label htmlFor="edit-ldo-unidade" className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                                    <span className="material-symbols-outlined text-xs">straighten</span>
                                                   </div>
-                                                  <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
-                                                    {data.indicador || "Não informado"}
-                                                  </p>
-                                                </div>
+                                                  <span>Unidade de Medida</span>
+                                                </label>
+                                                <input
+                                                  id="edit-ldo-unidade"
+                                                  type="text"
+                                                  value={editLdoUnidadeMedida}
+                                                  onChange={(e) => setEditLdoUnidadeMedida(e.target.value)}
+                                                  placeholder="Ex: %, Unidade, Alunos..."
+                                                  className="w-full text-xs font-semibold px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                                />
+                                                <p className="text-[9px] text-on-surface-variant">Métrica oficial Anexo VI</p>
                                               </div>
 
-                                              {/* Card 2: Unidade de Medida (Visualização) */}
-                                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
-                                                <div>
-                                                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
-                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                                      <span className="material-symbols-outlined text-sm">straighten</span>
-                                                    </div>
-                                                    <span>Unidade de Medida</span>
+                                              {/* Card 3: Custo Físico 2027 (Edição) */}
+                                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-amber-500/30">
+                                                <label htmlFor="edit-ldo-custo-fisico" className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                                  <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                    <span className="material-symbols-outlined text-xs">pie_chart</span>
                                                   </div>
-                                                  <p className="mt-2 text-base font-extrabold text-on-surface">
-                                                    {data.unidadeMedida || "Não informado"}
-                                                  </p>
-                                                </div>
+                                                  <span>Custo Físico 2027</span>
+                                                </label>
+                                                <input
+                                                  id="edit-ldo-custo-fisico"
+                                                  type="text"
+                                                  value={editLdoCustoFisico}
+                                                  onChange={(e) => setEditLdoCustoFisico(e.target.value)}
+                                                  placeholder="0"
+                                                  className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                                />
+                                                <p className="text-[9px] text-on-surface-variant">Meta física Anexo VI (LDO)</p>
                                               </div>
 
-                                              {/* Card 3: Custo Físico 2027 (Visualização) */}
-                                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
-                                                <div>
-                                                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
-                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                                                      <span className="material-symbols-outlined text-sm">pie_chart</span>
+                                              {/* Card 4: Custo Financeiro LOA (Edição) */}
+                                              {(() => {
+                                                const valorCustoFin = group.valLoa;
+                                                const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                                const diffValor = valorCustoFin - totalNaturezas;
+                                                const hasDiff = Math.abs(diffValor) > 0.01;
+                                                return (
+                                                  <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3 space-y-1.5 focus-within:ring-2 focus-within:ring-sky-500/30`}>
+                                                    <div className="flex items-center justify-between">
+                                                      <label htmlFor="edit-ldo-custo-fin" className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                        <div className="flex h-5 w-5 items-center justify-center rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                          <span className="material-symbols-outlined text-xs">payments</span>
+                                                        </div>
+                                                        <span>Custo Financeiro LOA</span>
+                                                      </label>
+                                                      {hasDiff && (
+                                                        <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[8px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                          <span className="material-symbols-outlined text-[10px]">warning</span>
+                                                          Divergente
+                                                        </span>
+                                                      )}
                                                     </div>
-                                                    <span>Custo Físico 2027</span>
-                                                  </div>
-                                                  <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
-                                                    {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
-                                                  </p>
-                                                </div>
-                                              </div>
-
-                                              {/* Card 4: Custo Financeiro LOA (Visualização) */}
-                                              <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
-                                                <div>
-                                                  <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-                                                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
-                                                        <span className="material-symbols-outlined text-sm">payments</span>
-                                                      </div>
-                                                      <span>Custo Financeiro LOA</span>
-                                                    </div>
-                                                    {hasDiff && (
-                                                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
-                                                        <span className="material-symbols-outlined text-[11px]">warning</span>
-                                                        Divergente
-                                                      </span>
+                                                    <input
+                                                      id="edit-ldo-custo-fin"
+                                                      type="text"
+                                                      value={editLdoCustoFinanceiro}
+                                                      onChange={(e) => setEditLdoCustoFinanceiro(e.target.value)}
+                                                      placeholder={formatBr(group.valLoa)}
+                                                      className="w-full text-xs font-bold font-mono px-2 py-1 rounded-lg border border-outline-variant bg-surface text-on-surface focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                                    />
+                                                    {hasDiff ? (
+                                                      <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
+                                                        Saldo difere das naturezas ({diffValor > 0 ? `+${formatBr(diffValor)}` : formatBr(diffValor)})
+                                                      </p>
+                                                    ) : (
+                                                      <p className="text-[9px] text-on-surface-variant">Sincronizado com as naturezas</p>
                                                     )}
                                                   </div>
-                                                  <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
-                                                    {currency.format(valorCustoFin)}
-                                                  </p>
-                                                </div>
-                                              </div>
-                                            </>
-                                          );
-                                        })()}
+                                                );
+                                              })()}
+                                            </div>
+                                          ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                                              {(() => {
+                                                const data = getLdoPlanningForGroup(group);
+                                                const formattedCustoFisico = data.custoFisico2027 != null
+                                                  ? data.custoFisico2027.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+                                                  : "0";
+                                                const valorCustoFin = group.valLoa;
+                                                const totalNaturezas = group.children.reduce((sum, c) => sum + c.valLoa, 0);
+                                                const diffValor = valorCustoFin - totalNaturezas;
+                                                const hasDiff = Math.abs(diffValor) > 0.01;
+
+                                                return (
+                                                  <>
+                                                    {/* Card 1: Indicador (Visualização) */}
+                                                    <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.03] p-3.5 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                                                            <span className="material-symbols-outlined text-sm">analytics</span>
+                                                          </div>
+                                                          <span>Indicador</span>
+                                                        </div>
+                                                        <p className="mt-2 text-xs font-semibold text-on-surface leading-snug">
+                                                          {data.indicador || "Não informado"}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Card 2: Unidade de Medida (Visualização) */}
+                                                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3.5 flex flex-col justify-between hover:border-emerald-500/40 transition-colors">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider">
+                                                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                                            <span className="material-symbols-outlined text-sm">straighten</span>
+                                                          </div>
+                                                          <span>Unidade de Medida</span>
+                                                        </div>
+                                                        <p className="mt-2 text-base font-extrabold text-on-surface">
+                                                          {data.unidadeMedida || "Não informado"}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Card 3: Custo Físico 2027 (Visualização) */}
+                                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3.5 flex flex-col justify-between hover:border-amber-500/40 transition-colors">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                                                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                            <span className="material-symbols-outlined text-sm">pie_chart</span>
+                                                          </div>
+                                                          <span>Custo Físico 2027</span>
+                                                        </div>
+                                                        <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                          {formattedCustoFisico} <span className="text-xs font-normal text-on-surface-variant font-sans">({data.unidadeMedida || "unid."})</span>
+                                                        </p>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Card 4: Custo Financeiro LOA (Visualização) */}
+                                                    <div className={`rounded-xl border ${hasDiff ? "border-amber-500/40 bg-amber-500/[0.06]" : "border-sky-500/20 bg-sky-500/[0.03]"} p-3.5 flex flex-col justify-between hover:border-sky-500/40 transition-colors`}>
+                                                      <div>
+                                                        <div className="flex items-center justify-between">
+                                                          <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                                                            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                                                              <span className="material-symbols-outlined text-sm">payments</span>
+                                                            </div>
+                                                            <span>Custo Financeiro LOA</span>
+                                                          </div>
+                                                          {hasDiff && (
+                                                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold dark:bg-amber-950/80 dark:text-amber-300">
+                                                              <span className="material-symbols-outlined text-[11px]">warning</span>
+                                                              Divergente
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        <p className="mt-2 text-lg font-extrabold font-mono text-on-surface">
+                                                          {currency.format(valorCustoFin)}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  </>
+                                                );
+                                              })()}
+                                            </div>
+                                          )
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
+                                    );
+                                  })()}
                                 </td>
                               </tr>
 
@@ -3283,7 +3856,7 @@ export function AnaliseLoaView() {
                                     </span>
                                   </button>
                                 </th>
-                                <th className="p-2 text-left">
+                                {visibleTableColumns.has("elemento") && <th className="p-2 text-left">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "subelementos", direction: curr.column === "subelementos" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3295,8 +3868,8 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "subelementos" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>
-                                <th className="p-2 text-right">
+                                </th>}
+                                {visibleTableColumns.has("valLdo") && <th className="p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "valLdo", direction: curr.column === "valLdo" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3308,8 +3881,8 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "valLdo" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>
-                                <th className="p-2 text-right">
+                                </th>}
+                                {visibleTableColumns.has("valLoa") && <th className="p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "valLoa", direction: curr.column === "valLoa" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3321,8 +3894,11 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "valLoa" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>
-                                <th className="p-2 text-right">
+                                </th>}
+                                {visibleTableColumns.has("valorReajuste") && <th className="p-2 text-right">Valor Reajuste</th>}
+                                {visibleTableColumns.has("valorAditamento") && <th className="p-2 text-right">Valor Aditamento</th>}
+                                {visibleTableColumns.has("valorTotal") && <th className="p-2 text-right">Valor Total</th>}
+                                {visibleTableColumns.has("diff") && <th className="p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "diff", direction: curr.column === "diff" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3334,8 +3910,8 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "diff" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>
-                                <th className="p-2 text-center">
+                                </th>}
+                                {visibleTableColumns.has("status") && <th className="p-2 text-center">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "status", direction: curr.column === "status" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3347,8 +3923,8 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "status" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>
-                                <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Ajustado</th>
+                                </th>}
+                                {visibleTableColumns.has("adjusted") && <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Validação</th>}
                               </tr>
 
                               {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
@@ -3357,8 +3933,24 @@ export function AnaliseLoaView() {
                                 const natureExpanded = expandedNatureGroups.has(natureKey);
                                 const natureLdo = natureItems.reduce((sum, item) => sum + item.valLdo, 0);
                                 const natureLoa = natureItems.reduce((sum, item) => sum + item.valLoa, 0);
-                                const natureDiff = natureLoa - natureLdo;
-                                const natureStatus = getStatusInfo(natureLdo, natureLoa);
+                                const natureReajuste = natureItems.reduce((sum, item) => sum + (item.valorReajuste ?? 0), 0);
+                                const natureAditamento = natureItems.reduce((sum, item) => sum + (item.valorAditamento ?? 0), 0);
+                                const natureTotal = natureLoa + natureReajuste + natureAditamento;
+                                const natureDiff = natureTotal - natureLdo;
+                                const natureStatus = getStatusInfo(natureLdo, natureTotal);
+                                const elementGroups = Array.from(natureItems.reduce((map, item) => {
+                                  const elemento = item.elemento || "Sem elemento";
+                                  map.set(elemento, [...(map.get(elemento) ?? []), item]);
+                                  return map;
+                                }, new Map<string, RawBudgetItem[]>()));
+                                const validatedSubelements = natureItems.filter((item) => validatedRows[item.id]).length;
+                                const validationPercent = natureItems.length > 0 ? Math.round((validatedSubelements / natureItems.length) * 100) : 0;
+                                const validationStatus = getNatureValidationStatus(validatedSubelements, natureItems.length);
+                                const validationStatusClass = validationStatus === "Validada"
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : validationStatus === "Parcial"
+                                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                                    : "bg-surface-container text-on-surface-variant border-outline-variant";
                                 return (
                                   <Fragment key={natureKey}>
                                     <tr className="bg-surface hover:bg-surface-container/60 transition-colors border-b border-outline-variant/20">
@@ -3401,85 +3993,163 @@ export function AnaliseLoaView() {
                                           </button>
                                         </div>
                                       </td>
-                                      <td className="p-2.5 text-on-surface-variant font-sans text-xs">
-                                        {natureItems.length} subelemento{natureItems.length === 1 ? "" : "s"}
-                                      </td>
-                                      <td className="p-2.5 text-right font-mono text-on-surface-variant text-xs">{formatBr(natureLdo)}</td>
-                                      <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                        <input
-                                          type="text"
-                                          value={editingCell?.id === natureKey && editingCell.field === "groupValLoa" ? tempInputValue : formatBr(natureLoa)}
-                                          onFocus={() => {
-                                            setEditingCell({ id: natureKey, field: "groupValLoa" });
-                                            setTempInputValue(natureLoa.toFixed(2).replace(".", ","));
-                                          }}
-                                          onChange={(event) => setTempInputValue(event.target.value.replace(/-/g, ""))}
-                                          onBlur={() => {
-                                            applyNatureLoa(natureItems, parseBr(tempInputValue));
-                                            setEditingCell(null);
-                                          }}
-                                          onKeyDown={(event) => {
-                                            if (event.key === "Enter") event.currentTarget.blur();
-                                          }}
-                                          className="w-32 text-right px-2 py-1 rounded-lg border border-primary/40 bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:outline-none shadow-sm text-xs"
-                                        />
-                                      </td>
-                                      <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
-                                        {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
-                                      </td>
-                                      <td className="p-2.5 text-center">
-                                        <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
-                                      </td>
-                                      <td className="p-2.5 text-center text-xs text-on-surface-variant/60">—</td>
+                                      {visibleTableColumns.has("elemento") && <td className="p-2.5 text-on-surface-variant font-sans text-xs">
+                                         <div className="flex flex-col gap-1 items-start">
+                                          <span>{elementGroups.length} elemento{elementGroups.length === 1 ? "" : "s"} de despesa</span>
+                                          <span className="font-mono text-[10px] font-bold">{validatedSubelements} de {natureItems.length} subelementos validados · {validationPercent}%</span>
+                                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>{validationStatus}</span>
+                                          {natureItems.some((i) => i.processo && i.processo !== "—") && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 dark:text-sky-200 bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-1.5 py-0.5 rounded shadow-2xs" title="Contém processos administrativos vinculados">
+                                              <span className="material-symbols-outlined text-[11px]">folder</span>
+                                              <span>Proc: {Array.from(new Set(natureItems.map((i) => i.processo).filter((p) => p && p !== "—"))).join(", ")}</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>}
+                                      {visibleTableColumns.has("valLdo") && (
+                                        <td className="p-2.5 text-right font-mono text-on-surface-variant/50 font-medium select-none bg-surface-container-low/40 text-xs">
+                                          0,00
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("valLoa") && (
+                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureLoa)}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("valorReajuste") && (
+                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureReajuste)}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("valorAditamento") && (
+                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureAditamento)}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("valorTotal") && (
+                                        <td className="p-2.5 text-right font-mono font-extrabold text-primary text-xs">
+                                          {formatBr(natureTotal)}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("diff") && (
+                                        <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                          {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("status") && (
+                                        <td className="p-2.5 text-center">
+                                          <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
+                                        </td>
+                                      )}
+                                      {visibleTableColumns.has("adjusted") && <td className="p-2.5 text-center">
+                                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>
+                                          {validatedSubelements}/{natureItems.length} · {validationStatus}
+                                        </span>
+                                      </td>}
                                     </tr>
 
-                                    {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (NETOS) */}
+                                    {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (unidades validáveis) */}
                                     {natureExpanded && natureItems.map((item) => {
-                                      const original = originalValuesById.get(item.id) ?? item.valLdo;
-                                      const childAdjusted = Math.abs(item.valLoa - original) > 0.001;
-
                                       return (
                                         <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
-                                          <td colSpan={2} className="p-2 pl-16 sm:pl-24 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="text-outline-variant/80 font-mono text-xs select-none">│   └──</span>
-                                              <div className="min-w-0 flex-1 flex flex-col items-start gap-1">
-                                                <span className="text-on-surface font-medium text-xs">{getSubelementLabel(item)}</span>
-                                                {item.processo && item.processo !== "—" && (
-                                                  <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-xs">
-                                                    <span className="material-symbols-outlined text-[12px]">folder</span>
-                                                    <span>Processo: {item.processo}</span>
-                                                  </span>
-                                                )}
+                                            <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2.5 pl-12 sm:pl-16 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
+                                              <div className="flex items-start gap-2">
+                                                {/* Linha guia conectora da árvore */}
+                                                <span className="text-outline-variant/80 font-mono text-xs select-none mt-0.5 shrink-0">│   └──</span>
+                                                <div className="min-w-0 flex-1 flex flex-col items-start gap-1.5">
+                                                  {/* Cabeçalho do Subelemento com Botões de Ação alinhados à direita */}
+                                                  <div className="w-full flex items-center justify-between gap-2">
+                                                    <span className="text-on-surface font-semibold text-xs leading-snug break-words">{getSubelementLabel(item)}</span>
+                                                    <div className="flex items-center gap-1 shrink-0 ml-auto">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          setEditingSubelementItem(item);
+                                                          setEditSubelementName(getSubelementLabel(item));
+                                                          setEditSubelementVinculo(item.fonteVinculo || "01");
+                                                          setEditSubelementCodigoAplicacao(item.codigoAplicacao || item.processo.match(/^CA:\s*(.+)$/i)?.[1]?.trim() || "");
+                                                          setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
+                                                          setEditSubelementProjetoIniciado(item.projetoIniciado || "");
+                                                          setEditSubelementObservacao(item.observacao || justifications[item.id] || "");
+                                                          setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
+                                                        }}
+                                                        className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10 transition-all cursor-pointer"
+                                                        title="Editar subelemento"
+                                                        aria-label={`Editar ${getSubelementLabel(item)}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[13px]">edit</span>
+                                                        <span>Editar</span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => removeSubelement(item)}
+                                                        className="rounded p-1 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer"
+                                                        title="Remover subelemento"
+                                                        aria-label={`Remover ${getSubelementLabel(item)}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                                                      </button>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Badges de Vínculo (com Código de Aplicação integrado) e Processo */}
+                                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                                    {(item.fonteVinculo || item.codigoAplicacao) && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
+                                                        title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                                                        <span>Vínculo: {formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}</span>
+                                                      </span>
+                                                    )}
+                                                    {item.processo && item.processo !== "—" && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-2xs"
+                                                        title={`Processo Administrativo: ${item.processo}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[12px]">folder</span>
+                                                        <span>Processo: {item.processo}</span>
+                                                      </span>
+                                                    )}
+                                                  </div>
+
+                                                  {/* Bloco Enquadrado de Informações (Projeto Iniciado + Observação) */}
+                                                  {(item.projetoIniciado || item.observacao || justifications[item.id]) && (
+                                                    <div className="mt-2 w-full flex flex-col gap-2 rounded-lg border border-outline-variant/60 bg-surface-container-low/90 dark:bg-surface-container-high/50 p-3 shadow-2xs">
+                                                      {item.projetoIniciado && (
+                                                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                                                          <span className="font-bold text-on-surface">Projeto Iniciado:</span>
+                                                          <span
+                                                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md ${
+                                                              item.projetoIniciado === "SIM"
+                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                                                                : "bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800"
+                                                            }`}
+                                                          >
+                                                            <span className="material-symbols-outlined text-[12px]">
+                                                              {item.projetoIniciado === "SIM" ? "check_circle" : "cancel"}
+                                                            </span>
+                                                            {item.projetoIniciado}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {(item.observacao || justifications[item.id]) && (
+                                                        <div className="flex items-start gap-2 text-xs leading-relaxed text-on-surface-variant">
+                                                          <span className="material-symbols-outlined text-[15px] text-amber-700 dark:text-amber-400 shrink-0 mt-0.5">notes</span>
+                                                          <div className="min-w-0 flex-1 break-words">
+                                                            <strong className="font-semibold text-on-surface">Observação: </strong>
+                                                            <span className="text-on-surface/90">{item.observacao || justifications[item.id]}</span>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                </div>
                                               </div>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setEditingSubelementItem(item);
-                                                  setEditSubelementName(getSubelementLabel(item));
-                                                  setEditSubelementProcesso(item.processo && item.processo !== "—" ? item.processo : "");
-                                                  setEditSubelementValor(item.valLoa.toFixed(2).replace(".", ","));
-                                                }}
-                                                className="ml-auto inline-flex items-center gap-1 rounded border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary opacity-80 hover:bg-primary/10 hover:opacity-100 transition-all"
-                                                title="Editar subelemento"
-                                                aria-label={`Editar ${getSubelementLabel(item)}`}
-                                              >
-                                                <span className="material-symbols-outlined text-[13px]">edit</span>
-                                                <span>Editar</span>
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => removeSubelement(item)}
-                                                className="ml-1 rounded p-0.5 text-rose-600 opacity-60 hover:bg-rose-50 hover:opacity-100 transition-all"
-                                                title="Remover subelemento"
-                                                aria-label={`Remover ${getSubelementLabel(item)}`}
-                                              >
-                                                <span className="material-symbols-outlined text-[15px]">delete</span>
-                                              </button>
-                                            </div>
-                                          </td>
-                                          <td className="p-2 text-right font-mono text-on-surface-variant/60 text-xs">—</td>
-                                          <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            </td>
+                                          {visibleTableColumns.has("valLdo") && <td className="p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
+                                          {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <input
                                               type="text"
                                               value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
@@ -3497,35 +4167,86 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
                                             />
-                                          </td>
-                                          <td className="p-2 text-right text-on-surface-variant/60 text-xs">—</td>
-                                          <td className="p-2 text-center">
-                                            <span className="inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border border-outline-variant bg-surface-container text-on-surface-variant">Detalhamento LOA</span>
-                                          </td>
-                                          <td className="p-2 text-center">
-                                            {childAdjusted ? (
-                                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9.5px] font-extrabold rounded-md bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 shadow-2xs">
-                                                <span className="material-symbols-outlined text-[11px]">edit</span>
-                                                <span>Ajustado</span>
-                                              </span>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() => toggleValidateRow(item.id)}
-                                                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all cursor-pointer ${validatedRows[item.id]
-                                                    ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
-                                                    : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
-                                                  }`}
-                                                title={validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento (sem alterações)"}
-                                                aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
-                                              >
-                                                <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
-                                                  {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
-                                                </span>
-                                                <span>{validatedRows[item.id] ? "Validado" : "Validar"}</span>
-                                              </button>
-                                            )}
-                                          </td>
+                                          </td>}
+                                          {visibleTableColumns.has("valorReajuste") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <input
+                                              type="text"
+                                              value={editingCell?.id === item.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(item.valorReajuste ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: item.id, field: "valorReajuste" });
+                                                setTempInputValue((item.valorReajuste ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorReajuste: value } : entry));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                          </td>}
+                                          {visibleTableColumns.has("valorAditamento") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <input
+                                              type="text"
+                                              value={editingCell?.id === item.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(item.valorAditamento ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: item.id, field: "valorAditamento" });
+                                                setTempInputValue((item.valorAditamento ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorAditamento: value } : entry));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                          </td>}
+                                          {visibleTableColumns.has("valorTotal") && <td className="p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>}
+                                          {visibleTableColumns.has("diff") && <td className={`p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                            {currency.format(getItemLoaTotal(item) - item.valLdo)}
+                                          </td>}
+                                          {visibleTableColumns.has("status") && <td className="p-2 text-center">
+                                            <span className={`inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border ${getStatusInfo(item.valLdo, getItemLoaTotal(item)).class}`}>
+                                              {getStatusInfo(item.valLdo, getItemLoaTotal(item)).label}
+                                            </span>
+                                          </td>}
+                                          {visibleTableColumns.has("adjusted") && <td className="p-2 text-center">
+                                            {(() => {
+                                              const itemSec = item.orgao || (item as unknown as { secretaria?: string }).secretaria || "";
+                                              const canValidateItem = canUserValidateSecretaria(itemSec);
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  disabled={!canValidateItem}
+                                                  onClick={() => toggleValidateRow(item.id, itemSec)}
+                                                  className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold rounded-lg border transition-all ${
+                                                    !canValidateItem
+                                                      ? "opacity-60 cursor-not-allowed bg-surface text-on-surface-variant/50 border-outline-variant"
+                                                      : "cursor-pointer "
+                                                  } ${validatedRows[item.id]
+                                                      ? "bg-emerald-100 text-emerald-900 border-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 shadow-2xs"
+                                                      : "bg-surface text-on-surface-variant/70 border-outline-variant hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30"
+                                                    }`}
+                                                  title={
+                                                    !canValidateItem
+                                                      ? `Validação restrita ao técnico da ${itemSec || "pasta"}`
+                                                      : validatedRows[item.id] ? "Subelemento validado! Clique para desmarcar" : "Validar este subelemento"
+                                                  }
+                                                  aria-label={`Validar subelemento ${getSubelementLabel(item)}`}
+                                                >
+                                                  <span className={`material-symbols-outlined text-[13px] ${validatedRows[item.id] ? "text-emerald-700 dark:text-emerald-400 font-black" : "text-gray-400"}`}>
+                                                    {validatedRows[item.id] ? "check_circle" : "radio_button_unchecked"}
+                                                  </span>
+                                                  <span>{validatedRows[item.id] ? "Validado" : "Pendente"}</span>
+                                                </button>
+                                              );
+                                            })()}
+                                          </td>}
                                         </tr>
                                       );
                                     })}
@@ -3540,21 +4261,25 @@ export function AnaliseLoaView() {
                   </tbody>
                   <tfoot className="bg-surface-container sticky bottom-0 z-10 font-mono font-bold text-xs border-t-2 border-outline-variant">
                     <tr>
-                      <td colSpan={2} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
+                      <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
                         Total Geral Filtrado ({filteredItems.length} registros)
                       </td>
-                      <td className="p-3 text-right text-on-surface-variant font-extrabold">
+                      {visibleTableColumns.has("valLdo") && <td className="p-3 text-right text-on-surface-variant font-extrabold">
                         {formatBr(metrics.valLdoTotal)}
-                      </td>
-                      <td className="p-3 text-right text-primary font-extrabold">
-                        {formatBr(metrics.valLoaTotal)}
-                      </td>
-                      <td className={`p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
+                      </td>}
+                      {visibleTableColumns.has("valLoa") && <td className="p-3 text-right text-primary font-extrabold">
+                        {formatBr(metrics.valLoaVigenteTotal)}
+                      </td>}
+                      {visibleTableColumns.has("valorReajuste") && <td className="p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorReajusteTotal)}</td>}
+                      {visibleTableColumns.has("valorAditamento") && <td className="p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>}
+                      {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right text-primary font-extrabold">{formatBr(metrics.valLoaTotal)}</td>}
+                      {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
                         {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
-                      </td>
-                      <td className="p-3 text-center text-on-surface-variant text-[10px]">
+                      </td>}
+                      {visibleTableColumns.has("status") && <td className="p-3 text-center text-on-surface-variant text-[10px]">
                         TOTALIZADOR
-                      </td>
+                      </td>}
+                      {visibleTableColumns.has("adjusted") && <td className="p-3 text-center text-on-surface-variant">—</td>}
                     </tr>
                   </tfoot>
                 </table>
@@ -3664,6 +4389,25 @@ export function AnaliseLoaView() {
                             {item.natureza && (
                               <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-700/60">
                                 Despesa {item.natureza.trim().match(/\d+(\.\d+)*/)?.[0] || item.natureza}
+                              </span>
+                            )}
+                            {(item.fonteVinculo || item.codigoAplicacao) && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-teal-50 text-teal-800 border border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-700/60" title={`Fonte/Vínculo e Aplicação: ${formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}`}>
+                                Vínculo {formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}
+                              </span>
+                            )}
+                            {item.processo && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-sky-50 text-sky-800 border border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-700/60" title={`Processo Administrativo: ${item.processo}`}>
+                                Proc: {item.processo}
+                              </span>
+                            )}
+                            {item.projetoIniciado && (
+                              <span className={`px-1.5 py-0.2 text-[9px] font-bold font-mono rounded border ${
+                                item.projetoIniciado === "SIM"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                  : "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300"
+                              }`}>
+                                Projeto Iniciado: {item.projetoIniciado}
                               </span>
                             )}
                             <span className="text-[10px] font-mono text-on-surface-variant truncate">
@@ -3946,7 +4690,7 @@ export function AnaliseLoaView() {
                               Ação: {item.acao}
                             </p>
                             <p className="text-[10px] text-on-surface-variant font-mono truncate">
-                              Natureza: {item.natureza} • Subelemento: {item.subelemento || "—"}
+                              Natureza: {item.natureza} • Subelemento: {item.subelemento || "—"} • Vínculo: {item.fonteVinculo || "01"}
                             </p>
                           </div>
                           <div className="text-right shrink-0 font-mono text-xs">
@@ -4031,6 +4775,10 @@ export function AnaliseLoaView() {
         setCodigoAplicacao={setNewExpenseCodigoAplicacao}
         processo={newExpenseProcesso}
         setProcesso={setNewExpenseProcesso}
+        projetoIniciado={newExpenseProjetoIniciado}
+        setProjetoIniciado={setNewExpenseProjetoIniciado}
+        observacao={newExpenseObservacao}
+        setObservacao={setNewExpenseObservacao}
         onClose={() => {
           setAddExpenseGroup(null);
           setAddElementContext(null);
@@ -4038,6 +4786,8 @@ export function AnaliseLoaView() {
           setNewExpenseValor("");
           setNewExpenseCodigoAplicacao("");
           setNewExpenseProcesso("");
+          setNewExpenseProjetoIniciado("");
+          setNewExpenseObservacao("");
         }}
         onConfirm={handleAddExpense}
         parseValue={parseBr}
@@ -4091,6 +4841,16 @@ export function AnaliseLoaView() {
                   inputMode="decimal"
                   placeholder="Ex.: 25.000,00"
                   className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-right font-mono text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Código de Aplicação
+                <input
+                  value={editSubelementCodigoAplicacao}
+                  onChange={(event) => setEditSubelementCodigoAplicacao(event.target.value)}
+                  placeholder="Ex.: 110000"
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm font-mono"
                 />
               </label>
               <label className="block text-xs font-bold text-on-surface">
@@ -4179,6 +4939,67 @@ export function AnaliseLoaView() {
                 />
               </label>
 
+              {/* Bloco Unificado: Fonte / Vínculo & Código de Aplicação */}
+              <div className="rounded-xl border border-outline-variant/60 bg-surface-container-lowest/80 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-on-surface">Vínculo & Aplicação</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200 border border-teal-300 dark:border-teal-700 font-mono font-bold text-[11px]">
+                    <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                    <span>{formatVinculoComAplicacao(editSubelementVinculo || "01", editSubelementCodigoAplicacao)}</span>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-on-surface mb-1">
+                      Fonte / Vínculo *
+                    </label>
+                    <div className="flex gap-1.5">
+                      <select
+                        value={VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) ? editSubelementVinculo : "custom"}
+                        onChange={(event) => {
+                          if (event.target.value !== "custom") {
+                            setEditSubelementVinculo(event.target.value);
+                          }
+                        }}
+                        className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-1.5 text-xs font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        {VINCULO_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                        <option value="custom">Outro...</option>
+                      </select>
+                      {(!VINCULO_OPTIONS.some((opt) => opt.value === editSubelementVinculo) || editSubelementVinculo === "custom") && (
+                        <input
+                          value={editSubelementVinculo === "custom" ? "" : editSubelementVinculo}
+                          onChange={(event) => setEditSubelementVinculo(event.target.value)}
+                          placeholder="Ex.: 01"
+                          className="w-16 rounded-lg border border-outline-variant bg-surface px-2 py-1.5 text-xs font-mono"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-on-surface mb-1">
+                      Código de Aplicação
+                    </label>
+                    <input
+                      value={editSubelementCodigoAplicacao}
+                      onChange={(event) => setEditSubelementCodigoAplicacao(event.target.value)}
+                      placeholder="Ex.: 110.0000"
+                      className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-1.5 text-xs font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-on-surface-variant font-normal">
+                  Composição: <strong className="font-mono text-on-surface">{editSubelementVinculo || "01"}</strong> (Fonte) . <strong className="font-mono text-on-surface">{editSubelementCodigoAplicacao || "110.0000"}</strong> (Aplicação.Variável)
+                </p>
+              </div>
+
               <label className="block text-xs font-bold text-on-surface">
                 Valor LOA *
                 <input
@@ -4199,6 +5020,30 @@ export function AnaliseLoaView() {
                   className="mt-1 w-full rounded-lg border border-outline-variant px-3 py-2 text-sm"
                 />
               </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Contrato
+                <select
+                  value={editSubelementProjetoIniciado}
+                  onChange={(event) => setEditSubelementProjetoIniciado(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Não informado</option>
+                  <option value="SIM">SIM</option>
+                  <option value="NÃO">NÃO</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-bold text-on-surface">
+                Observação
+                <textarea
+                  value={editSubelementObservacao}
+                  onChange={(event) => setEditSubelementObservacao(event.target.value)}
+                  placeholder="Observação ou justificativa do subelemento..."
+                  rows={2}
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+                />
+              </label>
             </div>
 
             <div className="flex justify-end gap-2 border-t border-outline-variant bg-surface-container/40 p-4">
@@ -4213,18 +5058,66 @@ export function AnaliseLoaView() {
                 type="button"
                 onClick={() => {
                   const newValor = parseBr(editSubelementValor);
+                  const updatedPayload: Partial<RawBudgetItem> = {
+                    subelemento: editSubelementName.trim() || editingSubelementItem.subelemento,
+                    fonteVinculo: editSubelementVinculo.trim() || editingSubelementItem.fonteVinculo || "01",
+                    codigoAplicacao: editSubelementCodigoAplicacao.trim() || undefined,
+                    processo: editSubelementProcesso.trim() || "—",
+                    projetoIniciado: editSubelementProjetoIniciado || undefined,
+                    observacao: editSubelementObservacao.trim() || undefined,
+                    valLoa: newValor,
+                  };
+
                   setRawItems((previous) =>
                     previous.map((entry) =>
                       entry.id === editingSubelementItem.id
                         ? {
                           ...entry,
-                          subelemento: editSubelementName.trim() || entry.subelemento,
-                          processo: editSubelementProcesso.trim() || "—",
-                          valLoa: newValor,
+                          ...updatedPayload,
                         }
                         : entry
                     )
                   );
+
+                  if (editSubelementObservacao.trim()) {
+                    setJustifications((prev) => ({
+                      ...prev,
+                      [editingSubelementItem.id]: editSubelementObservacao.trim(),
+                    }));
+                  }
+
+                  // Gravar no LocalStorage e no Banco de Dados
+                  try {
+                    const savedSubEdits = JSON.parse(localStorage.getItem("painel_loa_subelement_edits_v1") || "{}");
+                    savedSubEdits[editingSubelementItem.id] = updatedPayload;
+                    localStorage.setItem("painel_loa_subelement_edits_v1", JSON.stringify(savedSubEdits));
+                    void fetch("/api/configuracoes/layout", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        chave: "painel_loa_subelement_edits",
+                        valor: savedSubEdits,
+                      }),
+                    });
+
+                    // Se for item adicionado manualmente, atualizar também o registro
+                    if (editingSubelementItem.id.startsWith("manual-")) {
+                      const savedAdded = JSON.parse(localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY) || "[]") as RawBudgetItem[];
+                      const nextAdded = savedAdded.map((it) => it.id === editingSubelementItem.id ? { ...it, ...updatedPayload } : it);
+                      localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(nextAdded));
+                      void fetch("/api/configuracoes/layout", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          chave: "painel_loa_added_expenses",
+                          valor: nextAdded,
+                        }),
+                      });
+                    }
+                  } catch (e) {
+                    console.warn("Erro ao salvar customizações do subelemento:", e);
+                  }
+
                   setHasChanges(true);
                   setEditingSubelementItem(null);
                 }}
@@ -4244,6 +5137,23 @@ export function AnaliseLoaView() {
         config={layoutConfig}
         onSaveConfig={handleSaveLayoutConfig}
         onResetConfig={handleResetLayoutConfig}
+      />
+
+      {/* 9. POPUP MODAL: Auditoria Orçamentária & Rastreabilidade */}
+      <AuditoriaOrcamentariaModal
+        isOpen={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+        secretariaAtiva={filters.secretaria[0] || ""}
+        onRestaurarItem={(dotacaoId) => {
+          // Remover do localStorage local se existir
+          try {
+            const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[])
+              .filter((id) => id !== dotacaoId);
+            localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(savedRemoved));
+          } catch {}
+          // Forçar recarregamento transparente dos dados no Painel
+          setDataReloadKey((prev) => prev + 1);
+        }}
       />
     </div>
   );

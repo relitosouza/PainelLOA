@@ -1,10 +1,13 @@
 import * as XLSX from "xlsx";
 import type { BudgetRow, FieldKey } from "@/types/loa";
+import { normalizeUnidadeOrcamentaria } from "./unidades-orcamentarias-catalogo";
 
 const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "CD ORGAO DS ORGAO": "organ",
   "ORGAO": "organ",
+  "SECRETARIA": "organ",
   "CD UNID DS UNID": "budgetUnit",
+  "UNIDADE": "budgetUnit",
   "UNIDADE ORCAMENTARIA": "budgetUnit",
   "CD FUNCAO DS FUNCAO": "functionName",
   "FUNCAO": "functionName",
@@ -16,8 +19,10 @@ const HEADER_ALIASES: Record<string, FieldKey | "value" | "budgetPiece"> = {
   "ACAO": "action",
   "NATUREZA DE DESPESA": "expenseNature",
   "NATUREZA DA DESPESA": "expenseNature",
+  "NATUREZA": "expenseNature",
   "DESC SUB": "subelement",
   "SUBELEMENTO": "subelement",
+  "PROCESSO": "administrativeProcess",
   "PROCESSO ADMINISTRATIVO": "administrativeProcess",
   "VALOR": "value",
   "PECA ORCAMENTARIA": "budgetPiece",
@@ -98,7 +103,7 @@ export function parseRows(rows: unknown[][]) {
       return;
     }
 
-    const budgetPieceIdx = headerMap.get("budgetPiece" as any);
+    const budgetPieceIdx = headerMap.get("budgetPiece");
     if (budgetPieceIdx !== undefined) {
       const pieceVal = clean(row[budgetPieceIdx]).toUpperCase();
       if (pieceVal && pieceVal !== "LOA") return;
@@ -118,6 +123,7 @@ export function parseRows(rows: unknown[][]) {
       record[field] = idx !== undefined ? clean(row[idx]) : "";
     }
     record.organ = rowOrgan || currentOrgan;
+    record.budgetUnit = normalizeUnidadeOrcamentaria(record.organ, record.budgetUnit);
     record.value = value;
     records.push(record);
   });

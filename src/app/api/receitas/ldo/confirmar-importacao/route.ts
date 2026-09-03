@@ -64,12 +64,9 @@ export async function POST(req: NextRequest) {
     });
 
     if (modoImportacao === "substituir") {
-      const ldoClient = (db as any).ldoReceita || (new (require("@prisma/client").PrismaClient)()).ldoReceita;
-      if (ldoClient?.deleteMany) {
-        await ldoClient.deleteMany({
-          where: { exercicio },
-        });
-      }
+      await db.ldoReceita.deleteMany({
+        where: { exercicio },
+      });
     }
 
     // Inserção em lote no banco preservando Apelido Original e Normalizado
@@ -90,8 +87,7 @@ export async function POST(req: NextRequest) {
       saldoDistribuir: r.total,
     }));
 
-    const ldoClient = (db as any).ldoReceita || (new (require("@prisma/client").PrismaClient)()).ldoReceita;
-    await ldoClient.createMany({
+    await db.ldoReceita.createMany({
       data: insertData,
     });
 
@@ -101,9 +97,9 @@ export async function POST(req: NextRequest) {
       quantidadeRegistros: registrosParaInserir.length,
       valorTotal: parsed.valorTotalLdo,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro detalhado ao confirmar importação LDO:", error);
-    const detail = error?.message || String(error);
+    const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: `Falha ao gravar no banco: ${detail}` }, { status: 500 });
   }
 }
