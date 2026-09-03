@@ -8,3 +8,4 @@
 - [filtros-personalizaveis] Personalização de visibilidade de filtros (ocultar/adicionar) gerenciada por `src/hooks/use-filter-visibility.ts` e `src/components/filter-customize-popover.tsx`, persistida em `/api/configuracoes/layout` e LocalStorage.
 - [snapshots-diarios] Proposta de fotografias diárias e comparativo D-1 vs D0 documentada em `docs/proposta-snapshots-diarios.md`.
 - [relatorio-loa] Exclusão de vínculos curtos 00.00 (5 dígitos) no relatório impresso/PDF, com exceção e segregação em seção dedicada para Banco de Projetos Alocados (`src/components/analise-loa-view.tsx` e `src/lib/loa-report-template.ts`).
+- [git-merge] Ramo `staging` (com todas as melhorias de relatórios, persistência e auditoria) sincronizado e mesclado com sucesso na branch `main` com 34 testes automatizados validados.
