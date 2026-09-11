@@ -55,7 +55,7 @@ export function Sidebar({
   return (
     <aside
       id={id}
-      className={`fixed top-0 bottom-0 left-0 z-40 flex flex-col bg-[#001a4b] text-white shrink-0 w-[280px] will-change-transform transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${
+      className={`fixed top-0 bottom-0 left-0 z-40 flex flex-col bg-[#1B365D] border-r border-[#1B365D]/30 text-white shrink-0 w-[280px] will-change-transform transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none ${
         mobileOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
       } ${
         collapsed
