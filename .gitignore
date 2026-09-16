@@ -7,4 +7,6 @@ coverage
 *.tsbuildinfo
 .vercel
 .env*
+!.env.example
+!.env.docker.example
 .venv/

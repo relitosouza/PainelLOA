@@ -1,158 +1,185 @@
 ---
-name: Public Trust & Clarity
+name: Sistema de Emendas Parlamentares — Osasco
+description: Governança institucional, controle de cotas e admissibilidade para a Câmara de Osasco
 colors:
-  surface: '#f7f9fb'
-  surface-dim: '#d8dadc'
-  surface-bright: '#f7f9fb'
-  surface-container-lowest: '#ffffff'
-  surface-container-low: '#f2f4f6'
-  surface-container: '#eceef0'
-  surface-container-high: '#e6e8ea'
-  surface-container-highest: '#e0e3e5'
-  on-surface: '#191c1e'
-  on-surface-variant: '#424751'
-  inverse-surface: '#2d3133'
-  inverse-on-surface: '#eff1f3'
-  outline: '#737783'
-  outline-variant: '#c2c6d3'
-  surface-tint: '#255dad'
-  primary: '#00346f'
-  on-primary: '#ffffff'
-  primary-container: '#004a99'
-  on-primary-container: '#9bbdff'
-  inverse-primary: '#abc7ff'
-  secondary: '#00629d'
-  on-secondary: '#ffffff'
-  secondary-container: '#00a2fd'
-  on-secondary-container: '#003558'
-  tertiary: '#5f2200'
-  on-tertiary: '#ffffff'
-  tertiary-container: '#833301'
-  on-tertiary-container: '#ffa77e'
-  error: '#ba1a1a'
-  on-error: '#ffffff'
-  error-container: '#ffdad6'
-  on-error-container: '#93000a'
-  primary-fixed: '#d7e2ff'
-  primary-fixed-dim: '#abc7ff'
-  on-primary-fixed: '#001b3f'
-  on-primary-fixed-variant: '#00458f'
-  secondary-fixed: '#cfe5ff'
-  secondary-fixed-dim: '#98cbff'
-  on-secondary-fixed: '#001d33'
-  on-secondary-fixed-variant: '#004a77'
-  tertiary-fixed: '#ffdbcc'
-  tertiary-fixed-dim: '#ffb694'
-  on-tertiary-fixed: '#351000'
-  on-tertiary-fixed-variant: '#7b2f00'
-  background: '#f7f9fb'
-  on-background: '#191c1e'
-  surface-variant: '#e0e3e5'
+  primary: "#1B365D"
+  primary-light: "#3B82F6"
+  accent: "#FBBF24"
+  health: "#10B981"
+  health-bg: "#D1FAE5"
+  neutral-bg: "#F8FAFC"
+  surface: "#FFFFFF"
+  text-main: "#0F172A"
+  text-muted: "#64748B"
+  border-subtle: "#E2E8F0"
 typography:
-  display-lg:
-    fontFamily: Inter
-    fontSize: 48px
-    fontWeight: '700'
-    lineHeight: 56px
-    letterSpacing: -0.02em
-  headline-lg:
-    fontFamily: Inter
-    fontSize: 32px
-    fontWeight: '600'
-    lineHeight: 40px
-  headline-lg-mobile:
-    fontFamily: Inter
-    fontSize: 24px
-    fontWeight: '600'
-    lineHeight: 32px
-  headline-md:
-    fontFamily: Inter
-    fontSize: 24px
-    fontWeight: '600'
-    lineHeight: 32px
-  body-lg:
-    fontFamily: Inter
-    fontSize: 18px
-    fontWeight: '400'
-    lineHeight: 28px
-  body-md:
-    fontFamily: Inter
-    fontSize: 16px
-    fontWeight: '400'
-    lineHeight: 24px
-  label-md:
-    fontFamily: Inter
-    fontSize: 14px
-    fontWeight: '500'
-    lineHeight: 20px
-  data-mono:
-    fontFamily: Inter
-    fontSize: 16px
-    fontWeight: '600'
-    lineHeight: 24px
-    letterSpacing: 0.01em
+  display:
+    fontFamily: "Outfit, sans-serif"
+    fontSize: "clamp(2rem, 5vw, 3rem)"
+    fontWeight: 800
+    lineHeight: 1.1
+    letterSpacing: "-0.02em"
+  headline:
+    fontFamily: "Outfit, sans-serif"
+    fontSize: "1.5rem"
+    fontWeight: 700
+    lineHeight: 1.25
+    letterSpacing: "-0.01em"
+  title:
+    fontFamily: "Outfit, sans-serif"
+    fontSize: "1.125rem"
+    fontWeight: 700
+    lineHeight: 1.35
+  body:
+    fontFamily: "Inter, sans-serif"
+    fontSize: "0.9375rem"
+    fontWeight: 400
+    lineHeight: 1.6
+  mono:
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    fontSize: "0.875rem"
+    fontWeight: 700
+    lineHeight: 1.4
 rounded:
-  sm: 0.25rem
-  DEFAULT: 0.5rem
-  md: 0.75rem
-  lg: 1rem
-  xl: 1.5rem
-  full: 9999px
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "20px"
+  "2xl": "24px"
 spacing:
-  base: 8px
-  container-max: 1280px
-  gutter: 24px
-  margin-mobile: 16px
-  margin-desktop: 40px
+  xs: "4px"
+  sm: "8px"
+  md: "16px"
+  lg: "24px"
+  xl: "32px"
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.md}"
+    padding: "10px 20px"
+  button-primary-hover:
+    backgroundColor: "#0F172A"
+  button-health:
+    backgroundColor: "{colors.health}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.md}"
+    padding: "10px 20px"
+  card-glass:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.lg}"
+    padding: "24px"
 ---
 
-## Brand & Style
-The design system is engineered for civic engagement, focusing on institutional transparency and public trust. The brand personality is authoritative yet approachable, stripping away unnecessary decoration to ensure that complex budgetary data remains the protagonist.
+# Design System: Sistema de Emendas Parlamentares — Osasco
 
-The design style follows a **Modern Corporate** aesthetic with a strong emphasis on **Accessibility**. It utilizes high-contrast typography, generous white space to reduce cognitive load, and a soft layering system that makes the digital portal feel like a reliable public service. The emotional response should be one of clarity, efficiency, and confidence in the provided information.
+## Overview
+
+**Creative North Star: "The Civic Registry: Rigorous Governance with Tactile Clarity"**
+
+O sistema de design foi construído para o controle e tramitação de emendas parlamentares impositivas (LOA 2027) da Câmara Municipal de Osasco. O design equilibra a autoridade solene do poder público com a agilidade e precisão de um software financeiro moderno. A atmosfera visual combina tons de azul institucional (*Navy #1B365D* e *Civic Blue #3B82F6*), tipografia híbrida (Outfit para títulos e Inter para densidade de leitura) e tratamento translúcido de vidro e cartões estruturados (*Glass Cards*).
+
+**Key Characteristics:**
+- **Densidade com Alta Escaneabilidade:** Visualização clara de 21 vereadores, cotas individuais (R$ 1,5M) e status de admissibilidade sem poluição visual.
+- **Hierarquia Funcional de Cores:** Azul institucional para governança, Verde esmeralda para os 50% obrigatórios de Saúde, Âmbar para alertas e Vermelho estrito para críticas impeditivas do TCESP.
+- **Tipografia Numérica Distinta:** Valores monetários e identificadores `AAAA-VVEE` e AUDESP renderizados em fonte monoespaçada legível.
 
 ## Colors
-This design system utilizes an institutional palette rooted in "Civic Blue" to establish authority. 
 
-- **Primary:** A deep, stable blue used for navigation, primary actions, and branding.
-- **Secondary:** A brighter blue for interactive elements and emphasis.
-- **Surface & Backgrounds:** Pure white (#FFFFFF) is used for cards and content areas, while the Neutral light grey (#F8FAFC) provides subtle contrast for the main background.
-- **Data Visualization:** A set of semantic colors is reserved strictly for departmental categorization (Health, Education, etc.) to ensure users can scan budgetary distributions intuitively.
-- **Status Colors:** Standard success, warning, and error tokens follow WCAG AA contrast requirements against white backgrounds.
+A paleta é corporativa, neutra e altamente contrastante, inspirada nas cores oficiais do brasão do município de Osasco e nas exigências de acessibilidade governamental.
+
+### Primary
+- **Institutional Navy** (`#1B365D`): Cor primária de autoridade, utilizada em cabeçalhos principais, botões primários e cartões institucionais.
+- **Civic Blue** (`#3B82F6`): Azul de ação, utilizado em links, seleções ativas, etapas do wizard e focos interativos.
+
+### Secondary
+- **Health Emerald** (`#10B981` / `#D1FAE5`): Destaque funcional obrigatório para a reserva mínima de 50% em Saúde (Função 10) e aprovações de admissibilidade.
+- **Warning Amber** (`#FBBF24` / `#FEF3C7`): Utilizado em alertas preventivos e itens que demandam atenção parlamentar.
+
+### Neutral
+- **Canvas Slate** (`#F8FAFC`): Fundo geral das páginas com acabamento suave.
+- **Pure Surface** (`#FFFFFF`): Fundo de cartões, modais, formulários e tabelas.
+- **Deep Navy Text** (`#0F172A`): Cor padrão de textos de alta ênfase.
+- **Slate Muted** (`#64748B`): Textos auxiliares, legendas de etapas e metadados.
+- **Border Subtle** (`#E2E8F0`): Linhas divisórias e contornos de cartões.
+
+### Named Rules
+**The Health Green Guarantee.** A cor verde esmeralda é estritamente reservada para o indicador de Saúde (50% mínimo da LOM) e para status de conformidade / admissibilidade plena. Nunca a utilize para elementos decorativos neutros.
+
+**The Critique Color Strictness.** Vermelho é usado exclusivamente para críticas impeditivas de consolidação (ex: objeto genérico, estouro de cota) e nunca para estados normais de interface.
 
 ## Typography
-The system relies exclusively on **Inter** for its exceptional legibility in data-dense environments. 
 
-- **Hierarchy:** Use `display-lg` only for main dashboard landing stats. Headlines use semi-bold weights to create clear section breaks.
-- **Data Legibility:** For financial figures, use the `data-mono` style which utilizes Inter's tabular lining features to ensure numbers align perfectly in tables and lists.
-- **Readability:** Body text is kept at a comfortable 16px minimum to ensure accessibility for all age groups.
+**Display / Headline Font:** `Outfit`, sans-serif  
+**Body / Interface Font:** `Inter`, sans-serif  
+**Data & Code Font:** `ui-monospace`, `SFMono-Regular`, `Consolas`, monospace  
 
-## Layout & Spacing
-The layout follows a **Fixed Grid** model on desktop to maintain readability of long-form data tables and reports, centered within the viewport.
+**Character:** A combinação de *Outfit* com *Inter* une modernidade geométrica nos títulos com excelente legibilidade e densidade de informação no corpo de formulários e tabelas.
 
-- **Grid:** A 12-column grid with 24px gutters.
-- **Rhythm:** All spacing (padding, margins) must be multiples of the 8px base unit.
-- **Mobile Adaptivity:** On mobile, margins shrink to 16px. Cards stack vertically, and complex data tables should transition to "Summary Card" views or horizontal-scroll containers with clear indicators.
+### Hierarchy
+- **Display** (800, `clamp(2rem, 5vw, 3rem)`, `1.1`): Cabeçalhos heróicos do portal e títulos principais de painéis.
+- **Headline** (700, `1.5rem` / 24px, `1.25`): Títulos de seções, páginas do wizard e modais de detalhes.
+- **Title** (700, `1.125rem` / 18px, `1.35`): Nomes de parlamentares, cabeçalhos de cartões e abas de navegação.
+- **Body** (400, `0.9375rem` / 15px, `1.6`): Textos de justificativa, descrições de objetos e instruções gerais (máx. 75ch).
+- **Label / Metric** (900, `0.6875rem` / 11px, letter-spacing `0.08em`, uppercase): Rótulos de campo, metadados normativos e etiquetas de rastreabilidade.
+- **Mono Data** (700, `0.875rem` / 14px, `1.4`): IDs `AAAA-VVEE`, códigos AUDESP e valores monetários conciliados.
+
+### Named Rules
+**The Monospace Identifier Rule.** Todo identificador determinístico de emenda (`2027-1701`), código AUDESP (`20271701`) e valor financeiro (R$) deve ser exibido com fonte monoespaçada para garantir clareza visual e alinhamento numérico.
+
+## Layout
+
+- **Modelo Espacial:** Grid responsivo de 12 colunas com contêiner centralizado (`max-w-7xl`, ~1280px).
+- **Espaçamento e Ritmo:** Escala base modular de 8px (8px, 16px, 24px, 32px).
+- **Barra de Navegação Fixa:** Header superior com efeito de desfoque translúcido (`backdrop-blur-xl bg-white/95`) fixado no topo para acesso permanente a ações de dossiê e consolidação.
+- **Wizard Passo-a-Passo:** Stepper sequencial com barra de progresso e validações por etapa antes do avanço.
 
 ## Elevation & Depth
-To maintain a clean, institutional feel, the design system uses **Tonal Layers** combined with **Ambient Shadows**.
 
-- **Level 0 (Background):** The neutral grey surface.
-- **Level 1 (Cards/Content):** White surfaces with a very soft, diffused shadow (0px 4px 20px rgba(0, 0, 0, 0.05)) and a 1px border (#E2E8F0).
-- **Level 2 (Interactive/Hover):** When a user interacts with a card, the shadow deepens slightly, and the border color shifts to the primary blue.
-- **Depth:** No heavy blurs or frosted glass are used; clarity and flat, structural integrity are prioritized to ensure performance and accessibility.
+O sistema utiliza elevação sutil baseada em camadas tonais (*Tonal Layering*) e sombras suaves com cor de dispersão do tema, complementado por efeitos de vidro (*Glassmorphism*).
+
+### Shadow Vocabulary
+- **Card Rest** (`box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05)`): Elevação padrão de cartões de conteúdo.
+- **Glass Floating** (`box-shadow: 0 10px 25px -5px rgba(27, 54, 93, 0.08)`): Cartões de destaque, cabeçalhos fixos e menus suspensos.
+- **Modal Overlay** (`box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25)`): Modais de cadastro e visualizadores de PDF.
+
+### Named Rules
+**The Flat-At-Rest Rule.** As superfícies permanecem limpas e com elevação mínima em repouso. Sombras mais profundas e elevações ocorrem como resposta a estados interativos (hover e foco) ou para isolamento modal.
 
 ## Shapes
-The design system adopts a **Rounded** philosophy to soften the "cold" nature of government data. 
 
-- **Large Containers:** Cards and main content areas use `rounded-xl` (1.5rem / 24px) to create a friendly, modern frame.
-- **Standard Elements:** Buttons, input fields, and chips use the base `rounded-lg` (1rem / 16px) to maintain a consistent language of approachability.
-- **Data Points:** In bar charts and progress bars, use rounded caps to match the UI language.
+- **Bordas e Cantos:** Cantos generosamente arredondados (`rounded-2xl` - 16px a 24px) para cartões de conteúdo e contêineres principais; `rounded-xl` (12px) para botões e campos de entrada.
+- **Avatares e Badges de Código:** Quadrados com cantos arredondados (`rounded-xl` / `rounded-2xl`) exibindo a foto oficial ou o código numérico de 2 dígitos do vereador (`01` a `21`).
 
 ## Components
-- **Buttons:** Large touch targets (min 48px height). Primary buttons use solid institutional blue with white text. Secondary buttons use an outline style.
-- **Interactive Chips:** Used for filtering departments (e.g., "Health", "Education"). Chips should include a small color-coded dot corresponding to the data palette.
-- **Data Tables:** High-contrast rows with subtle zebra-striping. Header rows are pinned and use a slightly darker neutral tint. No vertical borders; only horizontal separators for a cleaner look.
-- **Modern Cards:** Financial summaries are housed in cards with `rounded-xl` corners. They feature a prominent "Key Metric" in `headline-lg` and a supporting sparkline or trend indicator.
-- **Search & Inputs:** Large, clear search bars with prominent icons. Focus states must be highly visible using a 2px secondary-blue ring.
-- **Charts:** Donut and Bar charts should use the defined departmental colors. Tooltips must be high-contrast with clear, non-technical labels.
+
+### Buttons
+- **Shape:** Raio de 12px (`rounded-xl`).
+- **Primary:** Fundo `#1B365D`, texto branco, padding `10px 20px`, peso font-bold, transição `all 0.2s`. Hover: fundo `#0F172A` e sombra difusa.
+- **Success / Consolidação:** Fundo `#059669` (Emerald 600), texto branco com ícone de verificação.
+
+### Cards & Glass Containers
+- **Glass Card:** Fundo `rgba(255,255,255,0.85)` com `backdrop-blur-md`, borda de 1px `#E2E8F0` e raio de 16px.
+- **Conciliation Banner:** Fundo gradiente escuro de alta densidade (`from-slate-900 to-slate-800`), texto branco com métricas de conciliação tripla destacadas em verde esmeralda.
+
+### Inputs & Selects
+- **Estilo:** Fundo `#F8FAFC`, borda de 1px `#CBD5E1`, raio de 12px, padding `10px 16px`.
+- **Foco:** Fundo branco, borda `#3B82F6` com anel de foco suave.
+
+### Status Badges & Chips
+- **Consolidada / Admissível:** Fundo `#D1FAE5`, texto `#065F46`, font-black, uppercase, raio de 6px.
+- **Em Análise:** Fundo `#FEF3C7`, texto `#92400E`.
+- **Inadmissível / Crítico:** Fundo `#FEE2E2`, texto `#991B1B`.
+
+## Do's and Don'ts
+
+### Do:
+- **Do** exibir sempre o identificador determinístico `AAAA-VVEE` acompanhado do número AUDESP de 8 dígitos.
+- **Do** manter a barra de conciliação tripla visível durante a edição do cronograma e do plano de aplicação.
+- **Do** fornecer visualização e download em PDF inline para pareceres técnicos e jurídicos.
+- **Do** utilizar a ordenação alfabética oficial e o código numérico fixo de 2 dígitos (`01`..`21`) para os 21 vereadores de Osasco.
+
+### Don't:
+- **Don't** permitir a consolidação para o Bloco B enquanto houver críticas impeditivas (*CRIT_*) ativas no motor de regras.
+- **Don't** utilizar classes utilitárias improvisadas ou cores genéricas fora da paleta corporativa municipal.
+- **Don't** ocultar a fundamentação legal (LOM art. 150 / TCESP) nos avisos de inconsistência e críticas.
