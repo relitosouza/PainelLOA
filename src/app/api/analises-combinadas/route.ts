@@ -18,12 +18,9 @@ export async function GET(req: NextRequest) {
 
     const countLoaDespesas = await db.budgetRecord.count();
 
-    // LOA Receitas: podemos verificar no ArquivoImportacao ou se existe alguma tabela futura
-    const countLoaReceitas = await db.arquivoImportacao.count({
-      where: {
-        tipoImportacao: "LOA_RECEITAS",
-        status: { in: ["CONCLUIDO", "CONCLUIDO_COM_ALERTAS"] },
-      },
+    // LOA Receitas: consulta a base de previsão da LOA
+    const countLoaReceitas = await db.loaReceita.count({
+      where: exercicio ? { exercicio } : {},
     });
 
     const statusBases = {
@@ -166,6 +163,12 @@ export async function GET(req: NextRequest) {
       console.error("Erro ao consultar IniciativaEstrategica:", iniciativaErr instanceof Error ? iniciativaErr.message : iniciativaErr);
     }
 
+    const totalLoaReceitasRaw = await db.loaReceita.aggregate({
+      where: exercicio ? { exercicio } : {},
+      _sum: { valor: true },
+    });
+    const totalLoaReceitas = Number(totalLoaReceitasRaw._sum?.valor || 0);
+
     return NextResponse.json({
       statusBases: {
         ...statusBases,
@@ -178,7 +181,7 @@ export async function GET(req: NextRequest) {
       totais: {
         totalDespesaLoa,
         totalReceitaLdo,
-        totalLoaReceitas: 0, // Inexistente ou parcial
+        totalLoaReceitas,
         totalReceitaArrecadada: arrecadadaTotal,
         qtdAnosArrecadacao,
         totalIniciativas,

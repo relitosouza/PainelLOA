@@ -9,3 +9,5 @@
 - [snapshots-diarios] Proposta de fotografias diárias e comparativo D-1 vs D0 documentada em `docs/proposta-snapshots-diarios.md`.
 - [relatorio-loa] Exclusão de vínculos curtos 00.00 (5 dígitos) no relatório impresso/PDF, com exceção e segregação em seção dedicada para Banco de Projetos Alocados (`src/components/analise-loa-view.tsx` e `src/lib/loa-report-template.ts`).
 - [git-merge] Ramo `staging` (com todas as melhorias de relatórios, persistência e auditoria) sincronizado e mesclado com sucesso na branch `main` com 34 testes automatizados validados.
+- [loa-receitas] Modelo de dados para LOA Receitas implementado em Prisma (`LoaReceita`), rotas `/api/receitas/loa/*` (modelo, validar-arquivo, confirmar-importacao), parser resiliente e interface completa em `LoaReceitaImportForm`.
+- [comparativo-secretarias-ldo] Quadro comparativo LOA proposta vs LDO por Secretaria inserido acima de Classificação da Despesa em `AnalyticDashboardLayout`, com popover de filtro de colunas, busca e ordenação.

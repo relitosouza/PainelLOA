@@ -10,6 +10,7 @@ import { Filters, EMPTY_FILTERS, type FilterState } from "./filters";
 import { BarChart } from "./bar-chart";
 import { AnalisesCombinadasSection } from "./analises-combinadas";
 import { SecretariasMenu } from "./secretarias-menu";
+import { SecretariasLdoComparativoCard } from "./secretarias-ldo-comparativo-card";
 import {
   DashboardCardsConfigDialog,
   type AnalyticDashboardLayoutConfig,
@@ -39,6 +40,28 @@ function findGroup(items: { label: string; value: number }[], keywords: string[]
 
 function findCodeGroupValue(items: { label: string; value: number }[], code: string) {
   return items.find((item) => item.label.startsWith(`${code} —`))?.value ?? 0;
+}
+
+function mergeSectionsOrder(savedOrder?: string[]): string[] {
+  if (!Array.isArray(savedOrder) || savedOrder.length === 0) {
+    return DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder;
+  }
+  const result = [...savedOrder];
+  for (const defaultSec of DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder) {
+    if (!result.includes(defaultSec)) {
+      if (defaultSec === "comparativo-secretarias-ldo") {
+        const classIdx = result.indexOf("classificacao-despesa");
+        if (classIdx !== -1) {
+          result.splice(classIdx, 0, defaultSec);
+        } else {
+          result.push(defaultSec);
+        }
+      } else {
+        result.push(defaultSec);
+      }
+    }
+  }
+  return result;
 }
 
 export function AnalyticDashboardLayout({
@@ -368,9 +391,7 @@ export function AnalyticDashboardLayout({
           if (result.success && result.valor && isMounted) {
             const parsed = result.valor;
             setLayoutConfig({
-              sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-                ? parsed.sectionsOrder
-                : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder,
+              sectionsOrder: mergeSectionsOrder(parsed.sectionsOrder),
               topCardsOrder: Array.isArray(parsed.topCardsOrder) && parsed.topCardsOrder.length > 0
                 ? parsed.topCardsOrder
                 : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.topCardsOrder,
@@ -388,9 +409,7 @@ export function AnalyticDashboardLayout({
         if (saved && isMounted) {
           const parsed = JSON.parse(saved);
           setLayoutConfig({
-            sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-              ? parsed.sectionsOrder
-              : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder,
+            sectionsOrder: mergeSectionsOrder(parsed.sectionsOrder),
             topCardsOrder: Array.isArray(parsed.topCardsOrder) && parsed.topCardsOrder.length > 0
               ? parsed.topCardsOrder
               : DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.topCardsOrder,
@@ -530,6 +549,15 @@ export function AnalyticDashboardLayout({
             total={data.totals.filtered}
             onChange={onChange}
             onClear={() => onChange(EMPTY_FILTERS)}
+          />
+        );
+      case "comparativo-secretarias-ldo":
+        return (
+          <SecretariasLdoComparativoCard
+            key="comparativo-secretarias-ldo"
+            data={data}
+            dataSource={dataSource}
+            selectedImportId={selectedImportId}
           />
         );
       case "classificacao-despesa":

@@ -13,6 +13,7 @@ export const DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG: AnalyticDashboardLayoutCo
     "top-kpis",
     "analises-combinadas",
     "filtros",
+    "comparativo-secretarias-ldo",
     "classificacao-despesa",
     "menu-secretarias",
     "composicao-analise",
@@ -33,6 +34,7 @@ export const DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG: AnalyticDashboardLayoutCo
     "top-kpis": true,
     "analises-combinadas": true,
     "filtros": true,
+    "comparativo-secretarias-ldo": true,
     "classificacao-despesa": true,
     "menu-secretarias": true,
     "composicao-analise": true,
@@ -64,6 +66,11 @@ export const ANALYTIC_SECTIONS_METADATA: Record<string, { label: string; icon: s
     label: "Filtros Orçamentários",
     icon: "tune",
     description: "Seleção por órgão, unidade, função, subfunção, programa, ação e vínculos.",
+  },
+  "comparativo-secretarias-ldo": {
+    label: "Quadro Comparativo LOA vs. LDO por Secretaria",
+    icon: "balance",
+    description: "Comparativo detalhado entre Valor LOA proposta (vigente + reajuste), Valor LDO e Diferença.",
   },
   "classificacao-despesa": {
     label: "Classificação da Despesa (Gráficos)",

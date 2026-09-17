@@ -1326,7 +1326,7 @@ export function AnaliseLoaView() {
     setNewExpenseValor("");
   };
 
-  const handleAllocateBancoProjeto = async (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
+  const handleAllocateBancoProjeto = async (project: { secretaria: string; objeto: string; natureza: string; descricaoDespesa?: string; valor: number }) => {
     const naturezaCodigo = project.natureza.split("-")[0].trim();
     const item: RawBudgetItem = {
       id: `banco-projeto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1342,7 +1342,7 @@ export function AnaliseLoaView() {
       categoriaEconomica: naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES",
       grupoNatureza: naturezaCodigo,
       elemento: naturezaCodigo.split(".").slice(0, 4).join("."),
-      subelemento: "",
+      subelemento: project.descricaoDespesa?.trim() || "",
       processo: "—",
       valLdo: 0,
       valLoa: project.valor,
@@ -1371,6 +1371,32 @@ export function AnaliseLoaView() {
     }
   };
 
+  // A lista de exclusões é compartilhada entre sessões, navegadores e usuários.
+  // Montá-la apenas a partir do localStorage faria o POST sobrescrever no banco
+  // as exclusões registradas em outros ambientes, por isso o estado persistido é
+  // sempre mesclado antes de gravar.
+  const mergeRemovedExpenseIds = async (newId: string): Promise<string[] | null> => {
+    let persisted: string[] = [];
+    try {
+      const res = await fetch("/api/configuracoes/layout?chave=painel_loa_removed_expenses");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.valor)) persisted = data.valor;
+      }
+    } catch {
+      // Sem resposta do banco mantém-se apenas o histórico local desta sessão.
+    }
+    const local = JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[];
+    const merged = [...new Set([...persisted, ...local])];
+    if (merged.includes(newId)) {
+      localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(merged));
+      return null;
+    }
+    const next = [...merged, newId];
+    localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(next));
+    return next;
+  };
+
   const handleRemoveBancoProjeto = async (item: RawBudgetItem) => {
     if (!window.confirm(`Deseja remover o projeto "${item.acao}" alocado na LOA?`)) return;
 
@@ -1396,10 +1422,8 @@ export function AnaliseLoaView() {
 
     // 3. Registrar na lista de despesas removidas
     try {
-      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
-      if (!savedRemoved.includes(item.id)) {
-        const nextRemoved = [...savedRemoved, item.id];
-        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
+      const nextRemoved = await mergeRemovedExpenseIds(item.id);
+      if (nextRemoved) {
         await fetch("/api/configuracoes/layout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2172,11 +2196,8 @@ export function AnaliseLoaView() {
 
     // 3. Registrar o item na lista de itens removidos permanentemente
     try {
-      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
-      if (!savedRemoved.includes(item.id)) {
-        const nextRemoved = [...savedRemoved, item.id];
-        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
-
+      const nextRemoved = await mergeRemovedExpenseIds(item.id);
+      if (nextRemoved) {
         // Sincronizar com o banco de dados
         await fetch("/api/configuracoes/layout", {
           method: "POST",

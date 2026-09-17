@@ -80,3 +80,39 @@ export function normalizeProgramLabel(value: string) {
   if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
   return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
 }
+
+/**
+ * Padroniza o rótulo de secretaria no formato "NN - NOME" usado em todo o painel.
+ *
+ * Quando o código digitado corresponde a uma única secretaria da lista oficial, devolve o
+ * rótulo oficial completo, de modo que "9 - saude" e "09 - SECRETARIA DA SAÚDE" não gerem
+ * dois agrupamentos distintos. Códigos compartilhados por mais de uma secretaria (o 18, por
+ * exemplo, atende Administração, Finanças e Tecnologia) e órgãos ainda inexistentes no
+ * orçamento preservam o texto informado, apenas com o código padronizado.
+ */
+export function normalizeSecretariaLabel(value: string, oficiais: readonly string[] = []) {
+  if (!value) return value;
+
+  const clean = value.trim().replace(/^\.+/, "").replace(/\s+/g, " ");
+  if (!clean) return clean;
+
+  const padded = clean
+    .replace(/^(\d+)\s*[-—–]+\s*/, (_match, code: string) => `${code.padStart(2, "0")} - `)
+    .replace(/^(\d+)$/, (_match, code: string) => code.padStart(2, "0"));
+
+  const code = padded.match(/^(\d+)/)?.[1];
+  if (!code) return padded;
+
+  const candidatos = oficiais.filter((item) => item.match(/^(\d+)/)?.[1] === code);
+  if (candidatos.length === 1) {
+    const informado = padded.slice(code.length).replace(/^\s*[-—–]?\s*/, "");
+    // Só assume o rótulo oficial quando o nome digitado não diverge do oficial: assim "09"
+    // sozinho vira a Saúde por extenso, sem apagar um nome que o usuário tenha corrigido.
+    const oficialLower = candidatos[0].toLocaleLowerCase("pt-BR");
+    if (!informado || oficialLower.includes(informado.toLocaleLowerCase("pt-BR"))) {
+      return candidatos[0];
+    }
+  }
+
+  return padded;
+}

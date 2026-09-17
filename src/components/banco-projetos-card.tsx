@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { currency, integer } from "@/lib/format";
-import { BANCO_PROJETOS_DETALHES, BANCO_PROJETOS_SECRETARIAS } from "@/lib/banco-projetos-data";
+import { BANCO_PROJETOS_DETALHES, BANCO_PROJETOS_SECRETARIAS, getSecretariasSugeridas } from "@/lib/banco-projetos-data";
 import { BancoProjetoFormDialog, BancoProjetoFormData } from "./banco-projeto-form-dialog";
 import * as XLSX from "xlsx";
 
@@ -11,13 +11,18 @@ export type BancoProjetoLinha = {
   secretaria: string;
   objeto: string;
   natureza: string;
+  /** Descrição da despesa; vira o subelemento da dotação ao alocar o projeto na LOA. */
+  descricaoDespesa?: string;
   edital: string;
   valor: number;
   isCustom?: boolean;
 };
 
 type BancoProjetosFilters = { secretaria: string[]; natureza: string[]; search: string };
-export type BancoProjetoAllocation = Pick<BancoProjetoLinha, "secretaria" | "objeto" | "natureza" | "valor">;
+export type BancoProjetoAllocation = Pick<
+  BancoProjetoLinha,
+  "secretaria" | "objeto" | "natureza" | "descricaoDespesa" | "valor"
+>;
 
 const STORAGE_KEY_CUSTOM_BANCO = "painel_loa_banco_projetos_custom_v1";
 
@@ -33,18 +38,26 @@ export function BancoProjetosCard({
   const [linhas, setLinhas] = useState<BancoProjetoLinha[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [pendingProjects, setPendingProjects] = useState<BancoProjetoLinha[] | null>(null);
   const [expandedSecretarias, setExpandedSecretarias] = useState<string[]>([]);
 
   // Estado do Modal de CRUD
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<BancoProjetoFormData | null>(null);
 
-  // Sincronizar e salvar alterações no LocalStorage e no Banco de Dados
+  // Sincronizar e salvar alterações no LocalStorage e no Banco de Dados.
+  // A gravação no localStorage é apenas rascunho: enquanto o servidor não confirmar, o
+  // usuário precisa saber que o projeto não está salvo para as demais máquinas.
   const saveProjectsToStorage = async (updatedProjects: BancoProjetoLinha[]) => {
     setLinhas(updatedProjects);
+    setSaveError("");
     try {
       localStorage.setItem(STORAGE_KEY_CUSTOM_BANCO, JSON.stringify(updatedProjects));
-      await fetch("/api/configuracoes/layout", {
+    } catch { }
+
+    try {
+      const response = await fetch("/api/configuracoes/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -52,9 +65,25 @@ export function BancoProjetosCard({
           valor: updatedProjects,
         }),
       });
+      if (!response.ok) {
+        setSaveError(
+          response.status === 401
+            ? "Sua sessão expirou: o projeto NÃO foi salvo no servidor. Faça login novamente e salve outra vez."
+            : `O projeto NÃO foi salvo no servidor (erro ${response.status}). Tente novamente.`
+        );
+        setPendingProjects(updatedProjects);
+      } else {
+        setPendingProjects(null);
+      }
     } catch (err) {
       console.warn("Aviso ao salvar Banco de Projetos customizado:", err);
+      setSaveError("Não foi possível falar com o servidor: o projeto NÃO foi salvo. Verifique a conexão e tente novamente.");
+      setPendingProjects(updatedProjects);
     }
+  };
+
+  const retrySaveProjects = async () => {
+    if (pendingProjects) await saveProjectsToStorage(pendingProjects);
   };
 
   const loadWorkbook = async () => {
@@ -142,6 +171,7 @@ export function BancoProjetosCard({
       secretaria: project.secretaria,
       objeto: project.objeto,
       natureza: project.natureza,
+      descricaoDespesa: project.descricaoDespesa,
       edital: project.edital,
       valor: project.valor,
     });
@@ -164,6 +194,7 @@ export function BancoProjetosCard({
               secretaria: formData.secretaria,
               objeto: formData.objeto,
               natureza: formData.natureza,
+              descricaoDespesa: formData.descricaoDespesa,
               edital: formData.edital,
               valor: formData.valor,
               isCustom: true,
@@ -178,6 +209,7 @@ export function BancoProjetosCard({
         secretaria: formData.secretaria,
         objeto: formData.objeto,
         natureza: formData.natureza,
+        descricaoDespesa: formData.descricaoDespesa,
         edital: formData.edital,
         valor: formData.valor,
         isCustom: true,
@@ -331,6 +363,22 @@ export function BancoProjetosCard({
       </div>
 
       <div className="max-h-[560px] overflow-y-auto bg-surface-container-low p-4 sm:p-6">
+        {saveError ? (
+          <div
+            className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-error/30 bg-error-container/40 p-4"
+            role="alert"
+          >
+            <p className="text-sm font-semibold text-on-error-container">{saveError}</p>
+            <button
+              type="button"
+              onClick={retrySaveProjects}
+              className="min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary cursor-pointer"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        ) : null}
+
         {loadError ? (
           <div className="rounded-xl border border-error/30 bg-error-container/40 p-6 text-center" role="alert">
             <p className="font-semibold text-on-error-container">Não foi possível carregar o Banco de Projetos.</p>
@@ -435,6 +483,14 @@ export function BancoProjetosCard({
                               <span className="inline-flex max-w-full rounded-md bg-surface-container-low px-2 py-1 text-xs font-mono font-medium text-on-surface-variant">
                                 {projeto.natureza}
                               </span>
+                              {projeto.descricaoDespesa && (
+                                <span
+                                  className="mt-1 block break-words text-[11px] leading-4 text-on-surface-variant"
+                                  title="Descrição da despesa (subelemento na LOA)"
+                                >
+                                  {projeto.descricaoDespesa}
+                                </span>
+                              )}
                             </div>
 
                             <div className="md:text-center">
@@ -553,6 +609,7 @@ export function BancoProjetosCard({
       <BancoProjetoFormDialog
         isOpen={dialogOpen}
         initialData={editingProject}
+        secretariasSugeridas={getSecretariasSugeridas([...linhasPorSecretaria.keys()])}
         onClose={() => setDialogOpen(false)}
         onSave={handleSaveProjectForm}
       />

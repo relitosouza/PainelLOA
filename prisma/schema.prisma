@@ -81,6 +81,7 @@ model ArquivoImportacao {
   valorTotalImportado Decimal?              @db.Decimal(18, 2)
   ldoReceitas         LdoReceita[]
   receitasArrecadadas ReceitaArrecadada[]
+  loaReceitas         LoaReceita[]
 }
 
 model ReceitaArrecadada {
@@ -137,6 +138,30 @@ model LdoReceita {
   @@index([vinculo])
   @@index([arquivoImportacaoId])
   @@index([statusDistribuicao])
+}
+
+model LoaReceita {
+  id                  BigInt             @id @default(autoincrement())
+  exercicio           Int
+  codigoReceita       String?            @db.VarChar(100)
+  naturezaReceita     String             @db.VarChar(100)
+  descricaoReceita    String             @db.VarChar(255)
+  fonteRecurso        String             @db.VarChar(100)
+  descricaoFonte      String?            @db.VarChar(255)
+  orgaoUnidade        String?            @db.VarChar(255)
+  valor               Decimal            @db.Decimal(18, 2)
+  arquivoImportacaoId BigInt?
+  linhaOrigem         Int?
+  situacaoValidacao   String             @default("VÁLIDO") @db.VarChar(50)
+  mensagemValidacao   String?
+  criadoEm            DateTime           @default(now())
+  atualizadoEm        DateTime           @updatedAt
+  arquivoImportacao   ArquivoImportacao? @relation(fields: [arquivoImportacaoId], references: [id])
+
+  @@index([exercicio])
+  @@index([naturezaReceita])
+  @@index([fonteRecurso])
+  @@index([arquivoImportacaoId])
 }
 
 model IniciativaEstrategica {

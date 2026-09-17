@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { BANCO_PROJETOS_SECRETARIAS } from "@/lib/banco-projetos-data";
+import { SECRETARIAS_ORCAMENTO, getSecretariasSugeridas } from "@/lib/banco-projetos-data";
+import { normalizeSecretariaLabel } from "@/lib/loa-labels";
 
 export interface BancoProjetoFormData {
   id?: string;
   secretaria: string;
   objeto: string;
   natureza: string;
+  /** Descrição da despesa; vira o subelemento da dotação ao alocar o projeto na LOA. */
+  descricaoDespesa?: string;
   edital: string;
   valor: number;
 }
@@ -15,6 +18,8 @@ export interface BancoProjetoFormData {
 type Props = {
   isOpen: boolean;
   initialData?: BancoProjetoFormData | null;
+  /** Sugestões do campo Secretaria; o campo aceita qualquer texto, inclusive órgão novo. */
+  secretariasSugeridas?: string[];
   onClose: () => void;
   onSave: (data: BancoProjetoFormData) => void;
 };
@@ -33,10 +38,12 @@ const NATUREZAS_SUGERIDAS = [
   { code: "3.1.90.11", label: "3.1.90.11 — VENCIMENTOS E VANTAGENS FIXAS - PESSOAL CIVIL" },
 ];
 
-export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }: Props) {
+export function BancoProjetoFormDialog({ isOpen, initialData, secretariasSugeridas, onClose, onSave }: Props) {
+  const opcoesSecretaria = secretariasSugeridas ?? getSecretariasSugeridas();
   const [secretaria, setSecretaria] = useState("");
   const [objeto, setObjeto] = useState("");
   const [natureza, setNatureza] = useState("");
+  const [descricaoDespesa, setDescricaoDespesa] = useState("");
   const [edital, setEdital] = useState("Não");
   const [valorStr, setValorStr] = useState("");
 
@@ -49,6 +56,7 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
         setSecretaria(initialData.secretaria || "");
         setObjeto(initialData.objeto || "");
         setNatureza(initialData.natureza || "");
+        setDescricaoDespesa(initialData.descricaoDespesa || "");
         setEdital(initialData.edital || "Não");
         setValorStr(
           initialData.valor
@@ -56,9 +64,10 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
             : ""
         );
       } else {
-        setSecretaria(BANCO_PROJETOS_SECRETARIAS[0]?.secretaria || "");
+        setSecretaria("");
         setObjeto("");
         setNatureza("4.4.90.51 — OBRAS E INSTALAÇÕES");
+        setDescricaoDespesa("");
         setEdital("Não");
         setValorStr("");
       }
@@ -88,9 +97,10 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
 
     onSave({
       id: initialData?.id,
-      secretaria: secretaria.trim(),
+      secretaria: normalizeSecretariaLabel(secretaria, SECRETARIAS_ORCAMENTO),
       objeto: objeto.trim(),
       natureza: natureza.trim() || "Não informada",
+      descricaoDespesa: descricaoDespesa.trim() || undefined,
       edital: edital.trim() || "Não",
       valor: valorFinal,
     });
@@ -117,7 +127,7 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
     >
       <div
         ref={dialogRef}
-        className="flex max-h-[min(780px,calc(100dvh-2rem))] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-outline-variant bg-surface shadow-2xl outline-none"
+        className="flex max-h-[min(780px,calc(100dvh-2rem))] w-full max-w-3xl flex-col overflow-y-auto rounded-2xl border border-outline-variant bg-surface shadow-2xl outline-none"
       >
         <div className="flex items-start justify-between border-b border-outline-variant bg-surface-container/50 p-5">
           <div>
@@ -150,21 +160,25 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
             <label htmlFor="bp-form-secretaria" className="block text-xs font-bold text-on-surface">
               Secretaria *
             </label>
-            <select
+            <input
               id="bp-form-secretaria"
-              ref={firstInputRef as React.RefObject<HTMLSelectElement>}
+              list="bp-secretarias-list"
+              ref={firstInputRef as React.RefObject<HTMLInputElement>}
               value={secretaria}
               onChange={(e) => setSecretaria(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-tertiary cursor-pointer"
+              placeholder="Selecione ou digite uma nova secretaria..."
+              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-tertiary"
               required
-            >
-              <option value="">Selecione a Secretaria...</option>
-              {BANCO_PROJETOS_SECRETARIAS.map((sec) => (
-                <option key={sec.secretaria} value={sec.secretaria}>
-                  {sec.secretaria}
-                </option>
+            />
+            <datalist id="bp-secretarias-list">
+              {opcoesSecretaria.map((item) => (
+                <option key={item} value={item} />
               ))}
-            </select>
+            </datalist>
+            <p className="mt-1 text-[11px] text-on-surface-variant">
+              Secretarias fora do plano original são aceitas: digite no formato
+              &quot;NN - NOME&quot;.
+            </p>
           </div>
 
           {/* Objeto / Detalhe do Projeto */}
@@ -176,7 +190,7 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
               id="bp-form-objeto"
               value={objeto}
               onChange={(e) => setObjeto(e.target.value)}
-              rows={3}
+              rows={5}
               placeholder="Ex.: Reforma e ampliação da EMEF Prof. José Silva..."
               className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-tertiary resize-y"
               required
@@ -203,6 +217,24 @@ export function BancoProjetoFormDialog({ isOpen, initialData, onClose, onSave }:
                 </option>
               ))}
             </datalist>
+          </div>
+
+          {/* Descrição da Despesa (subelemento na LOA) */}
+          <div>
+            <label htmlFor="bp-form-descricao-despesa" className="block text-xs font-bold text-on-surface">
+              Descrição da Despesa
+            </label>
+            <input
+              id="bp-form-descricao-despesa"
+              value={descricaoDespesa}
+              onChange={(e) => setDescricaoDespesa(e.target.value)}
+              placeholder="Ex.: MATERIAL ESCOLAR, SERVIÇOS DE ENERGIA ELÉTRICA..."
+              className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-tertiary"
+            />
+            <p className="mt-1 text-[11px] text-on-surface-variant">
+              Detalha o que será comprado ou contratado. Vira o subelemento da dotação ao
+              alocar o projeto na LOA.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -8,6 +8,9 @@ const PUBLIC_PATHS = [
   "/brasao.png",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/receitas/ldo/modelo",
+  "/api/receitas/loa/modelo",
+  "/api/orcamento/comparativo-secretarias",
 ];
 
 export async function proxy(request: NextRequest) {
