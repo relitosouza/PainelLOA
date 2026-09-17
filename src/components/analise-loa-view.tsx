@@ -3931,7 +3931,7 @@ export function AnaliseLoaView() {
                                           >
                                             <span className="material-symbols-outlined text-[14px]">{natureExpanded ? "expand_more" : "chevron_right"}</span>
                                           </button>
-                                          <span className="truncate font-mono text-xs font-semibold text-on-surface">
+                                          <span className="min-w-0 whitespace-normal break-words font-mono text-xs font-semibold leading-snug text-on-surface">
                                             {getNatureLabel(natureza, natureItems[0]?.elemento)}
                                           </span>
                                           <button
@@ -3952,7 +3952,12 @@ export function AnaliseLoaView() {
                                       </td>
                                       {visibleTableColumns.has("elemento") && <td className="p-2.5 text-on-surface-variant font-sans text-xs">
                                          <div className="flex flex-col gap-1 items-start">
-                                          <span>{elementGroups.length} elemento{elementGroups.length === 1 ? "" : "s"} de despesa</span>
+                                          <span className="font-semibold text-on-surface">{elementGroups.length} elemento{elementGroups.length === 1 ? "" : "s"} de despesa</span>
+                                          <div className="w-full space-y-0.5 text-[10px] leading-snug" title={Array.from(elementGroups.keys()).join("; ")}>
+                                            {Array.from(elementGroups.keys()).map((elemento) => (
+                                              <div key={elemento} className="break-words font-mono text-on-surface-variant">{elemento}</div>
+                                            ))}
+                                          </div>
                                           <span className="font-mono text-[10px] font-bold">{validatedSubelements} de {natureItems.length} subelementos validados · {validationPercent}%</span>
                                           <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>{validationStatus}</span>
                                           {natureItems.some((i) => i.processo && i.processo !== "—") && (
