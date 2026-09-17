@@ -4010,7 +4010,7 @@ export function AnaliseLoaView() {
                                       const vinculoEntries = [item, ...natureItems.filter((child) => child.vinculoParentId === item.id)];
                                       return (
                                         <Fragment key={item.id}>
-                                        <tr className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
+                                        <tr className={`bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors ${vinculoEntries.length > 1 ? "" : "border-b border-outline-variant/10"}`}>
                                             <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2.5 pl-12 sm:pl-16 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
                                               <div className="flex items-start gap-2">
                                                 {/* Linha guia conectora da árvore */}
@@ -4225,8 +4225,8 @@ export function AnaliseLoaView() {
                                             })()}
                                           </td>}
                                         </tr>
-                                        {vinculoEntries.slice(1).map((child) => (
-                                          <tr key={child.id} className="bg-teal-50/30 dark:bg-teal-950/10 border-b border-teal-200/60 dark:border-teal-900/40">
+                                        {vinculoEntries.slice(1).map((child, childIndex) => (
+                                          <tr key={child.id} className={`bg-surface-container-lowest ${childIndex === vinculoEntries.length - 2 ? "border-b border-outline-variant/10" : ""}`}>
                                             <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2 pl-20 sm:pl-24 text-xs">
                                               <div className="flex items-center gap-2">
                                                 <span className="text-outline-variant/80 font-mono text-xs select-none">└─</span>
