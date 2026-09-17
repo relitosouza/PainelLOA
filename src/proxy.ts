@@ -10,7 +10,7 @@ const PUBLIC_PATHS = [
   "/api/auth/logout",
 ];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Permitir assets estáticos e rotas públicas
