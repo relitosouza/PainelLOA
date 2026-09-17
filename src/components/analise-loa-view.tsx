@@ -91,6 +91,7 @@ export interface RawBudgetItem {
   valorAditamento?: number;
   origem?: "Banco de Projetos";
   bancoProjetoKey?: string;
+  vinculoParentId?: string;
 }
 
 interface EditableGroup {
@@ -112,6 +113,7 @@ interface EditableGroup {
 type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "valorTotal" | "diff" | "status" | "adjusted";
 type AnalyticalColumn = TableSortColumn;
 type NaturezaOption = { codigo: string; nome: string };
+type VinculoAllocation = { id: string; vinculo: string; codigoAplicacao: string; valor: string };
 type NatureValidationStatus = "Pendente" | "Parcial" | "Validada";
 type Iniciativa = { id?: string | number; acao?: string; secretaria?: string; programa?: string; despesa?: string; dsIniciativa?: string; programaticaLdo?: string; vinculo?: string; valorFinalPldo27?: number };
 const ADDED_EXPENSES_STORAGE_KEY = "painel_loa_added_expenses_v1";
@@ -246,6 +248,8 @@ export function AnaliseLoaView() {
   const [newExpenseProjetoIniciado, setNewExpenseProjetoIniciado] = useState("");
   const [newExpenseObservacao, setNewExpenseObservacao] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
+  const [vinculosContext, setVinculosContext] = useState<{ group: EditableGroup; natureza: string; items: RawBudgetItem[] } | null>(null);
+  const [vinculoAllocations, setVinculoAllocations] = useState<VinculoAllocation[]>([]);
   // Estado para Edição de Subelemento via Modal
   const [editingSubelementItem, setEditingSubelementItem] = useState<RawBudgetItem | null>(null);
   const [editSubelementName, setEditSubelementName] = useState("");
@@ -263,6 +267,41 @@ export function AnaliseLoaView() {
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
   // Usuário Ativo
   const [currentUser, setCurrentUser] = useState<ActiveUser>(() => getActiveUser() || DEFAULT_USER);
+
+  const openVinculosEditor = (group: EditableGroup, natureza: string, items: RawBudgetItem[]) => {
+    setVinculosContext({ group, natureza, items });
+    setVinculoAllocations(items.length > 0
+      ? items.map((item) => ({ id: item.id, vinculo: item.fonteVinculo || "01", codigoAplicacao: item.codigoAplicacao || "", valor: item.valLoa.toFixed(2).replace(".", ",") }))
+      : [{ id: crypto.randomUUID(), vinculo: "01", codigoAplicacao: "", valor: "0,00" }]);
+  };
+
+  const saveVinculos = () => {
+    if (!vinculosContext) return;
+    const values = vinculoAllocations.map((allocation) => ({ ...allocation, amount: parseBr(allocation.valor) }));
+    if (values.some((allocation) => allocation.amount < 0 || !allocation.vinculo.trim())) {
+      alert("Informe um vínculo válido e valores maiores ou iguais a zero.");
+      return;
+    }
+    const originalTotal = vinculosContext.items.reduce((sum, item) => sum + item.valLoa, 0);
+    const distributedTotal = values.reduce((sum, allocation) => sum + allocation.amount, 0);
+    if (Math.abs(distributedTotal - originalTotal) > 0.01) {
+      alert(`A soma dos vínculos (${formatBr(distributedTotal)}) deve ser igual ao valor da natureza (${formatBr(originalTotal)}).`);
+      return;
+    }
+    const template = vinculosContext.items[0];
+    if (!template) return;
+    setRawItems((previous) => {
+      const ids = new Set(vinculosContext.items.map((item) => item.id));
+      const next = previous.filter((item) => !ids.has(item.id));
+      values.forEach((allocation, index) => {
+        const existing = vinculosContext.items.find((item) => item.id === allocation.id);
+        next.push({ ...(existing ?? template), id: index === 0 ? template.id : existing && existing.id !== template.id ? existing.id : `manual-vinculo-${crypto.randomUUID()}`, fonteVinculo: allocation.vinculo.trim(), codigoAplicacao: allocation.codigoAplicacao.trim() || undefined, valLoa: allocation.amount, subelemento: template.subelemento, vinculoParentId: index === 0 ? template.vinculoParentId : template.id, valLdo: index === 0 ? template.valLdo : 0 });
+      });
+      return next;
+    });
+    setHasChanges(true);
+    setVinculosContext(null);
+  };
 
   useEffect(() => {
     setCurrentUser(getActiveUser() || DEFAULT_USER);
@@ -3967,9 +4006,11 @@ export function AnaliseLoaView() {
                                     </tr>
 
                                     {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (unidades validáveis) */}
-                                    {natureExpanded && natureItems.map((item) => {
+                                    {natureExpanded && natureItems.filter((item) => !item.vinculoParentId || !natureItems.some((parent) => parent.id === item.vinculoParentId)).map((item) => {
+                                      const vinculoEntries = [item, ...natureItems.filter((child) => child.vinculoParentId === item.id)];
                                       return (
-                                        <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
+                                        <Fragment key={item.id}>
+                                        <tr className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
                                             <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2.5 pl-12 sm:pl-16 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
                                               <div className="flex items-start gap-2">
                                                 {/* Linha guia conectora da árvore */}
@@ -3979,6 +4020,15 @@ export function AnaliseLoaView() {
                                                   <div className="w-full flex items-center justify-between gap-2">
                                                     <span className="text-on-surface font-semibold text-xs leading-snug break-words">{getSubelementLabel(item)}</span>
                                                     <div className="flex items-center gap-1 shrink-0 ml-auto">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => openVinculosEditor(group, natureza, vinculoEntries)}
+                                                        className="inline-flex items-center gap-1 rounded border border-teal-300/80 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-700/60"
+                                                        title="Adicionar ou editar vínculos deste subelemento"
+                                                      >
+                                                        <span className="material-symbols-outlined text-[13px]">account_balance</span>
+                                                        <span>Vínculos</span>
+                                                      </button>
                                                       <button
                                                         type="button"
                                                         onClick={() => {
@@ -4010,17 +4060,26 @@ export function AnaliseLoaView() {
                                                     </div>
                                                   </div>
 
+                                                  {vinculosContext?.group.id === group.id && vinculosContext.natureza === natureza && vinculosContext.items[0]?.id === item.id && (
+                                                    <div className="w-full rounded-md border border-teal-300/70 bg-surface p-2">
+                                        <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase text-teal-800"><span>Adicionar vínculo ao subelemento</span><span>Total: {formatBr(vinculoAllocations.reduce((sum, item) => sum + parseBr(item.valor), 0))}</span></div>
+                                        {vinculoAllocations.map((allocation, index) => <div key={allocation.id} className="mb-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] gap-1"><select value={allocation.vinculo} onChange={(event) => setVinculoAllocations((prev) => prev.map((item) => item.id === allocation.id ? { ...item, vinculo: event.target.value } : item))} className="rounded border border-outline-variant px-1 py-0.5 text-[10px]">{VINCULO_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input value={allocation.codigoAplicacao} onChange={(event) => setVinculoAllocations((prev) => prev.map((item) => item.id === allocation.id ? { ...item, codigoAplicacao: event.target.value } : item))} placeholder="Código aplicação" className="rounded border border-outline-variant px-1 py-0.5 text-[10px] font-mono" /><input value={allocation.valor} onChange={(event) => setVinculoAllocations((prev) => prev.map((item) => item.id === allocation.id ? { ...item, valor: event.target.value.replace(/-/g, "") } : item))} className="rounded border border-outline-variant px-1 py-0.5 text-right text-[10px] font-mono" /><button type="button" disabled={vinculoAllocations.length === 1} onClick={() => setVinculoAllocations((prev) => prev.filter((item) => item.id !== allocation.id))} className="text-rose-600 disabled:opacity-30" aria-label={`Remover vínculo ${index + 1}`}><span className="material-symbols-outlined text-[15px]">delete</span></button></div>)}
+                                        <div className="flex justify-end gap-1"><button type="button" onClick={() => setVinculoAllocations((prev) => [...prev, { id: crypto.randomUUID(), vinculo: "01", codigoAplicacao: "", valor: "0,00" }])} className="rounded border border-teal-300 px-2 py-0.5 text-[10px] font-bold text-teal-800">+ Vínculo</button><button type="button" onClick={() => setVinculosContext(null)} className="rounded border border-outline-variant px-2 py-0.5 text-[10px]">Cancelar</button><button type="button" onClick={saveVinculos} className="rounded bg-primary px-2 py-0.5 text-[10px] font-bold text-on-primary">Salvar</button></div>
+                                      </div>
+                                                  )}
+
                                                   {/* Badges de Vínculo (com Código de Aplicação integrado) e Processo */}
-                                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                                    {(item.fonteVinculo || item.codigoAplicacao) && (
+                                                  <div className="flex flex-col items-start gap-1.5">
+                                                    {[item].filter((entry) => entry.fonteVinculo || entry.codigoAplicacao).map((entry) => (
                                                       <span
+                                                        key={entry.id}
                                                         className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
-                                                        title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}`}
+                                                        title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(entry.fonteVinculo, entry.codigoAplicacao)}`}
                                                       >
                                                         <span className="material-symbols-outlined text-[12px]">account_balance</span>
-                                                        <span>Vínculo: {formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}</span>
+                                                        <span>Vínculo: {formatVinculoComAplicacao(entry.fonteVinculo, entry.codigoAplicacao)}</span>
                                                       </span>
-                                                    )}
+                                                    ))}
                                                     {item.processo && item.processo !== "—" && (
                                                       <span
                                                         className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-2xs"
@@ -4068,61 +4127,61 @@ export function AnaliseLoaView() {
                                             </td>
                                           {visibleTableColumns.has("valLdo") && <td className="p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
                                           {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <input
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
-                                              value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
+                                              value={editingCell?.id === entry.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(entry.valLoa)}
                                               onFocus={() => {
-                                                setEditingCell({ id: item.id, field: "valLoa" });
-                                                setTempInputValue(item.valLoa.toFixed(2).replace(".", ","));
+                                                setEditingCell({ id: entry.id, field: "valLoa" });
+                                                setTempInputValue(entry.valLoa.toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
                                                 const sanitizedValue = event.target.value.replace(/-/g, "");
                                                 setTempInputValue(sanitizedValue);
                                                 const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valLoa: value } : entry));
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valLoa: value } : row));
                                                 setHasChanges(true);
                                               }}
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
-                                            />
+                                            /></div>)}</div>
                                           </td>}
                                           {visibleTableColumns.has("valorReajuste") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <input
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
-                                              value={editingCell?.id === item.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(item.valorReajuste ?? 0)}
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(entry.valorReajuste ?? 0)}
                                               onFocus={() => {
-                                                setEditingCell({ id: item.id, field: "valorReajuste" });
-                                                setTempInputValue((item.valorReajuste ?? 0).toFixed(2).replace(".", ","));
+                                                setEditingCell({ id: entry.id, field: "valorReajuste" });
+                                                setTempInputValue((entry.valorReajuste ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
                                                 const sanitizedValue = event.target.value.replace(/-/g, "");
                                                 setTempInputValue(sanitizedValue);
                                                 const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorReajuste: value } : entry));
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorReajuste: value } : row));
                                                 setHasChanges(true);
                                               }}
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                            />
+                                            /></div>)}</div>
                                           </td>}
                                           {visibleTableColumns.has("valorAditamento") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <input
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
-                                              value={editingCell?.id === item.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(item.valorAditamento ?? 0)}
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(entry.valorAditamento ?? 0)}
                                               onFocus={() => {
-                                                setEditingCell({ id: item.id, field: "valorAditamento" });
-                                                setTempInputValue((item.valorAditamento ?? 0).toFixed(2).replace(".", ","));
+                                                setEditingCell({ id: entry.id, field: "valorAditamento" });
+                                                setTempInputValue((entry.valorAditamento ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
                                                 const sanitizedValue = event.target.value.replace(/-/g, "");
                                                 setTempInputValue(sanitizedValue);
                                                 const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorAditamento: value } : entry));
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorAditamento: value } : row));
                                                 setHasChanges(true);
                                               }}
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                            />
+                                            /></div>)}</div>
                                           </td>}
                                           {visibleTableColumns.has("valorTotal") && <td className="p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>}
                                           {visibleTableColumns.has("diff") && <td className={`p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
@@ -4166,6 +4225,85 @@ export function AnaliseLoaView() {
                                             })()}
                                           </td>}
                                         </tr>
+                                        {vinculoEntries.slice(1).map((child) => (
+                                          <tr key={child.id} className="bg-teal-50/30 dark:bg-teal-950/10 border-b border-teal-200/60 dark:border-teal-900/40">
+                                            <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2 pl-20 sm:pl-24 text-xs">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-outline-variant/80 font-mono text-xs select-none">└─</span>
+                                                <span
+                                                  className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
+                                                  title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(child.fonteVinculo, child.codigoAplicacao)}`}
+                                                >
+                                                  <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                                                  <span>Vínculo: {formatVinculoComAplicacao(child.fonteVinculo, child.codigoAplicacao)}</span>
+                                                </span>
+                                              </div>
+                                            </td>
+                                          {visibleTableColumns.has("valLdo") && <td className="p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
+                                          {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(entry.valLoa)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valLoa" });
+                                                setTempInputValue(entry.valLoa.toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valLoa: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
+                                            /></div>)}</div>
+                                          </td>}
+                                          {visibleTableColumns.has("valorReajuste") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(entry.valorReajuste ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorReajuste" });
+                                                setTempInputValue((entry.valorReajuste ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorReajuste: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>}
+                                          {visibleTableColumns.has("valorAditamento") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(entry.valorAditamento ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorAditamento" });
+                                                setTempInputValue((entry.valorAditamento ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorAditamento: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>}
+                                          {visibleTableColumns.has("valorTotal") && <td className="p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(child))}</td>}
+                                          {visibleTableColumns.has("diff") && <td />}
+                                          {visibleTableColumns.has("status") && <td />}
+                                          {visibleTableColumns.has("adjusted") && <td />}
+                                          </tr>
+                                        ))}
+                                        </Fragment>
                                       );
                                     })}
                                   </Fragment>
