@@ -104,7 +104,7 @@ export function AppShell({ view }: { view: string }) {
       </a>
 
       {/* TopNavBar */}
-      <nav className="bg-surface flex justify-between items-center w-full px-4 h-16 border-b border-outline-variant fixed top-0 z-50 shadow-sm">
+      <nav className="bg-surface/95 dark:bg-slate-900/95 backdrop-blur-xl flex justify-between items-center w-full px-4 md:px-6 h-16 border-b border-outline-variant fixed top-0 z-50 shadow-xs">
         <div className="flex items-center gap-6">
           <button
             type="button"
@@ -123,7 +123,7 @@ export function AppShell({ view }: { view: string }) {
           >
             {sidebarCollapsed ? "menu" : "menu_open"}
           </button>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             <Image
               src="/brasao.png"
               alt="Brasão de Osasco"
@@ -131,14 +131,19 @@ export function AppShell({ view }: { view: string }) {
               height={36}
               className="h-9 w-auto object-contain"
             />
-            <div className="text-lg font-headline font-bold text-primary hidden sm:block">
-              {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "Orçamento Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : view === "assistente-loa" ? "Assistente LOA" : "LOA Orçamentária"}
+            <div>
+              <div className="text-base font-headline font-bold text-primary dark:text-blue-400 leading-tight hidden sm:block">
+                {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "Orçamento Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : view === "assistente-loa" ? "Assistente LOA" : "LOA Orçamentária"}
+              </div>
+              <div className="text-[10px] text-on-surface-variant font-medium hidden sm:block uppercase tracking-wider">
+                Câmara Municipal de Osasco
+              </div>
             </div>
           </div>
           <div className="hidden md:flex gap-6 font-headline text-sm font-semibold tracking-wide ml-4">
             {enabledNavigationKeys.has("apresentacao") && <Link className="text-on-surface-variant hover:text-primary transition-colors pb-1" href="/apresentacao">Painel Executivo</Link>}
-            {enabledNavigationKeys.has("transparente") && <Link className={`pb-1 transition-colors ${view === "transparente" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/transparente">Orçamento Transparente</Link>}
-            {enabledNavigationKeys.has("assistente-loa") && <Link className={`pb-1 transition-colors ${view === "assistente-loa" ? "text-primary border-b-2 border-primary font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/assistente-loa">Assistente LOA</Link>}
+            {enabledNavigationKeys.has("transparente") && <Link className={`pb-1 transition-colors ${view === "transparente" ? "text-primary dark:text-blue-400 border-b-2 border-primary dark:border-blue-400 font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/transparente">Orçamento Transparente</Link>}
+            {enabledNavigationKeys.has("assistente-loa") && <Link className={`pb-1 transition-colors ${view === "assistente-loa" ? "text-primary dark:text-blue-400 border-b-2 border-primary dark:border-blue-400 font-bold" : "text-on-surface-variant hover:text-primary"}`} href="/assistente-loa">Assistente LOA</Link>}
           </div>
         </div>
         <div className="flex gap-3 items-center">

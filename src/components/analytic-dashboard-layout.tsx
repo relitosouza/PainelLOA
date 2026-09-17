@@ -449,55 +449,55 @@ export function AnalyticDashboardLayout({
     switch (cardId) {
       case "card-ldo":
         return (
-          <article key="card-ldo" className="glass-card bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+          <article key="card-ldo" className="glass-card bg-[#10B981]/5 dark:bg-[#10B981]/10 border border-[#10B981]/20 p-5 flex flex-col justify-between h-32 relative overflow-hidden rounded-2xl">
             <div className="z-10">
-              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1">Despesa LDO (2027)</p>
-              <h3 className="text-2xl font-headline font-bold text-emerald-900 dark:text-emerald-100">{formatCompactMoney(5868871609.91)}</h3>
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">Previsão 1.142 registros</p>
+              <p className="text-[11px] font-bold text-[#059669] dark:text-[#34D399] uppercase tracking-wider mb-1">Despesa LDO (2027)</p>
+              <h3 className="text-2xl font-headline font-bold text-[#0F172A] dark:text-white">{formatCompactMoney(5868871609.91)}</h3>
+              <p className="text-xs text-[#059669] dark:text-[#34D399] mt-1 font-medium">Previsão 1.142 registros</p>
             </div>
-            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-emerald-500/10">gavel</span>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-[#10B981]/15">gavel</span>
           </article>
         );
       case "card-loa":
         return (
-          <article key="card-loa" className="glass-card bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+          <article key="card-loa" className="glass-card bg-[#1B365D]/5 dark:bg-[#3B82F6]/10 border border-[#1B365D]/20 dark:border-[#3B82F6]/30 p-5 flex flex-col justify-between h-32 relative overflow-hidden rounded-2xl">
             <div className="z-10">
-              <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-1">Despesa LOA (2027)</p>
-              <h3 className="text-2xl font-headline font-bold text-blue-900 dark:text-blue-100">{formatCompactMoney(totalVal)}</h3>
-              <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1">{integer.format(data.quality.totalRecords)} registros fixados</p>
+              <p className="text-[11px] font-bold text-[#1B365D] dark:text-[#93C5FD] uppercase tracking-wider mb-1">Despesa LOA (2027)</p>
+              <h3 className="text-2xl font-headline font-bold text-[#1B365D] dark:text-white">{formatCompactMoney(totalVal)}</h3>
+              <p className="text-xs text-[#3B82F6] dark:text-[#93C5FD] mt-1 font-medium">{integer.format(data.quality.totalRecords)} registros fixados</p>
             </div>
-            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-blue-500/10">account_balance_wallet</span>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-[#1B365D]/10 dark:text-[#3B82F6]/15">account_balance_wallet</span>
           </article>
         );
       case "card-correntes":
         return (
-          <article key="card-correntes" className="glass-card bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+          <article key="card-correntes" className="glass-card bg-[#F8FAFC] dark:bg-slate-900/40 border border-[#E2E8F0] dark:border-slate-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden rounded-2xl">
             <div className="z-10">
-              <p className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Despesa Total Fixada"}</p>
-              <h3 className="text-2xl font-headline font-bold text-orange-900 dark:text-orange-100">{formatCompactMoney(isRealData ? operatingVal : expenseTotal)}</h3>
-              <p className="text-[11px] text-orange-600 dark:text-orange-400 mt-1">Pessoal e Custeio</p>
+              <p className="text-[11px] font-bold text-[#64748B] dark:text-slate-400 uppercase tracking-wider mb-1">{isRealData ? "Despesas Correntes" : "Despesa Total Fixada"}</p>
+              <h3 className="text-2xl font-headline font-bold text-[#0F172A] dark:text-white">{formatCompactMoney(isRealData ? operatingVal : expenseTotal)}</h3>
+              <p className="text-xs text-[#64748B] dark:text-slate-400 mt-1 font-medium">Pessoal e Custeio</p>
             </div>
-            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-orange-500/10">payments</span>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-slate-400/15">payments</span>
           </article>
         );
       case "card-investimentos":
         return (
-          <article key="card-investimentos" className="glass-card bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800 p-5 flex flex-col justify-between h-32 relative overflow-hidden">
+          <article key="card-investimentos" className="glass-card bg-[#3B82F6]/5 dark:bg-[#3B82F6]/10 border border-[#3B82F6]/20 dark:border-[#3B82F6]/30 p-5 flex flex-col justify-between h-32 relative overflow-hidden rounded-2xl">
             <div className="z-10">
-              <p className="text-xs font-bold text-teal-700 dark:text-teal-300 uppercase tracking-wider mb-1">Investimentos (LOA)</p>
-              <h3 className="text-2xl font-headline font-bold text-teal-900 dark:text-teal-100">{formatCompactMoney(investmentVal)}</h3>
-              <p className="text-[11px] text-teal-600 dark:text-teal-400 mt-1">Obras e Capital</p>
+              <p className="text-[11px] font-bold text-[#3B82F6] dark:text-[#93C5FD] uppercase tracking-wider mb-1">Investimentos (LOA)</p>
+              <h3 className="text-2xl font-headline font-bold text-[#1B365D] dark:text-white">{formatCompactMoney(investmentVal)}</h3>
+              <p className="text-xs text-[#3B82F6] dark:text-[#93C5FD] mt-1 font-medium">Obras e Capital</p>
             </div>
-            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-teal-500/10">engineering</span>
+            <span className="material-symbols-outlined absolute right-[-5px] bottom-[-5px] text-[60px] text-[#3B82F6]/15">engineering</span>
           </article>
         );
       case "card-conformidade":
         return (
-          <article key="card-conformidade" className="glass-card bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-5 flex flex-col justify-center h-32">
+          <article key="card-conformidade" className="glass-card bg-[#FBBF24]/5 dark:bg-[#FBBF24]/10 border border-[#FBBF24]/20 dark:border-[#FBBF24]/30 p-5 flex flex-col justify-center h-32 rounded-2xl">
             <div>
-              <p className="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1">Conformidade LOA</p>
-              <h3 className="text-lg font-headline font-bold text-amber-900 dark:text-amber-100">{percent.format(data.quality.coverage)}</h3>
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{integer.format(data.quality.warningRecords)} alertas de cadastro</p>
+              <p className="text-[11px] font-bold text-[#B45309] dark:text-[#FCD34D] uppercase tracking-wider mb-1">Conformidade LOA</p>
+              <h3 className="text-2xl font-headline font-bold text-[#0F172A] dark:text-white">{percent.format(data.quality.coverage)}</h3>
+              <p className="text-xs text-[#B45309] dark:text-[#FCD34D] mt-1 font-medium">{integer.format(data.quality.warningRecords)} alertas de cadastro</p>
             </div>
           </article>
         );

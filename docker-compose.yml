@@ -1,16 +1,62 @@
+name: painel-loa
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: painel-loa-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: local_password
-      POSTGRES_DB: painel_loa
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_password}
+      POSTGRES_DB: ${POSTGRES_DB:-painel_loa}
+    ports:
+      - "${POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - painel_loa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-painel_loa}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - painel-loa-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: painel-loa-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-local_password}@postgres:5432/${POSTGRES_DB:-painel_loa}?schema=public
+      AUTO_DB_PUSH: ${AUTO_DB_PUSH:-true}
+    ports:
+      - "${APP_PORT:-3010}:3000"
+    networks:
+      - painel-loa-net
+
+  adminer:
+    image: adminer:latest
+    container_name: painel-loa-adminer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
+    ports:
+      - "${ADMINER_PORT:-8082}:8080"
+    networks:
+      - painel-loa-net
 
 volumes:
-  pgdata:
+  painel_loa_pgdata:
+    name: painel_loa_pgdata
+
+networks:
+  painel-loa-net:
+    name: painel-loa-net
+
