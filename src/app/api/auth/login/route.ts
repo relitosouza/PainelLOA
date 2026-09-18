@@ -76,12 +76,14 @@ export async function POST(req: NextRequest) {
       user: userPayload,
     });
 
+    const isHttps = req.nextUrl.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+
     // Set HTTP-only Cookie
     response.cookies.set({
       name: SESSION_COOKIE_NAME,
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 dias
       path: "/",

@@ -40,8 +40,7 @@ export function LoginView() {
 
       if (res.ok && data.success && data.user) {
         setActiveUser(data.user);
-        router.push(redirectUrl);
-        router.refresh();
+        window.location.href = redirectUrl || "/";
       } else {
         setErrorMsg(data.error || "Falha na autenticação. Verifique os dados.");
       }
