@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { Fragment, cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { currency, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
@@ -8,6 +8,7 @@ import { AddElementExpenseDialog, VINCULO_OPTIONS, formatVinculoComAplicacao } f
 import {
   AnaliseLoaCardsConfigDialog,
   DEFAULT_LAYOUT_CONFIG,
+  withNewKpis,
   type AnaliseLoaLayoutConfig,
 } from "./analise-loa-cards-config-dialog";
 import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
@@ -16,7 +17,26 @@ import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/anal
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
 import { openLoaReportWindow, shouldExcludeReportVinculo, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
+import {
+  buildAnaliseLoaItems,
+  getActionTypeLabel,
+  normalizeBancoProjetoAllocation,
+  withAddedExpenses,
+  withCustomEdits,
+  withFinancialEdits,
+  withSubelementEdits,
+  withoutRemoved,
+  type RawBudgetItem,
+} from "@/lib/loa-analise-items";
 import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
+import { notifyAnaliseLoaSaved } from "@/lib/live-refresh";
+import { normalizeActionLabel, normalizeProgramLabel } from "@/lib/loa-labels";
+import {
+  allocateLoa2026Initial,
+  calculateAnalyticalValues,
+  createBancoProjetoValues,
+  parseLoa2026InitialWorkbook,
+} from "@/lib/loa-analytical-values";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -61,36 +81,7 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   search: "",
 };
 
-export interface RawBudgetItem {
-  id: string;
-  progKey: string;
-  secretaria: string;
-  orgao: string;
-  unidade: string;
-  programa: string;
-  tipoAcao: string;
-  acao: string;
-  natureza: string;
-  fonteVinculo: string;
-  categoriaEconomica: string;
-  grupoNatureza: string;
-  elemento: string;
-  subelemento: string;
-  processo: string;
-  funcao?: string;
-  subfuncao?: string;
-  programaticaLoa?: string;
-  codigoAplicacao?: string;
-  projetoIniciado?: string;
-  contrato?: string;
-  observacao?: string;
-  valLdo: number;
-  valLoa: number;
-  valorReajuste?: number;
-  valorAditamento?: number;
-  origem?: "Banco de Projetos";
-  bancoProjetoKey?: string;
-}
+export type { RawBudgetItem } from "@/lib/loa-analise-items";
 
 interface EditableGroup {
   id: string;
@@ -103,14 +94,19 @@ interface EditableGroup {
   children: RawBudgetItem[];
   valLdo: number;
   valLoa: number;
+  valLoa2026: number;
   valorReajuste: number;
+  vigenteReajuste: number;
   valorAditamento: number;
+  valorSugestaoSf: number;
+  valorCorteGp: number;
   valorTotal: number;
 }
 
-type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "valorTotal" | "diff" | "status" | "adjusted";
+type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa2026" | "valLoa" | "valorReajuste" | "vigenteReajuste" | "valorAditamento" | "valorSugestaoSf" | "valorCorteGp" | "valorTotal" | "diff" | "status" | "adjusted";
 type AnalyticalColumn = TableSortColumn;
 type NaturezaOption = { codigo: string; nome: string };
+type VinculoAllocation = { id: string; vinculo: string; codigoAplicacao: string; valor: string };
 type NatureValidationStatus = "Pendente" | "Parcial" | "Validada";
 type Iniciativa = { id?: string | number; acao?: string; secretaria?: string; programa?: string; despesa?: string; dsIniciativa?: string; programaticaLdo?: string; vinculo?: string; valorFinalPldo27?: number };
 const ADDED_EXPENSES_STORAGE_KEY = "painel_loa_added_expenses_v1";
@@ -118,17 +114,32 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
   { key: "acao", label: "Ação", required: true },
   { key: "elemento", label: "Elemento de Despesa" },
   { key: "valLdo", label: "Valor LDO" },
-  { key: "valLoa", label: "Valor LOA (Vigente)" },
-  { key: "valorReajuste", label: "Valor Reajuste" },
-  { key: "valorAditamento", label: "Valor Aditamento" },
-  { key: "valorTotal", label: "Valor Total" },
+  { key: "valLoa2026", label: "LOA 2026 (Inicial)" },
+  { key: "valorTotal", label: "LOA 2027" },
+  { key: "valLoa", label: "Vigente" },
+  { key: "valorReajuste", label: "Reajuste" },
+  { key: "vigenteReajuste", label: "Vigente + Reajuste" },
+  { key: "valorAditamento", label: "Aditamento" },
+  { key: "valorSugestaoSf", label: "Sugestão SF" },
+  { key: "valorCorteGp", label: "Corte GP" },
   { key: "diff", label: "Diferença" },
   { key: "status", label: "Status" },
   { key: "adjusted", label: "Validação" },
 ];
 
+// Ação e Elemento formam a coluna da árvore e ficam fixas no início; as demais podem mudar de posição.
+const FIXED_ANALYTICAL_COLUMNS: AnalyticalColumn[] = ["acao", "elemento"];
+const DEFAULT_COLUMN_ORDER = ANALYTICAL_COLUMNS.map((column) => column.key).filter((key) => !FIXED_ANALYTICAL_COLUMNS.includes(key));
+const orderFromSaved = (saved: AnalyticalColumn[]) => [
+  ...saved.filter((key) => DEFAULT_COLUMN_ORDER.includes(key)),
+  ...DEFAULT_COLUMN_ORDER.filter((key) => !saved.includes(key)),
+];
+
 const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
-  item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0);
+  calculateAnalyticalValues(item).loa2027;
+
+const getItemVigenteReajuste = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste">) =>
+  calculateAnalyticalValues(item).vigenteComReajuste;
 
 const getColumnsPreferenceKey = (user: ActiveUser) => {
   const identity = user.id || user.email || user.nome || "usuario";
@@ -142,98 +153,6 @@ const getNatureValidationStatus = (validatedCount: number, totalCount: number): 
   return "Pendente";
 };
 
-const ACTION_CANONICAL_MAP: Record<string, string> = {
-  "0.001": "0.001 - Serviços da Dívida Pública",
-  "0.002": "0.002 - Obrigações Tributárias e Contributivas",
-  "0.003": "0.003 - Precatórios e Sentenças Judiciais",
-  "1.001": "1.001 - Estudos, Pesquisas, Planos e Projetos",
-  "1.002": "1.002 - Reforma e Ampliação de Unidades",
-  "1.003": "1.003 - Implantação de Novas Unidades",
-  "1.004": "1.004 - Expansão do Turismo",
-  "1.005": "1.005 - Desenvolvimento da Infraestrutura Urbana",
-  "1.006": "1.006 - Desenvolvimento da Infraestrutura Viária",
-  "1.007": "1.007 - Drenagem Urbana",
-  "1.008": "1.008 - Microdrenagem Urbana",
-  "1.009": "1.009 - Urbanização de Favelas e Comunidades",
-  "1.010": "1.010 - Requalificação de Favelas e Comunidades",
-  "1.011": "1.011 - Regularização Fundiária de Assentamentos Precários, Loteamentos e Conjuntos Habitacionais",
-  "1.012": "1.012 - Construção de Unidades Habitacionais",
-  "1.013": "1.013 - Melhoria das Unidades Habitacionais",
-  "1.014": "1.014 - Recuperação de Conjuntos Habitacionais",
-  "2.001": "2.001 - Remuneração, Benefícios e Encargos",
-  "2.002": "2.002 - Abastecimento de Frota",
-  "2.003": "2.003 - Qualificação de Servidores e Processos Institucionais",
-  "2.004": "2.004 - Qualificação Socioprofissional",
-  "2.005": "2.005 - Promoção de Eventos, Comunicação e Participação Social",
-  "2.006": "2.006 - Representações Oficiais",
-  "2.007": "2.007 - Ampliação e Manutenção de Sistemas de Inteligência, Fiscalização e Tecnologia",
-  "2.008": "2.008 - Estágio e Aprendizagem",
-  "2.009": "2.009 - Locação de Imóveis",
-  "2.010": "2.010 - Manutenção do Transporte Coletivo",
-  "2.011": "2.011 - Manutenção de Equipamentos Públicos",
-  "2.012": "2.012 - Manutenção de Equipamentos Públicos - Atenção Primária",
-  "2.013": "2.013 - Manutenção de Equipamentos Públicos - Atenção Especializada",
-  "2.014": "2.014 - Manutenção de Equipamentos Públicos - Atenção Hospitalar e Urgência e Emergência",
-  "2.015": "2.015 - Manutenção de Equipamentos Públicos - Proteção Básica",
-  "2.016": "2.016 - Manutenção de Equipamentos Públicos - Proteção Especial",
-  "2.017": "2.017 - Suporte ao Aluno",
-  "2.018": "2.018 - Conectividade e Tecnologia na Educação",
-  "2.019": "2.019 - Ações Pedagógicas Complementares",
-  "2.020": "2.020 - Transporte de Alunos",
-  "2.021": "2.021 - Educação Cidadã",
-  "2.022": "2.022 - Parcerias para Criação de Vagas",
-  "2.023": "2.023 - Gestão Compartilhada de Equipamentos Públicos",
-  "2.024": "2.024 - Distribuição de Alimentos e Benefícios para as Famílias em Situação de Vulnerabilidade",
-  "2.025": "2.025 - Auxílio para Inclusão no Mercado de Trabalho",
-  "2.026": "2.026 - Residências e Internações Compulsórias",
-  "2.027": "2.027 - Intermediação Profissional",
-  "2.028": "2.028 - Disseminação de Atividades Culturais e Esportivas Descentralizadas",
-  "2.029": "2.029 - Valorização do Patrimônio Histórico-Cultural",
-  "2.030": "2.030 - Apoio ao Esporte de Alto Rendimento",
-  "2.031": "2.031 - Esporte Amador",
-  "2.032": "2.032 - Iniciação Esportiva",
-  "2.033": "2.033 - Fortalecimento da Economia Criativa e Solidária",
-  "2.034": "2.034 - Manutenção da Infraestrutura Viária",
-  "2.035": "2.035 - Manutenção e Serviços de Drenagem Urbana",
-  "2.036": "2.036 - Manutenção da Mobilidade Ativa",
-  "2.037": "2.037 - Ampliação e Manutenção de Áreas Verdes",
-  "2.038": "2.038 - Iluminação Pública",
-  "2.039": "2.039 - Limpeza Urbana e Gestão de Resíduos Sólidos",
-  "2.040": "2.040 - Auxílio para Acesso à Moradia",
-  "2.041": "2.041 - Ação Transversal de Garantia de Direitos",
-  "2.042": "2.042 - Manutenção das Atividades Legislativas",
-  "2.043": "2.043 - Benefícios Previdenciários",
-  "2.044": "2.044 - Reserva de Contingência",
-  "9.999": "9.999 - Reserva de Contingência",
-};
-
-function normalizeActionLabel(value: string) {
-  if (!value) return value;
-  const clean = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
-  const match = clean.match(/^(\d+[\.\d]*|\d+)/);
-  const code = match ? match[1] : null;
-  if (code && ACTION_CANONICAL_MAP[code]) {
-    return ACTION_CANONICAL_MAP[code];
-  }
-  return clean.replace(/^(\d+[\.\d]*)\s*[-—–]+\s*/, "$1 - ").replace(/\s+/g, " ");
-}
-
-function normalizeProgramLabel(value: string) {
-  if (!value) return value;
-  const program = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
-  if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
-  return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
-}
-
-function getActionTypeLabel(action: string): string {
-  if (!action) return "Outros";
-  const clean = action.trim();
-  const firstChar = clean.charAt(0);
-  if (firstChar === "0") return "0. Operação Especial";
-  if (firstChar === "1") return "1. Projeto";
-  if (firstChar === "2") return "2. Atividade";
-  return "Outros";
-}
 
 function getStatusLabel(valLdo: number, valLoa: number) {
   if (valLdo === 0 && valLoa > 0) return "Nova Dotação";
@@ -276,6 +195,8 @@ export function AnaliseLoaView() {
   const [dataLoadError, setDataLoadError] = useState("");
   const [dataReloadKey, setDataReloadKey] = useState(0);
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
+  const [ldoReceitaEntidades, setLdoReceitaEntidades] = useState<Array<{ nome: string; valor: number }>>([]);
+  const [loaReceitaResumo, setLoaReceitaResumo] = useState<{ total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number }>({ total: 0, maior: null, qtdFontes: 0 });
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
   const loaExpectativaTotal = useMemo(() => {
@@ -295,6 +216,7 @@ export function AnaliseLoaView() {
   const [tableSearch, setTableSearch] = useState("");
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(10);
+  const analyticalScrollRef = useRef<HTMLDivElement>(null);
   const [tableSort, setTableSort] = useState<{ column: TableSortColumn; direction: "asc" | "desc" }>({ column: "acao", direction: "asc" });
   const [natureSort, setNatureSort] = useState<{ column: "natureza" | "subelementos" | "valLdo" | "valLoa" | "diff" | "status"; direction: "asc" | "desc" }>({ column: "natureza", direction: "asc" });
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
@@ -305,6 +227,29 @@ export function AnaliseLoaView() {
   const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
     () => new Set(ANALYTICAL_COLUMNS.map((column) => column.key))
   );
+  const [columnOrder, setColumnOrder] = useState<AnalyticalColumn[]>(DEFAULT_COLUMN_ORDER);
+  const moveColumn = (key: AnalyticalColumn, offset: -1 | 1) =>
+    setColumnOrder((current) => {
+      const from = current.indexOf(key);
+      const to = from + offset;
+      if (from < 0 || to < 0 || to >= current.length) return current;
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+  // Renderiza as células de valor na ordem escolhida, alternando as faixas pela posição exibida.
+  const renderOrderedCells = (cells: Partial<Record<AnalyticalColumn, ReactNode>>) => {
+    let position = 0;
+    return columnOrder.map((key) => {
+      const cell = cells[key];
+      if (!isValidElement<{ className?: string }>(cell)) return null;
+      const band = position++ % 2 === 0 ? "col-band-gray" : "col-band-white";
+      const className = typeof cell.props.className === "string"
+        ? cell.props.className.replace(/col-band-(white|gray)/, band)
+        : cell.props.className;
+      return <Fragment key={key}>{cloneElement(cell, { className })}</Fragment>;
+    });
+  };
   const [columnsSaveState, setColumnsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -321,6 +266,23 @@ export function AnaliseLoaView() {
   const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
   const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
+  // Administração indireta (IPMO, IPMO-RC e FITO) não está na receita da Prefeitura (LoaReceita, UG 201).
+  // A receita LOA delas entra no card pelo valor da LOA 2027 de cada entidade na planilha base.
+  // A CMO fica de fora: é custeada pelo duodécimo repassado pela Prefeitura, já contido na receita da Prefeitura.
+  const receitaLoaEntidades = useMemo(() => {
+    const entidades = [
+      { codigo: "21", nome: "IPMO" },
+      { codigo: "77", nome: "IPMO - RC" },
+      { codigo: "22", nome: "FITO" },
+    ];
+    return entidades.map(({ codigo, nome }) => ({
+      nome,
+      valor: Math.round(originalRawItems
+        .filter((item) => item.secretaria.match(/^(\d+)\s*-/)?.[1] === codigo)
+        .reduce((sum, item) => sum + item.valLoa, 0) * 100) / 100,
+    }));
+  }, [originalRawItems]);
+
   const originalValuesById = useMemo(() => new Map(originalRawItems.map((item) => [item.id, item.valLoa])), [originalRawItems]);
   const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
   const [newExpenseCodigoAplicacao, setNewExpenseCodigoAplicacao] = useState("");
@@ -328,6 +290,8 @@ export function AnaliseLoaView() {
   const [newExpenseProjetoIniciado, setNewExpenseProjetoIniciado] = useState("");
   const [newExpenseObservacao, setNewExpenseObservacao] = useState("");
   const [newExpenseValor, setNewExpenseValor] = useState("");
+  const [vinculosContext, setVinculosContext] = useState<{ group: EditableGroup; natureza: string; items: RawBudgetItem[] } | null>(null);
+  const [vinculoAllocations, setVinculoAllocations] = useState<VinculoAllocation[]>([]);
   // Estado para Edição de Subelemento via Modal
   const [editingSubelementItem, setEditingSubelementItem] = useState<RawBudgetItem | null>(null);
   const [editSubelementName, setEditSubelementName] = useState("");
@@ -345,6 +309,41 @@ export function AnaliseLoaView() {
   const editSubelementTriggerRef = useRef<HTMLElement | null>(null);
   // Usuário Ativo
   const [currentUser, setCurrentUser] = useState<ActiveUser>(() => getActiveUser() || DEFAULT_USER);
+
+  const openVinculosEditor = (group: EditableGroup, natureza: string, items: RawBudgetItem[]) => {
+    setVinculosContext({ group, natureza, items });
+    setVinculoAllocations(items.length > 0
+      ? items.map((item) => ({ id: item.id, vinculo: item.fonteVinculo || "01", codigoAplicacao: item.codigoAplicacao || "", valor: item.valLoa.toFixed(2).replace(".", ",") }))
+      : [{ id: crypto.randomUUID(), vinculo: "01", codigoAplicacao: "", valor: "0,00" }]);
+  };
+
+  const saveVinculos = () => {
+    if (!vinculosContext) return;
+    const values = vinculoAllocations.map((allocation) => ({ ...allocation, amount: parseBr(allocation.valor) }));
+    if (values.some((allocation) => allocation.amount < 0 || !allocation.vinculo.trim())) {
+      alert("Informe um vínculo válido e valores maiores ou iguais a zero.");
+      return;
+    }
+    const originalTotal = vinculosContext.items.reduce((sum, item) => sum + item.valLoa, 0);
+    const distributedTotal = values.reduce((sum, allocation) => sum + allocation.amount, 0);
+    if (Math.abs(distributedTotal - originalTotal) > 0.01) {
+      alert(`A soma dos vínculos (${formatBr(distributedTotal)}) deve ser igual ao valor da natureza (${formatBr(originalTotal)}).`);
+      return;
+    }
+    const template = vinculosContext.items[0];
+    if (!template) return;
+    setRawItems((previous) => {
+      const ids = new Set(vinculosContext.items.map((item) => item.id));
+      const next = previous.filter((item) => !ids.has(item.id));
+      values.forEach((allocation, index) => {
+        const existing = vinculosContext.items.find((item) => item.id === allocation.id);
+        next.push({ ...(existing ?? template), id: index === 0 ? template.id : existing && existing.id !== template.id ? existing.id : `manual-vinculo-${crypto.randomUUID()}`, fonteVinculo: allocation.vinculo.trim(), codigoAplicacao: allocation.codigoAplicacao.trim() || undefined, valLoa: allocation.amount, subelemento: template.subelemento, vinculoParentId: index === 0 ? template.vinculoParentId : template.id, valLdo: index === 0 ? template.valLdo : 0 });
+      });
+      return next;
+    });
+    setHasChanges(true);
+    setVinculosContext(null);
+  };
 
   useEffect(() => {
     setCurrentUser(getActiveUser() || DEFAULT_USER);
@@ -367,6 +366,7 @@ export function AnaliseLoaView() {
             ));
             ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
             setVisibleTableColumns(savedColumns);
+            setColumnOrder(orderFromSaved([...savedColumns]));
             return;
           }
         }
@@ -384,6 +384,7 @@ export function AnaliseLoaView() {
             ));
             ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
             setVisibleTableColumns(savedColumns);
+            setColumnOrder(orderFromSaved([...savedColumns]));
           }
         }
       } catch { }
@@ -396,7 +397,7 @@ export function AnaliseLoaView() {
   }, [currentUser]);
 
   const saveColumnsPreference = async () => {
-    const columns = ANALYTICAL_COLUMNS.filter((column) => visibleTableColumns.has(column.key)).map((column) => column.key);
+    const columns = [...FIXED_ANALYTICAL_COLUMNS, ...columnOrder].filter((key) => visibleTableColumns.has(key));
     const preferenceKey = getColumnsPreferenceKey(currentUser);
     setColumnsSaveState("saving");
     try {
@@ -552,12 +553,8 @@ export function AnaliseLoaView() {
               sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
                 ? parsed.sectionsOrder
                 : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
-              receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
-                ? parsed.receitaKpisOrder
-                : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
-              despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
-                ? parsed.despesaKpisOrder
-                : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+              receitaKpisOrder: withNewKpis(parsed.receitaKpisOrder, DEFAULT_LAYOUT_CONFIG.receitaKpisOrder),
+              despesaKpisOrder: withNewKpis(parsed.despesaKpisOrder, DEFAULT_LAYOUT_CONFIG.despesaKpisOrder),
               visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
             });
             return;
@@ -576,12 +573,8 @@ export function AnaliseLoaView() {
             sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
               ? parsed.sectionsOrder
               : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
-            receitaKpisOrder: Array.isArray(parsed.receitaKpisOrder) && parsed.receitaKpisOrder.length > 0
-              ? parsed.receitaKpisOrder
-              : DEFAULT_LAYOUT_CONFIG.receitaKpisOrder,
-            despesaKpisOrder: Array.isArray(parsed.despesaKpisOrder) && parsed.despesaKpisOrder.length > 0
-              ? parsed.despesaKpisOrder
-              : DEFAULT_LAYOUT_CONFIG.despesaKpisOrder,
+            receitaKpisOrder: withNewKpis(parsed.receitaKpisOrder, DEFAULT_LAYOUT_CONFIG.receitaKpisOrder),
+            despesaKpisOrder: withNewKpis(parsed.despesaKpisOrder, DEFAULT_LAYOUT_CONFIG.despesaKpisOrder),
             visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
           });
         }
@@ -838,7 +831,7 @@ export function AnaliseLoaView() {
   ]);
 
   // Estado para controlar a célula em foco de edição (id + campo: 'valLdo' | 'valLoa')
-  const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "groupValLoa" } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: string; field: "valLdo" | "valLoa" | "valorReajuste" | "valorAditamento" | "valorSugestaoSf" | "valorCorteGp" | "groupValLoa" } | null>(null);
   const [tempInputValue, setTempInputValue] = useState<string>("");
 
   const toggleTableSort = (column: TableSortColumn) => {
@@ -968,157 +961,27 @@ export function AnaliseLoaView() {
         const wb = XLSX.read(buffer, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-        const headers = (rows[0] ?? []) as unknown[];
-        const findCol = (...aliases: string[]) => {
-          const targets = aliases.map((a) => a.toLowerCase().trim());
-          for (let idx = headers.length - 1; idx >= 0; idx--) {
-            const h = String(headers[idx] ?? "").toLowerCase().trim();
-            if (targets.includes(h)) return idx;
+        buildAnaliseLoaItems(rows as unknown[][], nomMap).forEach((item) => loaMap.set(item.id, item));
+
+        // A LOA 2026 é publicada por natureza de despesa, sem subelemento/processo. O valor Inicial é
+        // distribuído entre os subelementos só para que os totais por natureza fechem; na tela ele
+        // aparece apenas até o nível de natureza.
+        let baseItems = [...loaMap.values()].map((item) => ({ ...item, valLoa2026: 0 }));
+        try {
+          const loa2026Response = await fetch(`/loa_2026.xls?t=${Date.now()}`, { cache: "no-store" });
+          if (loa2026Response.ok) {
+            const loa2026Totals = parseLoa2026InitialWorkbook(await loa2026Response.arrayBuffer());
+            baseItems = allocateLoa2026Initial(baseItems, loa2026Totals);
           }
-          return -1;
-        };
-
-        const columns = {
-          piece: findCol("peça orçamentária", "peca orcamentaria", "peça", "peca"),
-          programKey: findCol("programática_loa", "programatica_loa", "programatica"),
-          organ: findCol("secretaria", "orgao", "órgão", "secretaria_nome"),
-          unit: findCol("unidade", "unid", "cd_unid.-ds_unid."),
-          functionName: findCol("funcao", "função", "cd_função-ds_função", "cd_funcao-ds_funcao"),
-          subfunction: findCol("subfuncao", "subfunção", "cd subfunção-ds_subfunção", "cd subfuncao-ds_subfuncao"),
-          program: findCol("programa", "cd_programa-ds_programa"),
-          action: findCol("acao", "ação", "cd_ação-ds_ação", "cd_acao-ds_acao"),
-          nature: findCol("natureza", "natureza de despesa", "natureza da despesa"),
-          subelement: findCol("desc_sub", "desc sub", "subelemento", "descrição subelemento", "descricao subelemento"),
-          process: findCol("processo", "processo administrativo", "proc.", "proc", "processo_administrativo"),
-          value: findCol("valor", "val_loa", "valor loa", "valor_loa"),
-          link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
-          appCode: findCol("codigo_aplicacao", "cod_aplicacao", "codigo de aplicacao", "código de aplicação", "cod. aplicacao", "cod aplicacao", "aplicacao", "aplicação", "cd_aplicacao"),
-          obs: findCol("obs.", "obs", "observacao", "observação", "observacoes", "observações", "justificativa"),
-          iniciado: findCol("contrato", "contratos", "iniciado", "projeto iniciado", "projeto_iniciado", "contrato_iniciado"),
-        };
-
-        for (let i = 1; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r || r.length === 0) continue;
-
-          const peca = String(r[columns.piece] || "").trim().toUpperCase();
-          // Ignora linhas de totalização ou vazias sem identificador de peça
-          if (peca !== "LOA" && peca !== "LDO") continue;
-
-          const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
-          let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
-          organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
-          if (organStr === "01 - CMO" || organStr === "01- CMO") organStr = "01 - CMO";
-          const rawUnitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
-          const unitStr = normalizeUnidadeOrcamentaria(organStr, rawUnitStr, progKey);
-          const functionStr = columns.functionName >= 0 ? String(r[columns.functionName] || "").trim().replace(/^\.+/, "") : "";
-          const subfunctionStr = columns.subfunction >= 0 ? String(r[columns.subfunction] || "").trim().replace(/^\.+/, "") : "";
-          const programStr = normalizeProgramLabel(String(r[columns.program] || "").trim().replace(/^\.+/, ""));
-          const actionStr = normalizeActionLabel(String(r[columns.action] || "").trim().replace(/^\.+/, ""));
-          if (!organStr && !programStr && !actionStr) continue;
-          let natureStr = String(r[columns.nature] || "").trim().replace(/^\.+/, "").replace(/\.\./g, ".");
-          natureStr = natureStr
-            .replace(/^3\.50\.39/, "3.3.50.39")
-            .replace(/^3\.90\.35/, "3.3.90.35")
-            .replace(/^4\.90\.52/, "4.4.90.52");
-          const subelemStr = String(r[columns.subelement] || "").trim().replace(/^\.+/, "");
-          const processStr = String(r[columns.process] || "").trim().replace(/^\.+/, "");
-          const obsStr = columns.obs >= 0 ? String(r[columns.obs] || "").trim() : "";
-          const iniciadoRaw = columns.iniciado >= 0 ? String(r[columns.iniciado] || "").trim().toUpperCase() : "";
-          const projetoIniciado = iniciadoRaw === "SIM" || iniciadoRaw === "NÃO" || iniciadoRaw === "NAO"
-            ? (iniciadoRaw === "NAO" ? "NÃO" : iniciadoRaw)
-            : undefined;
-          const valor = Number(r[columns.value]) || 0;
-          const realVinculoStr = String(r[columns.link] || "").trim();
-          let extractedFonte = realVinculoStr;
-          let extractedCodigoAplicacao: string | undefined = columns.appCode >= 0 ? String(r[columns.appCode] || "").trim() || undefined : undefined;
-
-          // Se o vínculo vier no formato composto por pontos (ex.: 01.110.0000)
-          if (realVinculoStr.includes(".") && !extractedCodigoAplicacao) {
-            const vParts = realVinculoStr.split(".");
-            if (vParts.length >= 2) {
-              extractedFonte = vParts[0];
-              extractedCodigoAplicacao = vParts.slice(1).join(".");
-            }
-          }
-
-          const natCodeClean = natureStr.split("-")[0].trim();
-          const natCodeRaw = natCodeClean.replace(/\D/g, "");
-          const officialDesc = nomMap[natCodeClean] || nomMap[natCodeRaw];
-          if (officialDesc) {
-            natureStr = `${natCodeClean} - ${officialDesc}`;
-          }
-
-          const parts = natCodeClean.split(".");
-          const catDespesaMap: Record<string, string> = {
-            "3": "3 — DESPESAS CORRENTES",
-            "4": "4 — DESPESAS DE CAPITAL",
-            "9": "9 — RESERVA DE CONTINGÊNCIA",
-          };
-          const catEcon = parts[0] ? (catDespesaMap[parts[0]] || `${parts[0]} — Despesa`) : "Outras";
-          const grupoDespesaMap: Record<string, string> = {
-            "0": "RESTOS A PAGAR",
-            "1": "PESSOAL E ENCARGOS SOCIAIS",
-            "2": "JUROS E ENCARGOS DA DÍVIDA",
-            "3": "OUTRAS DESPESAS CORRENTES",
-            "4": "INVESTIMENTOS",
-            "5": "INVERSÕES FINANCEIRAS",
-            "6": "AMORTIZAÇÃO DA DÍVIDA",
-            "8": "EXTRAORÇAMENTÁRIA",
-            "9": "RESERVA DE CONTINGÊNCIA",
-          };
-          const grupoNome = parts[1] ? grupoDespesaMap[parts[1]] : undefined;
-          const grpNat = parts[1]
-            ? (grupoNome ? `${parts[0]}.${parts[1]} — ${grupoNome}` : `${parts[0]}.${parts[1]} — Grupo`)
-            : "Outros";
-          const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
-          const vinculo = extractedFonte || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
-          const codApp = extractedCodigoAplicacao;
-
-          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${codApp || ""}|${processStr}|${subelemStr}`;
-
-          if (!loaMap.has(groupKey)) {
-            loaMap.set(groupKey, {
-              id: groupKey,
-              progKey: progKey || groupKey,
-              secretaria: organStr,
-              orgao: organStr,
-              unidade: unitStr,
-              funcao: functionStr,
-              subfuncao: subfunctionStr,
-              programaticaLoa: progKey,
-              programa: programStr,
-              tipoAcao: getActionTypeLabel(actionStr),
-              acao: actionStr,
-              natureza: natureStr,
-              fonteVinculo: vinculo,
-              codigoAplicacao: codApp,
-              categoriaEconomica: catEcon,
-              grupoNatureza: grpNat,
-              elemento: elem,
-              subelemento: subelemStr,
-              processo: processStr || "—",
-              projetoIniciado: projetoIniciado,
-              contrato: projetoIniciado || undefined,
-              observacao: obsStr || undefined,
-              valLdo: 0,
-              valLoa: 0,
-            });
-          }
-
-          const item = loaMap.get(groupKey)!;
-          if (peca === "LDO") {
-            item.valLdo += valor;
-          } else {
-            item.valLoa += valor;
-          }
+        } catch (loa2026Error) {
+          console.warn("Não foi possível carregar a LOA 2026:", loa2026Error);
         }
 
         // Guardar cópia original inalterada para comparação em modificações
-        setOriginalRawItems(JSON.parse(JSON.stringify([...loaMap.values()])));
+        setOriginalRawItems(JSON.parse(JSON.stringify(baseItems)));
 
         // Carregar alterações de LOA salvas no Banco de Dados / localStorage (se existirem)
-        let itemsArray = [...loaMap.values()];
+        let itemsArray: RawBudgetItem[] = baseItems;
 
         // 1. Carregar despesas adicionadas manualmente
         try {
@@ -1133,7 +996,7 @@ export function AnaliseLoaView() {
           const addedById = new Map([...apiAddedList, ...localAddedList].map((item) => [item.id, item]));
           const addedList = [...addedById.values()];
           if (addedList.length) {
-            itemsArray = [...itemsArray, ...addedList.map(item => ({ ...item, tipoAcao: item.tipoAcao || getActionTypeLabel(item.acao) }))];
+            itemsArray = withAddedExpenses(itemsArray, addedList);
           }
         } catch {
           // Registros adicionais inválidos não impedem o carregamento da análise.
@@ -1151,10 +1014,7 @@ export function AnaliseLoaView() {
             const savedRemoved = localStorage.getItem("painel_loa_removed_expenses_v1");
             if (savedRemoved) removedIds = JSON.parse(savedRemoved) as string[];
           }
-          if (removedIds.length > 0) {
-            const removedSet = new Set(removedIds);
-            itemsArray = itemsArray.filter((item) => !removedSet.has(item.id));
-          }
+          itemsArray = withoutRemoved(itemsArray, removedIds);
         } catch { }
 
         // 3. Carregar e aplicar edições de valores
@@ -1165,14 +1025,7 @@ export function AnaliseLoaView() {
             const data = await resCustom.json();
             if (data.success && data.valor) customMap = data.valor;
           }
-          if (Object.keys(customMap).length > 0) {
-            itemsArray = itemsArray.map((item) => {
-              if (customMap[item.id] !== undefined) {
-                return { ...item, valLoa: customMap[item.id] };
-              }
-              return item;
-            });
-          }
+          itemsArray = withCustomEdits(itemsArray, customMap);
 
           let loadedJustifications: Record<string, string> = {};
           const resJust = await fetch("/api/configuracoes/layout?chave=painel_loa_justifications");
@@ -1199,14 +1052,7 @@ export function AnaliseLoaView() {
             const savedSub = localStorage.getItem("painel_loa_subelement_edits_v1");
             if (savedSub) subelementEdits = JSON.parse(savedSub);
           }
-          if (Object.keys(subelementEdits).length > 0) {
-            itemsArray = itemsArray.map((item) => {
-              if (subelementEdits[item.id]) {
-                return { ...item, ...subelementEdits[item.id] };
-              }
-              return item;
-            });
-          }
+          itemsArray = withSubelementEdits(itemsArray, subelementEdits);
         } catch (e) {
           console.warn("Erro ao carregar customizações de subelementos:", e);
         }
@@ -1217,13 +1063,15 @@ export function AnaliseLoaView() {
           if (response.ok) {
             const data = await response.json();
             const financialEdits = data.success && data.valor
-              ? data.valor as Record<string, { valorReajuste?: number; valorAditamento?: number }>
+              ? data.valor as Record<string, { valorReajuste?: number; valorAditamento?: number; valorSugestaoSf?: number; valorCorteGp?: number }>
               : {};
-            itemsArray = itemsArray.map((item) => ({ ...item, ...(financialEdits[item.id] || {}) }));
+            itemsArray = withFinancialEdits(itemsArray, financialEdits);
           }
         } catch (e) {
           console.warn("Erro ao carregar reajustes e aditamentos:", e);
         }
+        // Projetos novos vão para Aditamento só depois do merge acima: o Aditamento salvo (0) não pode zerar o projeto.
+        itemsArray = itemsArray.map(normalizeBancoProjetoAllocation);
 
         // 4. Carregar linhas validadas pelo usuário
         try {
@@ -1247,12 +1095,18 @@ export function AnaliseLoaView() {
 
         // Carregar Receita LDO real do banco de dados (tabela LdoReceita)
         try {
-          const apiRes = await fetch("/api/analises-combinadas");
+          const apiRes = await fetch("/api/analises-combinadas?exercicio=2027");
           if (apiRes.ok) {
             const apiData = await apiRes.json();
             if (apiData?.totais?.totalReceitaLdo) {
               setLdoReceitaTotal(Number(apiData.totais.totalReceitaLdo) || 0);
             }
+            if (Array.isArray(apiData?.totais?.ldoEntidades)) setLdoReceitaEntidades(apiData.totais.ldoEntidades);
+            setLoaReceitaResumo({
+              total: Number(apiData?.totais?.totalLoaReceitas) || 0,
+              maior: apiData?.totais?.maiorReceitaLoa ?? null,
+              qtdFontes: Number(apiData?.totais?.qtdFontesLoaReceita) || 0,
+            });
           }
         } catch (apiErr) {
           console.warn("Não foi possível carregar o total da LdoReceita via API:", apiErr);
@@ -1276,7 +1130,9 @@ export function AnaliseLoaView() {
       return saved !== undefined && (
         Math.abs(item.valLoa - saved.valLoa) > 0.001 ||
         Math.abs((item.valorReajuste ?? 0) - (saved.valorReajuste ?? 0)) > 0.001 ||
-        Math.abs((item.valorAditamento ?? 0) - (saved.valorAditamento ?? 0)) > 0.001
+        Math.abs((item.valorAditamento ?? 0) - (saved.valorAditamento ?? 0)) > 0.001 ||
+        Math.abs((item.valorSugestaoSf ?? 0) - (saved.valorSugestaoSf ?? 0)) > 0.001 ||
+        Math.abs((item.valorCorteGp ?? 0) - (saved.valorCorteGp ?? 0)) > 0.001
       );
     });
   }, [rawItems, savedRawItems]);
@@ -1369,8 +1225,9 @@ export function AnaliseLoaView() {
     setNewExpenseValor("");
   };
 
-  const handleAllocateBancoProjeto = async (project: { secretaria: string; objeto: string; natureza: string; valor: number }) => {
+  const handleAllocateBancoProjeto = async (project: { secretaria: string; objeto: string; natureza: string; descricaoDespesa?: string; valor: number }) => {
     const naturezaCodigo = project.natureza.split("-")[0].trim();
+    const projectValues = createBancoProjetoValues(project.valor);
     const item: RawBudgetItem = {
       id: `banco-projeto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       progKey: `banco-projeto|${project.secretaria}|${project.objeto}`,
@@ -1385,10 +1242,11 @@ export function AnaliseLoaView() {
       categoriaEconomica: naturezaCodigo.startsWith("4") ? "4 — DESPESAS DE CAPITAL" : "3 — DESPESAS CORRENTES",
       grupoNatureza: naturezaCodigo,
       elemento: naturezaCodigo.split(".").slice(0, 4).join("."),
-      subelemento: "",
+      subelemento: project.descricaoDespesa?.trim() || "",
       processo: "—",
       valLdo: 0,
-      valLoa: project.valor,
+      valLoa2026: 0,
+      ...projectValues,
       origem: "Banco de Projetos",
       bancoProjetoKey: [project.secretaria, project.objeto, project.natureza, project.valor].join("|"),
     };
@@ -1412,6 +1270,32 @@ export function AnaliseLoaView() {
     } catch (err) {
       console.warn("Aviso ao salvar alocação do banco de projetos:", err);
     }
+  };
+
+  // A lista de exclusões é compartilhada entre sessões, navegadores e usuários.
+  // Montá-la apenas a partir do localStorage faria o POST sobrescrever no banco
+  // as exclusões registradas em outros ambientes, por isso o estado persistido é
+  // sempre mesclado antes de gravar.
+  const mergeRemovedExpenseIds = async (newId: string): Promise<string[] | null> => {
+    let persisted: string[] = [];
+    try {
+      const res = await fetch("/api/configuracoes/layout?chave=painel_loa_removed_expenses");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.valor)) persisted = data.valor;
+      }
+    } catch {
+      // Sem resposta do banco mantém-se apenas o histórico local desta sessão.
+    }
+    const local = JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[];
+    const merged = [...new Set([...persisted, ...local])];
+    if (merged.includes(newId)) {
+      localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(merged));
+      return null;
+    }
+    const next = [...merged, newId];
+    localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(next));
+    return next;
   };
 
   const handleRemoveBancoProjeto = async (item: RawBudgetItem) => {
@@ -1439,10 +1323,8 @@ export function AnaliseLoaView() {
 
     // 3. Registrar na lista de despesas removidas
     try {
-      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
-      if (!savedRemoved.includes(item.id)) {
-        const nextRemoved = [...savedRemoved, item.id];
-        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
+      const nextRemoved = await mergeRemovedExpenseIds(item.id);
+      if (nextRemoved) {
         await fetch("/api/configuracoes/layout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1497,6 +1379,8 @@ export function AnaliseLoaView() {
             valLoa: saved?.valLoa ?? item.valLdo,
             valorReajuste: saved?.valorReajuste ?? 0,
             valorAditamento: saved?.valorAditamento ?? 0,
+            valorSugestaoSf: saved?.valorSugestaoSf ?? 0,
+            valorCorteGp: saved?.valorCorteGp ?? 0,
           };
         }
         return item;
@@ -1514,12 +1398,14 @@ export function AnaliseLoaView() {
 
       // Gravar alterações e justificativas no Banco de Dados
       const customMap: Record<string, number> = {};
-      const financialAdjustments: Record<string, { valorReajuste: number; valorAditamento: number }> = {};
+      const financialAdjustments: Record<string, { valorReajuste: number; valorAditamento: number; valorSugestaoSf: number; valorCorteGp: number }> = {};
       finalItems.forEach((item) => {
         customMap[item.id] = item.valLoa;
         financialAdjustments[item.id] = {
           valorReajuste: item.valorReajuste ?? 0,
           valorAditamento: item.valorAditamento ?? 0,
+          valorSugestaoSf: item.valorSugestaoSf ?? 0,
+          valorCorteGp: item.valorCorteGp ?? 0,
         };
       });
 
@@ -1628,6 +1514,7 @@ export function AnaliseLoaView() {
       setHasChanges(false);
       setSaveModalOpen(false);
       setSavingState("saved");
+      notifyAnaliseLoaSaved();
 
       if (itemsToRevert.length > 0) {
         alert(
@@ -1708,8 +1595,7 @@ export function AnaliseLoaView() {
   }, [rawItems, filters]);
 
   // Aplicação Dinâmica dos Filtros
-  const filteredItems = useMemo(() => {
-    return rawItems.filter((item) => {
+  const itemMatchesFilters = useCallback((item: RawBudgetItem) => {
       const match = (fieldValues: string[] | undefined, itemValue: string) =>
         !fieldValues || !fieldValues.length || fieldValues.includes(itemValue);
 
@@ -1738,8 +1624,9 @@ export function AnaliseLoaView() {
       }
 
       return true;
-    });
-  }, [rawItems, filters]);
+  }, [filters]);
+
+  const filteredItems = useMemo(() => rawItems.filter(itemMatchesFilters), [rawItems, itemMatchesFilters]);
 
   const isItemContrato = (item: RawBudgetItem) => {
     const ini = String(item.projetoIniciado || item.contrato || "").trim().toUpperCase();
@@ -1774,8 +1661,7 @@ export function AnaliseLoaView() {
     };
   }, [filteredItems]);
 
-  const tableItems = useMemo(() => {
-    return filteredItems.filter((item) => {
+  const itemMatchesTable = useCallback((item: RawBudgetItem) => {
       if (scopeTab === "contratos" && !isItemContrato(item)) return false;
       if (scopeTab === "demais" && isItemContrato(item)) return false;
       if (statusFilters.length > 0) {
@@ -1792,8 +1678,19 @@ export function AnaliseLoaView() {
         item.processo.toLowerCase().includes(query) ||
         item.subelemento.toLowerCase().includes(query)
       );
-    });
-  }, [filteredItems, scopeTab, statusFilters, tableSearch]);
+  }, [scopeTab, statusFilters, tableSearch]);
+
+  const tableItems = useMemo(() => filteredItems.filter(itemMatchesTable), [filteredItems, itemMatchesTable]);
+
+  // Despesas excluídas saem da LOA, mas o valor planejado na LDO continua valendo no total LDO.
+  const removedLdoTotal = useMemo(() => {
+    const currentIds = new Set(rawItems.map((item) => item.id));
+    return originalRawItems
+      .filter((item) => item.valLdo !== 0 && !currentIds.has(item.id))
+      .map((item) => ({ ...item, valLoa: 0, valorReajuste: 0, valorAditamento: 0 }))
+      .filter((item) => itemMatchesFilters(item) && itemMatchesTable(item))
+      .reduce((sum, item) => sum + item.valLdo, 0);
+  }, [rawItems, originalRawItems, itemMatchesFilters, itemMatchesTable]);
 
 
   const editableGroups = useMemo<EditableGroup[]>(() => {
@@ -1812,15 +1709,23 @@ export function AnaliseLoaView() {
         children: [],
         valLdo: 0,
         valLoa: 0,
+        valLoa2026: 0,
         valorReajuste: 0,
+        vigenteReajuste: 0,
         valorAditamento: 0,
+        valorSugestaoSf: 0,
+        valorCorteGp: 0,
         valorTotal: 0,
       };
       group.children.push(item);
       group.valLdo += item.valLdo || 0;
       group.valLoa += item.valLoa;
+      group.valLoa2026 += item.valLoa2026 ?? 0;
       group.valorReajuste += item.valorReajuste ?? 0;
+      group.vigenteReajuste += getItemVigenteReajuste(item);
       group.valorAditamento += item.valorAditamento ?? 0;
+      group.valorSugestaoSf += item.valorSugestaoSf ?? 0;
+      group.valorCorteGp += item.valorCorteGp ?? 0;
       group.valorTotal += getItemLoaTotal(item);
       groups.set(groupKey, group);
     });
@@ -1844,9 +1749,13 @@ export function AnaliseLoaView() {
       if (tableSort.column === "acao") result = compareText(left.acao, right.acao);
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
       else if (tableSort.column === "valLdo") result = left.valLdo - right.valLdo;
+      else if (tableSort.column === "valLoa2026") result = left.valLoa2026 - right.valLoa2026;
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
       else if (tableSort.column === "valorReajuste") result = left.valorReajuste - right.valorReajuste;
+      else if (tableSort.column === "vigenteReajuste") result = left.vigenteReajuste - right.vigenteReajuste;
       else if (tableSort.column === "valorAditamento") result = left.valorAditamento - right.valorAditamento;
+      else if (tableSort.column === "valorSugestaoSf") result = left.valorSugestaoSf - right.valorSugestaoSf;
+      else if (tableSort.column === "valorCorteGp") result = left.valorCorteGp - right.valorCorteGp;
       else if (tableSort.column === "valorTotal") result = left.valorTotal - right.valorTotal;
       else if (tableSort.column === "diff") result = (left.valorTotal - left.valLdo) - (right.valorTotal - right.valLdo);
       else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valorTotal), getStatusLabel(right.valLdo, right.valorTotal));
@@ -1858,9 +1767,13 @@ export function AnaliseLoaView() {
       if (tableSort.column === "acao") result = compareText(left.natureza || left.elemento, right.natureza || right.elemento);
       else if (tableSort.column === "elemento") result = compareText(left.elemento, right.elemento);
       else if (tableSort.column === "valLdo") result = left.valLdo - right.valLdo;
+      else if (tableSort.column === "valLoa2026") result = (left.valLoa2026 ?? 0) - (right.valLoa2026 ?? 0);
       else if (tableSort.column === "valLoa") result = left.valLoa - right.valLoa;
       else if (tableSort.column === "valorReajuste") result = (left.valorReajuste ?? 0) - (right.valorReajuste ?? 0);
+      else if (tableSort.column === "vigenteReajuste") result = getItemVigenteReajuste(left) - getItemVigenteReajuste(right);
       else if (tableSort.column === "valorAditamento") result = (left.valorAditamento ?? 0) - (right.valorAditamento ?? 0);
+      else if (tableSort.column === "valorSugestaoSf") result = (left.valorSugestaoSf ?? 0) - (right.valorSugestaoSf ?? 0);
+      else if (tableSort.column === "valorCorteGp") result = (left.valorCorteGp ?? 0) - (right.valorCorteGp ?? 0);
       else if (tableSort.column === "valorTotal") result = getItemLoaTotal(left) - getItemLoaTotal(right);
       else if (tableSort.column === "diff") result = (getItemLoaTotal(left) - left.valLdo) - (getItemLoaTotal(right) - right.valLdo);
       else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, getItemLoaTotal(left)), getStatusLabel(right.valLdo, getItemLoaTotal(right)));
@@ -1879,6 +1792,14 @@ export function AnaliseLoaView() {
     [editableGroups.length, tablePageSize]
   );
 
+  // Ao trocar de página ou de quantidade por página, volta ao topo da tabela para a mudança ficar visível.
+  useEffect(() => {
+    const scroller = analyticalScrollRef.current;
+    if (!scroller) return;
+    scroller.scrollTo({ top: 0 });
+    if (scroller.getBoundingClientRect().top < 0) scroller.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [tablePage, tablePageSize]);
+
   const paginatedEditableGroups = useMemo(() => {
     const start = (tablePage - 1) * tablePageSize;
     return editableGroups.slice(start, start + tablePageSize);
@@ -1887,37 +1808,51 @@ export function AnaliseLoaView() {
   // Métricas Recalculadas Instantaneamente para os Cards Superiores
   const metrics = useMemo(() => {
     let valLoaTotal = 0;
+    let valLoa2026Total = 0;
     let valLoaVigenteTotal = 0;
     let valorReajusteTotal = 0;
+    let vigenteReajusteTotal = 0;
     let valorAditamentoTotal = 0;
+    let valorSugestaoSfTotal = 0;
+    let valorCorteGpTotal = 0;
     const acoesSet = new Set<string>();
     const naturezasSet = new Set<string>();
 
     tableItems.forEach((item) => {
       valLoaTotal += getItemLoaTotal(item);
+      valLoa2026Total += item.valLoa2026 ?? 0;
       valLoaVigenteTotal += item.valLoa;
       valorReajusteTotal += item.valorReajuste ?? 0;
+      vigenteReajusteTotal += getItemVigenteReajuste(item);
       valorAditamentoTotal += item.valorAditamento ?? 0;
+      valorSugestaoSfTotal += item.valorSugestaoSf ?? 0;
+      valorCorteGpTotal += item.valorCorteGp ?? 0;
       if (item.acao) acoesSet.add(item.acao);
       if (item.natureza) naturezasSet.add(item.natureza);
     });
 
-    const valLdoTotal = editableGroups.reduce((acc, g) => acc + g.valLdo, 0);
+    // LDO oficial: soma das linhas LDO (inclusive as excluídas da LOA). O custo da PLDO que a tabela mostra
+    // nos grupos sem LDO é só referência e não entra no total.
+    const valLdoTotal = Math.round((tableItems.reduce((acc, item) => acc + (item.valLdo || 0), 0) + removedLdoTotal) * 100) / 100;
     const diff = valLoaTotal - valLdoTotal;
     const percentExec = valLdoTotal > 0 ? (valLoaTotal / valLdoTotal) * 100 : 100;
 
     return {
       valLdoTotal,
       valLoaTotal,
+      valLoa2026Total,
       valLoaVigenteTotal,
       valorReajusteTotal,
+      vigenteReajusteTotal,
       valorAditamentoTotal,
+      valorSugestaoSfTotal,
+      valorCorteGpTotal,
       diff,
       percentExec,
       totalAcoes: acoesSet.size,
       totalNaturezas: naturezasSet.size,
     };
-  }, [tableItems, editableGroups]);
+  }, [tableItems, removedLdoTotal]);
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
@@ -2037,6 +1972,13 @@ export function AnaliseLoaView() {
   }, [filteredItems, metrics]);
 
   // Construção do Pivot Tree View (Árvore Hierárquica Esquerda)
+  const [pivotSort, setPivotSort] = useState<{ column: "codigo" | "nome" | "valLoa" | "diff"; direction: "asc" | "desc" }>({ column: "codigo", direction: "asc" });
+  // Clique no cabeçalho: mesma coluna inverte a direção; coluna nova começa em Maior → Menor (A → Z no nome).
+  const togglePivotSort = (column: "nome" | "valLoa" | "diff") =>
+    setPivotSort((current) => current.column === column
+      ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { column, direction: column === "nome" ? "asc" : "desc" });
+
   const pivotTree = useMemo(() => {
     const rootNodes: TreeNode[] = [];
     const secMap = new Map<string, TreeNode>();
@@ -2139,17 +2081,30 @@ export function AnaliseLoaView() {
       );
     };
 
-    const regularNodes = rootNodes
-      .filter((n) => !isSpecialBottom(n.name))
-      .sort((a, b) => getSecCode(a.name) - getSecCode(b.name));
+    // Ordenação por valor (Fixação LOA) em todos os níveis; em "codigo" mantém a ordem de inserção dos filhos.
+    const sign = pivotSort.direction === "asc" ? 1 : -1;
+    const byColumn = (a: TreeNode, b: TreeNode) =>
+      pivotSort.column === "nome"
+        ? sign * a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" })
+        : pivotSort.column === "diff"
+          ? sign * (a.diff - b.diff)
+          : sign * (a.valLoa - b.valLoa);
+    const sortChildren = (node: TreeNode): TreeNode =>
+      node.children
+        ? { ...node, children: (pivotSort.column === "codigo" ? node.children : [...node.children].sort(byColumn)).map(sortChildren) }
+        : node;
+    const sortRoots = (nodes: TreeNode[]) =>
+      pivotSort.column === "codigo" ? nodes.sort((a, b) => getSecCode(a.name) - getSecCode(b.name)) : nodes.sort(byColumn);
 
-    const bottomNodes = rootNodes
-      .filter((n) => isSpecialBottom(n.name))
-      .sort((a, b) => getSecCode(a.name) - getSecCode(b.name))
+    // As entidades da administração indireta continuam no fim, também ordenadas pelo critério escolhido.
+    const regularNodes = sortRoots(rootNodes.filter((n) => !isSpecialBottom(n.name))).map(sortChildren);
+
+    const bottomNodes = sortRoots(rootNodes.filter((n) => isSpecialBottom(n.name)))
+      .map(sortChildren)
       .map((n) => ({ ...n, isSpecialBottom: true }));
 
     return [...regularNodes, ...bottomNodes];
-  }, [filteredItems]);
+  }, [filteredItems, pivotSort]);
 
   // Função para determinar o status e badge de cada linha
   const getStatusInfo = (valLdo: number, valLoa: number) => {
@@ -2215,11 +2170,8 @@ export function AnaliseLoaView() {
 
     // 3. Registrar o item na lista de itens removidos permanentemente
     try {
-      const savedRemoved = (JSON.parse(localStorage.getItem("painel_loa_removed_expenses_v1") || "[]") as string[]);
-      if (!savedRemoved.includes(item.id)) {
-        const nextRemoved = [...savedRemoved, item.id];
-        localStorage.setItem("painel_loa_removed_expenses_v1", JSON.stringify(nextRemoved));
-
+      const nextRemoved = await mergeRemovedExpenseIds(item.id);
+      if (nextRemoved) {
         // Sincronizar com o banco de dados
         await fetch("/api/configuracoes/layout", {
           method: "POST",
@@ -2920,6 +2872,8 @@ export function AnaliseLoaView() {
               key="painel-receita"
               layoutConfig={layoutConfig}
               ldoReceitaTotal={ldoReceitaTotal}
+              ldoReceitaEntidades={ldoReceitaEntidades}
+              loaReceitaResumo={{ ...loaReceitaResumo, entidades: receitaLoaEntidades }}
             />
           );
         }
@@ -2959,6 +2913,32 @@ export function AnaliseLoaView() {
                   <p className="text-[11px] text-on-surface-variant">Navegação em árvore da distribuição orçamentária</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 p-1 rounded-lg bg-surface-container-low/70 border border-outline-variant/70" role="group" aria-label="Ordenar estrutura">
+                    {([
+                      { key: "codigo", sort: { column: "codigo", direction: "asc" }, label: "Código", icon: "format_list_numbered", title: "Ordem pelo código da secretaria" },
+                      { key: "desc", sort: { column: "valLoa", direction: "desc" }, label: "Maior → Menor", icon: "arrow_downward", title: "Maior Fixação LOA primeiro" },
+                      { key: "asc", sort: { column: "valLoa", direction: "asc" }, label: "Menor → Maior", icon: "arrow_upward", title: "Menor Fixação LOA primeiro" },
+                    ] as const).map((option) => {
+                      const active = pivotSort.column === option.sort.column && (option.sort.column === "codigo" || pivotSort.direction === option.sort.direction);
+                      return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setPivotSort({ ...option.sort })}
+                        aria-pressed={active}
+                        title={option.title}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+                          active
+                            ? "bg-primary text-on-primary shadow-xs"
+                            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
+                        {option.label}
+                      </button>
+                      );
+                    })}
+                  </div>
                   <button
                     onClick={expandAllNodes}
                     className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors border border-outline-variant"
@@ -2978,11 +2958,34 @@ export function AnaliseLoaView() {
 
               {/* Legend Header Bar */}
               <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-lg bg-surface-container/70 border border-outline-variant/60 text-[11px] font-bold text-on-surface-variant">
-                <span>Estrutura / Agrupamento</span>
-                <div className="flex items-center gap-6 pr-2">
-                  <span className="text-primary font-bold">Fixação LOA (R$)</span>
-                  <span className="text-on-surface-variant font-bold">Diferença (LOA - LDO)</span>
-                </div>
+                {(() => {
+                  const header = (column: "nome" | "valLoa" | "diff", label: string, className: string) => {
+                    const active = pivotSort.column === column;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => togglePivotSort(column)}
+                        aria-sort={active ? (pivotSort.direction === "asc" ? "ascending" : "descending") : "none"}
+                        title={`Ordenar por ${label}`}
+                        className={`inline-flex items-center gap-1 font-bold hover:text-sky-700 transition-colors cursor-pointer ${className}`}
+                      >
+                        <span>{label}</span>
+                        <span className={`material-symbols-outlined text-[13px] ${active ? "text-sky-700" : "text-sky-400"}`}>
+                          {active ? (pivotSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                        </span>
+                      </button>
+                    );
+                  };
+                  return (
+                    <>
+                      {header("nome", "Estrutura / Agrupamento", "")}
+                      <div className="flex items-center gap-6 pr-2">
+                        {header("valLoa", "Fixação LOA (R$)", "text-primary")}
+                        {header("diff", "Diferença (LOA - LDO)", "text-on-surface-variant")}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="max-h-[350px] overflow-y-auto pr-1 space-y-1">
@@ -3187,42 +3190,78 @@ export function AnaliseLoaView() {
                           onClick={() => setColumnsDropdownOpen(false)}
                           aria-label="Fechar seleção de colunas"
                         />
-                        <div className="absolute right-0 z-30 mt-1.5 w-64 rounded-xl border border-outline-variant bg-surface p-2 shadow-xl" role="menu" aria-label="Selecionar colunas visíveis">
+                        <div className="absolute right-0 z-30 mt-1.5 w-72 rounded-xl border border-outline-variant bg-surface p-2 shadow-xl" role="menu" aria-label="Mostrar, ocultar e ordenar colunas">
                           <div className="flex items-center justify-between border-b border-outline-variant/60 px-2 pb-2 pt-1">
-                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-on-surface-variant">Colunas visíveis</span>
-                            <button
-                              type="button"
-                              onClick={() => setVisibleTableColumns(new Set(ANALYTICAL_COLUMNS.map((column) => column.key)))}
-                              className="text-[10px] font-bold text-primary hover:underline"
-                            >
-                              Mostrar todas
-                            </button>
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-on-surface-variant">Colunas e ordem</span>
+                            <span className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => { setColumnOrder(DEFAULT_COLUMN_ORDER); setColumnsSaveState("idle"); }}
+                                className="text-[10px] font-bold text-on-surface-variant hover:text-on-surface hover:underline"
+                              >
+                                Ordem padrão
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVisibleTableColumns(new Set(ANALYTICAL_COLUMNS.map((column) => column.key)))}
+                                className="text-[10px] font-bold text-primary hover:underline"
+                              >
+                                Mostrar todas
+                              </button>
+                            </span>
                           </div>
                           <div className="mt-1 space-y-0.5">
-                            {ANALYTICAL_COLUMNS.map((column) => {
+                            {[...FIXED_ANALYTICAL_COLUMNS, ...columnOrder].map((key) => ANALYTICAL_COLUMNS.find((column) => column.key === key)!).map((column) => {
                               const checked = visibleTableColumns.has(column.key);
+                              const orderIndex = columnOrder.indexOf(column.key);
                               return (
-                                <label
+                                <div
                                   key={column.key}
-                                  className={`flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs ${column.required ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-surface-container"}`}
+                                  className={`flex min-h-9 items-center gap-1.5 rounded-lg px-1.5 text-xs hover:bg-surface-container ${checked ? "" : "bg-surface-container-low/60"}`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
+                                  <button
+                                    type="button"
                                     disabled={column.required}
-                                    onChange={() => {
+                                    onClick={() => {
                                       setVisibleTableColumns((current) => {
                                         const next = new Set(current);
                                         if (next.has(column.key)) next.delete(column.key);
                                         else next.add(column.key);
                                         return next;
                                       });
+                                      setColumnsSaveState("idle");
                                     }}
-                                    className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
-                                  />
-                                  <span className="flex-1 text-on-surface">{column.label}</span>
-                                  {column.required && <span className="text-[9px] font-bold uppercase text-on-surface-variant">Fixa</span>}
-                                </label>
+                                    aria-pressed={checked}
+                                    aria-label={`${checked ? "Ocultar" : "Mostrar"} coluna ${column.label}`}
+                                    title={column.required ? "Coluna fixa" : checked ? "Ocultar coluna" : "Mostrar coluna"}
+                                    className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "text-primary hover:bg-primary/10" : "text-on-surface-variant/60 hover:bg-surface-container-high hover:text-on-surface"}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">{checked ? "visibility" : "visibility_off"}</span>
+                                  </button>
+                                  <span className={`flex-1 ${checked ? "text-on-surface" : "text-on-surface-variant/60 line-through"}`}>{column.label}</span>
+                                  {orderIndex < 0 ? (
+                                    <span className="text-[9px] font-bold uppercase text-on-surface-variant">Fixa</span>
+                                  ) : (
+                                    <span className="flex items-center">
+                                      {([[-1, "arrow_upward", "Mover para a esquerda"], [1, "arrow_downward", "Mover para a direita"]] as const).map(([offset, icon, label]) => {
+                                        const disabled = offset === -1 ? orderIndex === 0 : orderIndex === columnOrder.length - 1;
+                                        return (
+                                          <button
+                                            key={icon}
+                                            type="button"
+                                            disabled={disabled}
+                                            onClick={() => { moveColumn(column.key, offset); setColumnsSaveState("idle"); }}
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30 disabled:hover:bg-transparent"
+                                            aria-label={`${label}: ${column.label}`}
+                                            title={label}
+                                          >
+                                            <span className="material-symbols-outlined text-[16px]">{icon}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
@@ -3415,20 +3454,45 @@ export function AnaliseLoaView() {
 
               {/* Data Grid Analítica Editável */}
               <p className="mb-2 text-[11px] text-on-surface-variant sm:hidden">Deslize horizontalmente para visualizar todas as colunas.</p>
-              <div className="w-full overflow-x-auto overscroll-x-contain rounded-lg border border-sky-100 dark:border-sky-900/40 shadow-sm" tabIndex={0} aria-label="Tabela de detalhamento analítico, deslize horizontalmente para ver todas as colunas">
+              <div className="flex items-center justify-end gap-2 mb-2 text-xs text-on-surface-variant">
+                <span>
+                  Exibindo <strong>{editableGroups.length > 0 ? (tablePage - 1) * tablePageSize + 1 : 0}</strong> a{" "}
+                  <strong>{Math.min(tablePage * tablePageSize, editableGroups.length)}</strong> de <strong>{editableGroups.length}</strong> ações
+                </span>
+                <label className="sr-only" htmlFor="analitico-page-size-top">Ações por página</label>
+                <select
+                  id="analitico-page-size-top"
+                  value={tablePageSize}
+                  onChange={(e) => {
+                    setTablePageSize(Number(e.target.value));
+                    setTablePage(1);
+                  }}
+                  className="px-2 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface font-medium"
+                >
+                  {[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size} por página</option>)}
+                  <option value={editableGroups.length || 9999}>Todas</option>
+                </select>
+              </div>
+              <div ref={analyticalScrollRef} className="analitico-scroll w-full overflow-x-auto rounded-lg border border-sky-100 dark:border-sky-900/40 shadow-sm" tabIndex={0} aria-label="Tabela de detalhamento analítico, role na horizontal para ver todas as colunas">
                 <table className="w-full min-w-[760px] text-left border-collapse text-xs sm:min-w-[980px]">
                   <thead className="bg-sky-50/70 dark:bg-sky-950/40 sticky top-0 z-10 text-[11px] font-bold text-sky-900 dark:text-sky-200 border-b border-sky-100 dark:border-sky-900/50">
                     <tr>
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[300px] min-w-[260px] sm:w-[450px] sm:min-w-[350px]">{renderSortHeader("acao", "Ação")}</th>
                       {visibleTableColumns.has("elemento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[100px] min-w-[90px] sm:w-[110px] sm:min-w-[100px]">{renderSortHeader("elemento", "Elemento de Despesa")}</th>}
-                      {visibleTableColumns.has("valLdo") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>}
-                      {visibleTableColumns.has("valLoa") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Valor LOA (Vigente)", "text-right")}</th>}
-                      {visibleTableColumns.has("valorReajuste") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Valor Reajuste", "text-right")}</th>}
-                      {visibleTableColumns.has("valorAditamento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Valor Aditamento", "text-right")}</th>}
-                      {visibleTableColumns.has("valorTotal") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorTotal", "Valor Total", "text-right")}</th>}
-                      {visibleTableColumns.has("diff") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>}
-                      {visibleTableColumns.has("status") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>}
-                      {visibleTableColumns.has("adjusted") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>}
+                      {renderOrderedCells({
+                        valLdo: (visibleTableColumns.has("valLdo") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>),
+                        valLoa2026: (visibleTableColumns.has("valLoa2026") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa2026", "LOA 2026 (Inicial)", "text-right")}</th>),
+                        valorTotal: (visibleTableColumns.has("valorTotal") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorTotal", "LOA 2027", "text-right")}</th>),
+                        valLoa: (visibleTableColumns.has("valLoa") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Vigente", "text-right")}</th>),
+                        valorReajuste: (visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Reajuste", "text-right")}</th>),
+                        vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("vigenteReajuste", "Vigente + Reajuste", "text-right")}</th>),
+                        valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Aditamento", "text-right")}</th>),
+                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorSugestaoSf", "Sugestão SF", "text-right")}</th>),
+                        valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorCorteGp", "Corte GP", "text-right")}</th>),
+                        diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>),
+                        status: (visibleTableColumns.has("status") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>),
+                        adjusted: (visibleTableColumns.has("adjusted") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>),
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
@@ -3539,36 +3603,44 @@ export function AnaliseLoaView() {
                             {visibleTableColumns.has("elemento") && <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
                               {group.elemento}
                             </td>}
-                            {visibleTableColumns.has("valLdo") && <td className="p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
+                            {renderOrderedCells({
+                              valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
                               {formatBr(group.valLdo)}
-                            </td>}
-                            {visibleTableColumns.has("valLoa") && (
-                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                            </td>),
+                              valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40" title="LOA 2026 inicial">
+                              {formatBr(group.valLoa2026)}
+                            </td>),
+                              valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>),
+                              valLoa: (visibleTableColumns.has("valLoa") && (
+                              <td className="col-band-white p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
                                 {formatBr(group.valLoa)}
                               </td>
-                            )}
-                            {visibleTableColumns.has("valorReajuste") && (
-                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                            )),
+                              valorReajuste: (visibleTableColumns.has("valorReajuste") && (
+                              <td className="col-band-gray p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
                                 {formatBr(group.valorReajuste)}
                               </td>
-                            )}
-                            {visibleTableColumns.has("valorAditamento") && (
-                              <td className="p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
+                            )),
+                              vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-3 text-right font-mono font-bold text-primary select-none bg-surface-container-low/40">{formatBr(group.vigenteReajuste)}</td>),
+                              valorAditamento: (visibleTableColumns.has("valorAditamento") && (
+                              <td className="col-band-gray p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
                                 {formatBr(group.valorAditamento)}
                               </td>
-                            )}
-                            {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>}
-                            {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-semibold ${diffColor}`}>
+                            )),
+                              valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right font-mono font-bold text-amber-700 select-none bg-surface-container-low/40">{formatBr(group.valorSugestaoSf)}</td>),
+                              valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right font-mono font-bold text-rose-700 select-none bg-surface-container-low/40">{formatBr(group.valorCorteGp)}</td>),
+                              diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-semibold ${diffColor}`}>
                               {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
-                            </td>}
-                            {visibleTableColumns.has("status") && <td className="p-3 text-center">
+                            </td>),
+                              status: (visibleTableColumns.has("status") && <td className="col-band-gray p-3 text-center">
                               <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
-                            </td>}
-                            {visibleTableColumns.has("adjusted") && <td className="p-3 text-center">
+                            </td>),
+                              adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-3 text-center">
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${actionValidationClass}`}>
                                 {validatedNatures}/{natureGroups.length} Naturezas · {actionValidationStatus}
                               </span>
-                            </td>}
+                            </td>),
+                            })}
                           </tr>
                           {isExpanded && (
                             <Fragment>
@@ -3869,7 +3941,8 @@ export function AnaliseLoaView() {
                                     </span>
                                   </button>
                                 </th>}
-                                {visibleTableColumns.has("valLdo") && <th className="p-2 text-right">
+                                {renderOrderedCells({
+                                  valLdo: (visibleTableColumns.has("valLdo") && <th className="col-band-gray p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "valLdo", direction: curr.column === "valLdo" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3881,24 +3954,28 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "valLdo" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("valLoa") && <th className="p-2 text-right">
+                                </th>),
+                                  valLoa2026: (visibleTableColumns.has("valLoa2026") && <th className="col-band-white p-2 text-right">LOA 2026</th>),
+                                  valorTotal: (visibleTableColumns.has("valorTotal") && <th className="col-band-gray p-2 text-right">LOA 2027</th>),
+                                  valLoa: (visibleTableColumns.has("valLoa") && <th className="col-band-white p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "valLoa", direction: curr.column === "valLoa" && curr.direction === "asc" ? "desc" : "asc" }))}
                                     className="inline-flex items-center gap-1 ml-auto hover:text-sky-700 transition-colors cursor-pointer"
                                     title="Ordenar por Valor LOA"
                                   >
-                                    <span>Valor LOA</span>
+                                    <span>Vigente</span>
                                     <span className={`material-symbols-outlined text-[13px] ${natureSort.column === "valLoa" ? "text-sky-700 font-bold" : "text-sky-400"}`}>
                                       {natureSort.column === "valLoa" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("valorReajuste") && <th className="p-2 text-right">Valor Reajuste</th>}
-                                {visibleTableColumns.has("valorAditamento") && <th className="p-2 text-right">Valor Aditamento</th>}
-                                {visibleTableColumns.has("valorTotal") && <th className="p-2 text-right">Valor Total</th>}
-                                {visibleTableColumns.has("diff") && <th className="p-2 text-right">
+                                </th>),
+                                  valorReajuste: (visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2 text-right">Reajuste</th>),
+                                  vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2 text-right">Vigente + Reajuste</th>),
+                                  valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2 text-right">Aditamento</th>),
+                                  valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2 text-right">Sugestão SF</th>),
+                                  valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2 text-right">Corte GP</th>),
+                                  diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "diff", direction: curr.column === "diff" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3910,8 +3987,8 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "diff" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("status") && <th className="p-2 text-center">
+                                </th>),
+                                  status: (visibleTableColumns.has("status") && <th className="col-band-gray p-2 text-center">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "status", direction: curr.column === "status" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -3923,8 +4000,9 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "status" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("adjusted") && <th className="p-2 text-center text-sky-800/80 dark:text-sky-300/80">Validação</th>}
+                                </th>),
+                                  adjusted: (visibleTableColumns.has("adjusted") && <th className="col-band-white p-2 text-center text-sky-800/80 dark:text-sky-300/80">Validação</th>),
+                                })}
                               </tr>
 
                               {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
@@ -3932,20 +4010,21 @@ export function AnaliseLoaView() {
                                 const natureKey = `${group.id}|${natureza}`;
                                 const natureExpanded = expandedNatureGroups.has(natureKey);
                                 const natureLdo = natureItems.reduce((sum, item) => sum + item.valLdo, 0);
+                                const natureLoa2026 = natureItems.reduce((sum, item) => sum + (item.valLoa2026 ?? 0), 0);
                                 const natureLoa = natureItems.reduce((sum, item) => sum + item.valLoa, 0);
                                 const natureReajuste = natureItems.reduce((sum, item) => sum + (item.valorReajuste ?? 0), 0);
+                                const natureVigenteReajuste = natureLoa + natureReajuste;
                                 const natureAditamento = natureItems.reduce((sum, item) => sum + (item.valorAditamento ?? 0), 0);
+                                const natureSugestaoSf = natureItems.reduce((sum, item) => sum + (item.valorSugestaoSf ?? 0), 0);
+                                const natureCorteGp = natureItems.reduce((sum, item) => sum + (item.valorCorteGp ?? 0), 0);
                                 const natureTotal = natureLoa + natureReajuste + natureAditamento;
                                 const natureDiff = natureTotal - natureLdo;
                                 const natureStatus = getStatusInfo(natureLdo, natureTotal);
-                                const elementGroups = Array.from(natureItems.reduce((map, item) => {
-                                  const elemento = item.elemento || "Sem elemento";
-                                  map.set(elemento, [...(map.get(elemento) ?? []), item]);
-                                  return map;
-                                }, new Map<string, RawBudgetItem[]>()));
-                                const validatedSubelements = natureItems.filter((item) => validatedRows[item.id]).length;
-                                const validationPercent = natureItems.length > 0 ? Math.round((validatedSubelements / natureItems.length) * 100) : 0;
-                                const validationStatus = getNatureValidationStatus(validatedSubelements, natureItems.length);
+                                // Vínculos extras pertencem ao subelemento de origem e não são validados separadamente.
+                                const validatableItems = natureItems.filter((item) => !item.vinculoParentId || !natureItems.some((parent) => parent.id === item.vinculoParentId));
+                                const validatedSubelements = validatableItems.filter((item) => validatedRows[item.id]).length;
+                                const validationPercent = validatableItems.length > 0 ? Math.round((validatedSubelements / validatableItems.length) * 100) : 0;
+                                const validationStatus = getNatureValidationStatus(validatedSubelements, validatableItems.length);
                                 const validationStatusClass = validationStatus === "Validada"
                                   ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                                   : validationStatus === "Parcial"
@@ -3974,7 +4053,7 @@ export function AnaliseLoaView() {
                                           >
                                             <span className="material-symbols-outlined text-[14px]">{natureExpanded ? "expand_more" : "chevron_right"}</span>
                                           </button>
-                                          <span className="truncate font-mono text-xs font-semibold text-on-surface">
+                                          <span className="min-w-0 whitespace-normal break-words font-mono text-xs font-semibold leading-snug text-on-surface">
                                             {getNatureLabel(natureza, natureItems[0]?.elemento)}
                                           </span>
                                           <button
@@ -3995,9 +4074,10 @@ export function AnaliseLoaView() {
                                       </td>
                                       {visibleTableColumns.has("elemento") && <td className="p-2.5 text-on-surface-variant font-sans text-xs">
                                          <div className="flex flex-col gap-1 items-start">
-                                          <span>{elementGroups.length} elemento{elementGroups.length === 1 ? "" : "s"} de despesa</span>
-                                          <span className="font-mono text-[10px] font-bold">{validatedSubelements} de {natureItems.length} subelementos validados · {validationPercent}%</span>
-                                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>{validationStatus}</span>
+                                          <div className="flex flex-wrap items-center gap-1.5" title={`${validatedSubelements} de ${validatableItems.length} subelementos validados`}>
+                                            <span className="text-[11px] font-bold text-on-surface tabular-nums">{validatedSubelements}/{validatableItems.length} validados · {validationPercent}%</span>
+                                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>{validationStatus}</span>
+                                          </div>
                                           {natureItems.some((i) => i.processo && i.processo !== "—") && (
                                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 dark:text-sky-200 bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-1.5 py-0.5 rounded shadow-2xs" title="Contém processos administrativos vinculados">
                                               <span className="material-symbols-outlined text-[11px]">folder</span>
@@ -4006,52 +4086,61 @@ export function AnaliseLoaView() {
                                           )}
                                         </div>
                                       </td>}
-                                      {visibleTableColumns.has("valLdo") && (
-                                        <td className="p-2.5 text-right font-mono text-on-surface-variant/50 font-medium select-none bg-surface-container-low/40 text-xs">
+                                      {renderOrderedCells({
+                                        valLdo: (visibleTableColumns.has("valLdo") && (
+                                        <td className="col-band-gray p-2.5 text-right font-mono text-on-surface-variant/50 font-medium select-none bg-surface-container-low/40 text-xs">
                                           0,00
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("valLoa") && (
-                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
-                                          {formatBr(natureLoa)}
-                                        </td>
-                                      )}
-                                      {visibleTableColumns.has("valorReajuste") && (
-                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
-                                          {formatBr(natureReajuste)}
-                                        </td>
-                                      )}
-                                      {visibleTableColumns.has("valorAditamento") && (
-                                        <td className="p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
-                                          {formatBr(natureAditamento)}
-                                        </td>
-                                      )}
-                                      {visibleTableColumns.has("valorTotal") && (
-                                        <td className="p-2.5 text-right font-mono font-extrabold text-primary text-xs">
+                                      )),
+                                        valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-on-surface text-xs" title="LOA 2026 inicial da natureza de despesa">{formatBr(natureLoa2026)}</td>),
+                                        valorTotal: (visibleTableColumns.has("valorTotal") && (
+                                        <td className="col-band-gray p-2.5 text-right font-mono font-extrabold text-primary text-xs">
                                           {formatBr(natureTotal)}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("diff") && (
-                                        <td className={`p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                      )),
+                                        valLoa: (visibleTableColumns.has("valLoa") && (
+                                        <td className="col-band-white p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureLoa)}
+                                        </td>
+                                      )),
+                                        valorReajuste: (visibleTableColumns.has("valorReajuste") && (
+                                        <td className="col-band-gray p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureReajuste)}
+                                        </td>
+                                      )),
+                                        vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-primary text-xs">{formatBr(natureVigenteReajuste)}</td>),
+                                        valorAditamento: (visibleTableColumns.has("valorAditamento") && (
+                                        <td className="col-band-gray p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
+                                          {formatBr(natureAditamento)}
+                                        </td>
+                                      )),
+                                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-amber-700 text-xs">{formatBr(natureSugestaoSf)}</td>),
+                                        valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-2.5 text-right font-mono font-bold text-rose-700 text-xs">{formatBr(natureCorteGp)}</td>),
+                                        diff: (visibleTableColumns.has("diff") && (
+                                        <td className={`col-band-white p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
                                           {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("status") && (
-                                        <td className="p-2.5 text-center">
+                                      )),
+                                        status: (visibleTableColumns.has("status") && (
+                                        <td className="col-band-gray p-2.5 text-center">
                                           <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("adjusted") && <td className="p-2.5 text-center">
+                                      )),
+                                        adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-2.5 text-center">
                                         <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>
-                                          {validatedSubelements}/{natureItems.length} · {validationStatus}
+                                          {validatedSubelements}/{validatableItems.length} · {validationStatus}
                                         </span>
-                                      </td>}
+                                      </td>),
+                                      })}
                                     </tr>
 
                                     {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (unidades validáveis) */}
-                                    {natureExpanded && natureItems.map((item) => {
+                                    {natureExpanded && natureItems.filter((item) => !item.vinculoParentId || !natureItems.some((parent) => parent.id === item.vinculoParentId)).map((item) => {
+                                      const vinculoEntries = [item, ...natureItems.filter((child) => child.vinculoParentId === item.id)];
+                                      const hasSubelementDetails = vinculoEntries.length > 1 && Boolean((item.processo && item.processo !== "—") || item.projetoIniciado || item.observacao || justifications[item.id]);
                                       return (
-                                        <tr key={item.id} className="bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors border-b border-outline-variant/10">
+                                        <Fragment key={item.id}>
+                                        <tr className={`bg-surface-container-lowest hover:bg-primary/[0.04] transition-colors ${vinculoEntries.length > 1 ? "!border-b-transparent [&>td]:!border-b-transparent" : "border-b border-outline-variant/10"}`}>
                                             <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2.5 pl-12 sm:pl-16 text-on-surface-variant font-sans text-xs" title={getSubelementLabel(item)}>
                                               <div className="flex items-start gap-2">
                                                 {/* Linha guia conectora da árvore */}
@@ -4061,6 +4150,15 @@ export function AnaliseLoaView() {
                                                   <div className="w-full flex items-center justify-between gap-2">
                                                     <span className="text-on-surface font-semibold text-xs leading-snug break-words">{getSubelementLabel(item)}</span>
                                                     <div className="flex items-center gap-1 shrink-0 ml-auto">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => openVinculosEditor(group, natureza, vinculoEntries)}
+                                                        className="inline-flex items-center gap-1 rounded border border-teal-300/80 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-700/60"
+                                                        title="Adicionar ou editar vínculos deste subelemento"
+                                                      >
+                                                        <span className="material-symbols-outlined text-[13px]">account_balance</span>
+                                                        <span>Vínculos</span>
+                                                      </button>
                                                       <button
                                                         type="button"
                                                         onClick={() => {
@@ -4092,18 +4190,27 @@ export function AnaliseLoaView() {
                                                     </div>
                                                   </div>
 
+                                                  {vinculosContext?.group.id === group.id && vinculosContext.natureza === natureza && vinculosContext.items[0]?.id === item.id && (
+                                                    <div className="w-full rounded-md border border-teal-300/70 bg-surface p-2">
+                                        <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase text-teal-800"><span>Adicionar vínculo ao subelemento</span><span>Total: {formatBr(vinculoAllocations.reduce((sum, item) => sum + parseBr(item.valor), 0))}</span></div>
+                                        {vinculoAllocations.map((allocation, index) => <div key={allocation.id} className="mb-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] gap-1"><select value={allocation.vinculo} onChange={(event) => setVinculoAllocations((prev) => prev.map((item) => item.id === allocation.id ? { ...item, vinculo: event.target.value } : item))} className="rounded border border-outline-variant px-1 py-0.5 text-[10px]">{VINCULO_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input value={allocation.codigoAplicacao} onChange={(event) => setVinculoAllocations((prev) => prev.map((item) => item.id === allocation.id ? { ...item, codigoAplicacao: event.target.value } : item))} placeholder="Código aplicação" className="rounded border border-outline-variant px-1 py-0.5 text-[10px] font-mono" /><input value={allocation.valor} onChange={(event) => setVinculoAllocations((prev) => prev.map((item) => item.id === allocation.id ? { ...item, valor: event.target.value.replace(/-/g, "") } : item))} className="rounded border border-outline-variant px-1 py-0.5 text-right text-[10px] font-mono" /><button type="button" disabled={vinculoAllocations.length === 1} onClick={() => setVinculoAllocations((prev) => prev.filter((item) => item.id !== allocation.id))} className="text-rose-600 disabled:opacity-30" aria-label={`Remover vínculo ${index + 1}`}><span className="material-symbols-outlined text-[15px]">delete</span></button></div>)}
+                                        <div className="flex justify-end gap-1"><button type="button" onClick={() => setVinculoAllocations((prev) => [...prev, { id: crypto.randomUUID(), vinculo: "01", codigoAplicacao: "", valor: "0,00" }])} className="rounded border border-teal-300 px-2 py-0.5 text-[10px] font-bold text-teal-800">+ Vínculo</button><button type="button" onClick={() => setVinculosContext(null)} className="rounded border border-outline-variant px-2 py-0.5 text-[10px]">Cancelar</button><button type="button" onClick={saveVinculos} className="rounded bg-primary px-2 py-0.5 text-[10px] font-bold text-on-primary">Salvar</button></div>
+                                      </div>
+                                                  )}
+
                                                   {/* Badges de Vínculo (com Código de Aplicação integrado) e Processo */}
-                                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                                    {(item.fonteVinculo || item.codigoAplicacao) && (
+                                                  <div className="flex flex-col items-start gap-1.5">
+                                                    {[item].filter((entry) => entry.fonteVinculo || entry.codigoAplicacao).map((entry) => (
                                                       <span
+                                                        key={entry.id}
                                                         className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
-                                                        title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}`}
+                                                        title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(entry.fonteVinculo, entry.codigoAplicacao)}`}
                                                       >
                                                         <span className="material-symbols-outlined text-[12px]">account_balance</span>
-                                                        <span>Vínculo: {formatVinculoComAplicacao(item.fonteVinculo, item.codigoAplicacao)}</span>
+                                                        <span>Vínculo: {formatVinculoComAplicacao(entry.fonteVinculo, entry.codigoAplicacao)}</span>
                                                       </span>
-                                                    )}
-                                                    {item.processo && item.processo !== "—" && (
+                                                    ))}
+                                                    {vinculoEntries.length === 1 && item.processo && item.processo !== "—" && (
                                                       <span
                                                         className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-2xs"
                                                         title={`Processo Administrativo: ${item.processo}`}
@@ -4115,7 +4222,7 @@ export function AnaliseLoaView() {
                                                   </div>
 
                                                   {/* Bloco Enquadrado de Informações (Projeto Iniciado + Observação) */}
-                                                  {(item.projetoIniciado || item.observacao || justifications[item.id]) && (
+                                                  {vinculoEntries.length === 1 && (item.projetoIniciado || item.observacao || justifications[item.id]) && (
                                                     <div className="mt-2 w-full flex flex-col gap-2 rounded-lg border border-outline-variant/60 bg-surface-container-low/90 dark:bg-surface-container-high/50 p-3 shadow-2xs">
                                                       {item.projetoIniciado && (
                                                         <div className="flex items-center gap-2 font-mono text-[11px]">
@@ -4148,74 +4255,115 @@ export function AnaliseLoaView() {
                                                 </div>
                                               </div>
                                             </td>
-                                          {visibleTableColumns.has("valLdo") && <td className="p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
-                                          {visibleTableColumns.has("valLoa") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <input
+                                          {renderOrderedCells({
+                                            valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>),
+                                            valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2 text-right font-mono text-on-surface-variant/50 text-xs" title="A LOA 2026 é publicada por natureza de despesa, sem subelemento">—</td>),
+                                            valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>),
+                                            valLoa: (visibleTableColumns.has("valLoa") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
-                                              value={editingCell?.id === item.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(item.valLoa)}
+                                              value={editingCell?.id === entry.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(entry.valLoa)}
                                               onFocus={() => {
-                                                setEditingCell({ id: item.id, field: "valLoa" });
-                                                setTempInputValue(item.valLoa.toFixed(2).replace(".", ","));
+                                                setEditingCell({ id: entry.id, field: "valLoa" });
+                                                setTempInputValue(entry.valLoa.toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
                                                 const sanitizedValue = event.target.value.replace(/-/g, "");
                                                 setTempInputValue(sanitizedValue);
                                                 const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valLoa: value } : entry));
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valLoa: value } : row));
                                                 setHasChanges(true);
                                               }}
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
-                                            />
-                                          </td>}
-                                          {visibleTableColumns.has("valorReajuste") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <input
+                                            /></div>)}</div>
+                                          </td>),
+                                            valorReajuste: (visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
-                                              value={editingCell?.id === item.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(item.valorReajuste ?? 0)}
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(entry.valorReajuste ?? 0)}
                                               onFocus={() => {
-                                                setEditingCell({ id: item.id, field: "valorReajuste" });
-                                                setTempInputValue((item.valorReajuste ?? 0).toFixed(2).replace(".", ","));
+                                                setEditingCell({ id: entry.id, field: "valorReajuste" });
+                                                setTempInputValue((entry.valorReajuste ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
                                                 const sanitizedValue = event.target.value.replace(/-/g, "");
                                                 setTempInputValue(sanitizedValue);
                                                 const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorReajuste: value } : entry));
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorReajuste: value } : row));
                                                 setHasChanges(true);
                                               }}
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                            />
-                                          </td>}
-                                          {visibleTableColumns.has("valorAditamento") && <td className="p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <input
+                                            /></div>)}</div>
+                                          </td>),
+                                            vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2 text-right font-mono font-bold text-primary text-xs">{formatBr(getItemVigenteReajuste(item))}</td>),
+                                            valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
-                                              value={editingCell?.id === item.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(item.valorAditamento ?? 0)}
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(entry.valorAditamento ?? 0)}
                                               onFocus={() => {
-                                                setEditingCell({ id: item.id, field: "valorAditamento" });
-                                                setTempInputValue((item.valorAditamento ?? 0).toFixed(2).replace(".", ","));
+                                                setEditingCell({ id: entry.id, field: "valorAditamento" });
+                                                setTempInputValue((entry.valorAditamento ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
                                                 const sanitizedValue = event.target.value.replace(/-/g, "");
                                                 setTempInputValue(sanitizedValue);
                                                 const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, valorAditamento: value } : entry));
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorAditamento: value } : row));
                                                 setHasChanges(true);
                                               }}
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                            />
-                                          </td>}
-                                          {visibleTableColumns.has("valorTotal") && <td className="p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>}
-                                          {visibleTableColumns.has("diff") && <td className={`p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                            /></div>)}</div>
+                                          </td>),
+                                            valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorSugestaoSf" });
+                                                setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>),
+                                            valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorCorteGp" ? tempInputValue : formatBr(entry.valorCorteGp ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorCorteGp" });
+                                                setTempInputValue((entry.valorCorteGp ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorCorteGp: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>),
+                                            diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
                                             {currency.format(getItemLoaTotal(item) - item.valLdo)}
-                                          </td>}
-                                          {visibleTableColumns.has("status") && <td className="p-2 text-center">
+                                          </td>),
+                                            status: (visibleTableColumns.has("status") && <td className="col-band-gray p-2 text-center">
                                             <span className={`inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border ${getStatusInfo(item.valLdo, getItemLoaTotal(item)).class}`}>
                                               {getStatusInfo(item.valLdo, getItemLoaTotal(item)).label}
                                             </span>
-                                          </td>}
-                                          {visibleTableColumns.has("adjusted") && <td className="p-2 text-center">
+                                          </td>),
+                                            adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-2 text-center">
                                             {(() => {
                                               const itemSec = item.orgao || (item as unknown as { secretaria?: string }).secretaria || "";
                                               const canValidateItem = canUserValidateSecretaria(itemSec);
@@ -4246,8 +4394,181 @@ export function AnaliseLoaView() {
                                                 </button>
                                               );
                                             })()}
-                                          </td>}
+                                          </td>),
+                                          })}
                                         </tr>
+                                        {vinculoEntries.slice(1).map((child, childIndex) => (
+                                          <tr key={child.id} className={`bg-surface-container-lowest !border-t-transparent [&>td]:!border-t-transparent ${childIndex === vinculoEntries.length - 2 && !hasSubelementDetails ? "border-b border-outline-variant/10" : "!border-b-transparent [&>td]:!border-b-transparent"}`}>
+                                            <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-2 pl-12 sm:pl-16 text-xs">
+                                              <div className="flex items-center gap-2">
+                                                <span className="invisible font-mono text-xs select-none shrink-0" aria-hidden="true">│   └──</span>
+                                                <span
+                                                  className="inline-flex items-center gap-1 text-[10.5px] font-bold text-teal-800 dark:text-teal-200 font-mono bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-md shadow-2xs"
+                                                  title={`Fonte/Vínculo e Código de Aplicação: ${formatVinculoComAplicacao(child.fonteVinculo, child.codigoAplicacao)}`}
+                                                >
+                                                  <span className="material-symbols-outlined text-[12px]">account_balance</span>
+                                                  <span>Vínculo: {formatVinculoComAplicacao(child.fonteVinculo, child.codigoAplicacao)}</span>
+                                                </span>
+                                              </div>
+                                            </td>
+                                          {renderOrderedCells({
+                                            valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>),
+                                            valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2 text-right font-mono text-on-surface-variant/50 text-xs" title="A LOA 2026 é publicada por natureza de despesa, sem subelemento">—</td>),
+                                            valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(child))}</td>),
+                                            valLoa: (visibleTableColumns.has("valLoa") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(entry.valLoa)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valLoa" });
+                                                setTempInputValue(entry.valLoa.toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valLoa: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
+                                            /></div>)}</div>
+                                          </td>),
+                                            valorReajuste: (visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(entry.valorReajuste ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorReajuste" });
+                                                setTempInputValue((entry.valorReajuste ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorReajuste: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>),
+                                            vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2 text-right font-mono font-bold text-primary text-xs">{formatBr(getItemVigenteReajuste(child))}</td>),
+                                            valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(entry.valorAditamento ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorAditamento" });
+                                                setTempInputValue((entry.valorAditamento ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorAditamento: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>),
+                                            valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorSugestaoSf" });
+                                                setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>),
+                                            valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
+                                              type="text"
+                                              value={editingCell?.id === entry.id && editingCell.field === "valorCorteGp" ? tempInputValue : formatBr(entry.valorCorteGp ?? 0)}
+                                              onFocus={() => {
+                                                setEditingCell({ id: entry.id, field: "valorCorteGp" });
+                                                setTempInputValue((entry.valorCorteGp ?? 0).toFixed(2).replace(".", ","));
+                                              }}
+                                              onChange={(event) => {
+                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                setTempInputValue(sanitizedValue);
+                                                const value = parseBr(sanitizedValue);
+                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorCorteGp: value } : row));
+                                                setHasChanges(true);
+                                              }}
+                                              onBlur={() => setEditingCell(null)}
+                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                            /></div>)}</div>
+                                          </td>),
+                                            diff: (visibleTableColumns.has("diff") && <td className="col-band-white" />),
+                                            status: (visibleTableColumns.has("status") && <td className="col-band-gray" />),
+                                            adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white" />),
+                                          })}
+                                          </tr>
+                                        ))}
+                                        {hasSubelementDetails && (
+                                          <tr className="bg-surface-container-lowest !border-t-transparent [&>td]:!border-t-transparent border-b border-outline-variant/10">
+                                            <td colSpan={visibleTableColumns.size} className="p-2 pl-12 sm:pl-16 text-xs">
+                                              <div className="flex items-start gap-2">
+                                                <span className="invisible font-mono text-xs select-none shrink-0 mt-0.5" aria-hidden="true">│   └──</span>
+                                              <div className="flex min-w-0 max-w-3xl flex-1 flex-col items-start gap-1.5">
+                                                    {item.processo && item.processo !== "—" && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-sky-800 dark:text-sky-200 font-mono bg-sky-100/70 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800 px-2 py-0.5 rounded-md shadow-2xs"
+                                                        title={`Processo Administrativo: ${item.processo}`}
+                                                      >
+                                                        <span className="material-symbols-outlined text-[12px]">folder</span>
+                                                        <span>Processo: {item.processo}</span>
+                                                      </span>
+                                                    )}
+                                                  {/* Bloco Enquadrado de Informações (Projeto Iniciado + Observação) */}
+                                                  {(item.projetoIniciado || item.observacao || justifications[item.id]) && (
+                                                    <div className="mt-2 w-full flex flex-col gap-2 rounded-lg border border-outline-variant/60 bg-surface-container-low/90 dark:bg-surface-container-high/50 p-3 shadow-2xs">
+                                                      {item.projetoIniciado && (
+                                                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                                                          <span className="font-bold text-on-surface">Projeto Iniciado:</span>
+                                                          <span
+                                                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-extrabold rounded-md ${
+                                                              item.projetoIniciado === "SIM"
+                                                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                                                                : "bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800"
+                                                            }`}
+                                                          >
+                                                            <span className="material-symbols-outlined text-[12px]">
+                                                              {item.projetoIniciado === "SIM" ? "check_circle" : "cancel"}
+                                                            </span>
+                                                            {item.projetoIniciado}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {(item.observacao || justifications[item.id]) && (
+                                                        <div className="flex items-start gap-2 text-xs leading-relaxed text-on-surface-variant">
+                                                          <span className="material-symbols-outlined text-[15px] text-amber-700 dark:text-amber-400 shrink-0 mt-0.5">notes</span>
+                                                          <div className="min-w-0 flex-1 break-words">
+                                                            <strong className="font-semibold text-on-surface">Observação: </strong>
+                                                            <span className="text-on-surface/90">{item.observacao || justifications[item.id]}</span>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                              </div>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                        </Fragment>
                                       );
                                     })}
                                   </Fragment>
@@ -4264,22 +4585,28 @@ export function AnaliseLoaView() {
                       <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
                         Total Geral Filtrado ({filteredItems.length} registros)
                       </td>
-                      {visibleTableColumns.has("valLdo") && <td className="p-3 text-right text-on-surface-variant font-extrabold">
+                      {renderOrderedCells({
+                        valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-3 text-right text-on-surface-variant font-extrabold">
                         {formatBr(metrics.valLdoTotal)}
-                      </td>}
-                      {visibleTableColumns.has("valLoa") && <td className="p-3 text-right text-primary font-extrabold">
+                      </td>),
+                        valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valLoa2026Total)}</td>),
+                        valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-3 text-right text-primary font-extrabold">{formatBr(metrics.valLoaTotal)}</td>),
+                        valLoa: (visibleTableColumns.has("valLoa") && <td className="col-band-white p-3 text-right text-primary font-extrabold">
                         {formatBr(metrics.valLoaVigenteTotal)}
-                      </td>}
-                      {visibleTableColumns.has("valorReajuste") && <td className="p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorReajusteTotal)}</td>}
-                      {visibleTableColumns.has("valorAditamento") && <td className="p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>}
-                      {visibleTableColumns.has("valorTotal") && <td className="p-3 text-right text-primary font-extrabold">{formatBr(metrics.valLoaTotal)}</td>}
-                      {visibleTableColumns.has("diff") && <td className={`p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
+                      </td>),
+                        valorReajuste: (visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorReajusteTotal)}</td>),
+                        vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-3 text-right text-primary font-extrabold">{formatBr(metrics.vigenteReajusteTotal)}</td>),
+                        valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>),
+                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right text-amber-700 font-extrabold">{formatBr(metrics.valorSugestaoSfTotal)}</td>),
+                        valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right text-rose-700 font-extrabold">{formatBr(metrics.valorCorteGpTotal)}</td>),
+                        diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
                         {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
-                      </td>}
-                      {visibleTableColumns.has("status") && <td className="p-3 text-center text-on-surface-variant text-[10px]">
+                      </td>),
+                        status: (visibleTableColumns.has("status") && <td className="col-band-gray p-3 text-center text-on-surface-variant text-[10px]">
                         TOTALIZADOR
-                      </td>}
-                      {visibleTableColumns.has("adjusted") && <td className="p-3 text-center text-on-surface-variant">—</td>}
+                      </td>),
+                        adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-3 text-center text-on-surface-variant">—</td>),
+                      })}
                     </tr>
                   </tfoot>
                 </table>

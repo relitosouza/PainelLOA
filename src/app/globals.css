@@ -100,12 +100,14 @@
 .text-body-md { font-size: 15px; line-height: 24px; font-weight: 400; }
 .text-display-lg { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; letter-spacing: -0.02em; font-weight: 800; font-family: var(--font-display); }
 .text-headline-md { font-size: 24px; line-height: 30px; font-weight: 700; font-family: var(--font-display); }
-.text-data-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; line-height: 20px; font-weight: 700; }
+.text-data-mono { font-family: var(--font-inter), "Segoe UI", Arial, sans-serif; font-variant-numeric: tabular-nums; font-size: 14px; line-height: 20px; font-weight: 700; }
 
 :root {
   /* Fonts loaded via Next.js Font Loader */
   --font-sans: var(--font-inter), "Segoe UI", Arial, sans-serif;
   --font-display: var(--font-outfit), var(--font-sans);
+  /* Tabelas e valores usam a mesma fonte do texto (Inter), com algarismos de largura fixa. */
+  --font-mono: var(--font-inter), "Segoe UI", Arial, sans-serif;
 
   /* Light Theme Color Tokens (Design.md - The Civic Registry) */
   --navy: #1B365D;
@@ -4347,4 +4349,33 @@ details.brutalist-accordion[open] summary {
 }
 details.brutalist-accordion .accordion-content {
   padding: 16px;
+}
+
+.font-mono { font-variant-numeric: tabular-nums; }
+
+/* Faixas alternadas das colunas de valores do detalhamento analítico.
+   Semitransparentes para manter visível a cor da linha (ação, natureza, subelemento). */
+.col-band-gray { background-color: rgb(100 116 139 / 0.04) !important; }
+.col-band-white { background-color: transparent !important; }
+@media (prefers-color-scheme: dark) {
+  .col-band-gray { background-color: rgb(255 255 255 / 0.025) !important; }
+}
+
+/* Barras de rolagem sempre visíveis na tabela do detalhamento analítico. */
+.analitico-scroll { scrollbar-width: auto; scrollbar-color: rgb(100 116 139 / 0.55) transparent; }
+.analitico-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+.analitico-scroll::-webkit-scrollbar-thumb { background-color: rgb(100 116 139 / 0.55); border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+.analitico-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Cabeçalho e rodapé fixos do detalhamento analítico: fundo opaco para as linhas não aparecerem por trás
+   ao rolar. A faixa das colunas vira uma camada sobre o fundo (as classes col-band usam !important). */
+.analitico-scroll thead th { background-color: #eef7fd !important; }
+.analitico-scroll thead th.col-band-gray { background-image: linear-gradient(rgb(100 116 139 / 0.06), rgb(100 116 139 / 0.06)); }
+.analitico-scroll tfoot td { background-color: #eef1f4 !important; }
+.analitico-scroll tfoot td.col-band-gray { background-image: linear-gradient(rgb(100 116 139 / 0.06), rgb(100 116 139 / 0.06)); }
+@media (prefers-color-scheme: dark) {
+  .analitico-scroll thead th { background-color: #0b2233 !important; }
+  .analitico-scroll tfoot td { background-color: #1b2129 !important; }
+  .analitico-scroll thead th.col-band-gray,
+  .analitico-scroll tfoot td.col-band-gray { background-image: linear-gradient(rgb(255 255 255 / 0.03), rgb(255 255 255 / 0.03)); }
 }

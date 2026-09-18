@@ -17,6 +17,12 @@ export interface AnaliseLoaLayoutConfig {
   visibility: Record<string, boolean>; // Mapa id -> boolean
 }
 
+export function withNewKpis(saved: unknown, defaults: string[]): string[] {
+  if (!Array.isArray(saved) || saved.length === 0) return defaults;
+  const ids = saved.filter((id): id is string => typeof id === "string");
+  return [...ids, ...defaults.filter((id) => !ids.includes(id))];
+}
+
 export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
   sectionsOrder: [
     "painel-receita",
@@ -42,6 +48,9 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
     "desp-expectativa",
     "desp-exec",
     "desp-naturezas",
+    "desp-loa2026",
+    "desp-sugestao-sf",
+    "desp-corte-gp",
   ],
   visibility: {
     // Seções
@@ -66,6 +75,9 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
     "desp-expectativa": true,
     "desp-exec": true,
     "desp-naturezas": true,
+    "desp-loa2026": true,
+    "desp-sugestao-sf": true,
+    "desp-corte-gp": true,
   },
 };
 
@@ -113,8 +125,8 @@ export const KPI_METADATA: Record<string, { label: string; tag: string; descript
   "rec-loa": { label: "Valor Previsto LOA", tag: "Receita", description: "Receita Fixada na LOA" },
   "rec-diff": { label: "Diferença (LOA - LDO)", tag: "Receita", description: "Variação de Receita apurada" },
   "rec-exec": { label: "Execução Planejamento", tag: "Receita", description: "% Transformado em LOA" },
-  "rec-maior": { label: "Maior Arrecadação LDO", tag: "Receita", description: "Principal fonte de arrecadação" },
-  "rec-fontes": { label: "Total Fontes / Vínculos", tag: "Receita", description: "Contagem de fontes de recurso" },
+  "rec-maior": { label: "Maior Receita LOA", tag: "Receita", description: "Principal natureza de receita da LOA" },
+  "rec-fontes": { label: "Total Fontes / Vínculos", tag: "Receita", description: "Fontes com receita prevista na LOA" },
   // Despesa
   "desp-ldo": { label: "Valor Previsto LDO", tag: "Despesa", description: "Despesa Planejada na LDO" },
   "desp-loa": { label: "Valor Previsto LOA", tag: "Despesa", description: "Despesa Fixada na LOA" },
@@ -122,6 +134,9 @@ export const KPI_METADATA: Record<string, { label: string; tag: string; descript
   "desp-expectativa": { label: "Valor Expectativa LOA", tag: "Despesa", description: "Expectativa LOA Fixada" },
   "desp-exec": { label: "Execução Planejamento", tag: "Despesa", description: "% Executado da despesa" },
   "desp-naturezas": { label: "Total de Naturezas", tag: "Despesa", description: "Classificações econômicas" },
+  "desp-loa2026": { label: "Valor LOA 2026", tag: "Despesa", description: "Dotação inicial da LOA 2026" },
+  "desp-sugestao-sf": { label: "Sugestão SF", tag: "Despesa", description: "Cortes sugeridos pela SF" },
+  "desp-corte-gp": { label: "Corte GP", tag: "Despesa", description: "Cortes definidos pelo GP" },
 };
 
 interface AnaliseLoaCardsConfigDialogProps {

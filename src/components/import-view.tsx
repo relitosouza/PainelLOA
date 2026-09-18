@@ -78,6 +78,7 @@ async function downloadTemplate() {
 
 import { LdoImportForm } from "./ldo-import-form";
 import { PlanningImportForm } from "./planning-import-form";
+import { LoaReceitaImportForm } from "./loa-receita-import-form";
 
 export function ImportView() {
   const [activeTab, setActiveTab] = useState<"despesa" | "receita" | "ldo" | "loa_receita" | "planejamento">("despesa");
@@ -411,16 +412,7 @@ export function ImportView() {
       ) : activeTab === "ldo" ? (
         <LdoImportForm />
       ) : activeTab === "loa_receita" ? (
-        <div className="bg-surface border border-outline-variant rounded-xl p-6 space-y-4">
-          <h2 className="text-md font-bold text-on-surface">Importação das Receitas da LOA</h2>
-          <p className="text-xs text-on-surface-variant">
-            Envie a planilha de previsão definitiva das receitas da LOA para vinculação e distribuição por naturezas.
-          </p>
-          <div className="border-2 border-dashed border-outline-variant rounded-xl p-8 text-center space-y-3 bg-surface-container-low">
-            <span className="material-symbols-outlined text-4xl text-primary">upload_file</span>
-            <p className="text-xs font-semibold text-on-surface">Selecione o arquivo XLSX, XLS ou CSV da LOA Receitas</p>
-          </div>
-        </div>
+        <LoaReceitaImportForm />
       ) : (
         <div className="bg-surface border border-outline-variant rounded-xl p-6 space-y-4">
           <h2 className="text-md font-bold text-on-surface">Importação da Receita Arrecadada</h2>

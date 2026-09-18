@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { currency, percent } from "@/lib/format";
-import { isGenericExpenseCode, validateClassification, type EnquadramentoRuleMessage } from "@/lib/enquadramento-rules";
+import { DetalhamentoProposta } from "./elaboracao-loa/detalhamento-proposta";
 
 type AuxiliaryCode = { id: string; codigo: string; nome: string; tipo: string };
 type LinkItem = {
@@ -15,25 +15,9 @@ type LdoAction = {
   produto: string; metaFisica: number | null; custoFinanceiro: number; valorDistribuido: number; saldo: number;
   status: "PENDENTE" | "PARCIAL" | "CONCLUIDO"; enquadramentos: LinkItem[];
 };
-type Suggestion = AuxiliaryCode & { score: number; reason: string };
-type ExpenseWithoutSubelement = { id: string; natureza: string; elemento: string; vinculo: string; processo: string; valorLoa: number; quantidadeRegistros: number; justificativa?: string };
-
-const STATUS_LABEL = { PENDENTE: "Pendente de vínculo", PARCIAL: "Parcialmente vinculada", CONCLUIDO: "Concluída" } as const;
-const STATUS_CLASS = {
-  PENDENTE: "bg-amber-50 text-amber-800 border-amber-200",
-  PARCIAL: "bg-blue-50 text-blue-800 border-blue-200",
-  CONCLUIDO: "bg-green-50 text-green-800 border-green-200",
-} as const;
 
 export function ElaboracaoLoaView() {
   const [actions, setActions] = useState<LdoAction[]>([]);
-  const [secretariats, setSecretariats] = useState<string[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isActionPanelOpen, setIsActionPanelOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [secretariat, setSecretariat] = useState("");
-  const [status, setStatus] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -45,8 +29,6 @@ export function ElaboracaoLoaView() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message);
       setActions(data.actions);
-      setSecretariats(data.secretariats);
-      setSelectedId((current) => current && data.actions.some((item: LdoAction) => item.id === current) ? current : data.actions[0]?.id ?? null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Não foi possível carregar o planejamento.");
     } finally {
@@ -56,19 +38,18 @@ export function ElaboracaoLoaView() {
 
   useEffect(() => { void loadActions(); }, [loadActions]);
 
-  const filtered = useMemo(() => actions.filter((action) => {
-    const query = search.toLowerCase();
-    return (!secretariat || action.secretaria === secretariat)
-      && (!status || action.status === status)
-      && (!query || `${action.secretaria} ${action.secretariaNome} ${action.programaNome} ${action.funcaoNome ?? ""} ${action.subfuncaoNome ?? ""} ${action.acaoCodigo} ${action.acaoNome ?? ""} ${action.produto}`.toLowerCase().includes(query));
-  }), [actions, search, secretariat, status]);
-  const selected = actions.find((action) => action.id === selectedId) ?? null;
+  const [loaRevenue, setLoaRevenue] = useState<number | null>(null);
+  const [loaExpense, setLoaExpense] = useState<number | null>(null);
+  useEffect(() => {
+    fetch("/api/elaboracao-loa/resumo?exercise=2026")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { setLoaRevenue(data?.loaReceita ?? null); setLoaExpense(data?.loaDespesaProposta ?? null); })
+      .catch(() => { setLoaRevenue(null); setLoaExpense(null); });
+  }, []);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, LdoAction[]>();
-    filtered.forEach((action) => map.set(action.secretaria, [...(map.get(action.secretaria) ?? []), action]));
-    return [...map.entries()];
-  }, [filtered]);
+  const [ajusteTotal, setAjusteTotal] = useState(0);
+  const loaExpenseProposta = loaExpense === null ? null : loaExpense + ajusteTotal;
+
   const totals = useMemo(() => actions.reduce((acc, action) => ({ cost: acc.cost + action.custoFinanceiro, distributed: acc.distributed + action.valorDistribuido }), { cost: 0, distributed: 0 }), [actions]);
 
   return (
@@ -86,281 +67,44 @@ export function ElaboracaoLoaView() {
         </div>
       </header>
 
-      <section aria-label="Filtros do catálogo LDO" className="panel bg-surface p-4 grid grid-cols-1 md:grid-cols-[1fr_240px_220px] gap-3">
-        <label className="relative"><span className="sr-only">Buscar ação, programa ou produto</span><span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-on-surface-variant">search</span><input name="planning-search" autoComplete="off" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar ação, programa ou produto…" className="w-full rounded-lg border border-outline-variant bg-surface py-2 pl-10 pr-3 text-sm" /></label>
-        <select name="planning-secretariat" autoComplete="off" aria-label="Filtrar por secretaria" value={secretariat} onChange={(event) => setSecretariat(event.target.value)} className="rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm"><option value="">Todas as secretarias</option>{secretariats.map((item) => <option key={item}>{item}</option>)}</select>
-        <select name="planning-status" autoComplete="off" aria-label="Filtrar por status" value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm"><option value="">Todos os status</option><option value="PENDENTE">Pendentes</option><option value="PARCIAL">Parciais</option><option value="CONCLUIDO">Concluídas</option></select>
+      <section aria-label="Resumo orçamentário" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <SummaryCard icon="request_quote" label="LDO Despesa" value={loading ? null : totals.cost} hint="Custo total das ações da LDO" />
+        <SummaryCard icon="savings" label="LOA Receita" value={loaRevenue} hint={loaRevenue === null ? "Base LOA Receitas não importada" : "Receita prevista importada"} />
+        <SummaryCard icon="receipt_long" label="LOA Despesa Proposta" value={loaExpenseProposta} hint={ajusteTotal ? `Valor Previsto LOA ${ajusteTotal < 0 ? "−" : "+"} ${currency.format(Math.abs(ajusteTotal))} em ajustes` : "Valor Previsto LOA (Análise LOA)"} />
+        {(() => {
+          const deficit = loaRevenue === null || loaExpenseProposta === null ? null : loaRevenue - loaExpenseProposta;
+          const tone = deficit === null ? undefined : deficit < 0 ? "negative" : "positive";
+          return <SummaryCard icon="balance" label="Déficit" value={deficit} tone={tone} hint={deficit === null ? "LOA Receita − LOA Despesa Proposta" : deficit < 0 ? "Despesa proposta supera a receita" : "Receita cobre a despesa proposta"} />;
+        })()}
       </section>
 
       {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div>}
       {!loading && !actions.length && <EmptyState />}
 
-      <div className={`grid grid-cols-1 gap-6 items-start ${isActionPanelOpen ? "xl:grid-cols-1" : "xl:grid-cols-[minmax(0,1.62fr)_minmax(360px,1fr)]"}`}>
-        <section aria-labelledby="ldo-catalog-title" className="space-y-4">
-          <div className="flex items-center justify-between"><div><h2 id="ldo-catalog-title" className="text-lg font-bold text-on-surface">Ações da LDO</h2><p className="text-xs text-on-surface-variant">Selecione uma ação para definir seu enquadramento.</p></div><span className="text-xs font-semibold text-on-surface-variant">{filtered.length} ações</span></div>
-          {loading ? <div className="panel bg-surface p-8 text-sm text-on-surface-variant">Carregando ações…</div> : groups.map(([name, items]) => {
-            const showAll = expanded.has(name);
-            const visible = showAll ? items : items.slice(0, 5);
-    return <div key={name} className="panel bg-surface overflow-hidden border border-outline-variant [content-visibility:auto] [contain-intrinsic-size:420px]">
-              <div className="px-5 py-3 bg-surface-container border-b border-outline-variant flex justify-between gap-3"><h3 className="font-bold text-sm text-on-surface">{items[0].secretariaNome} <span className="font-mono text-xs text-on-surface-variant">({name})</span></h3><span className="text-xs text-on-surface-variant">{items.length} ações</span></div>
-              <div className="divide-y divide-outline-variant/50">{visible.map((action) => <ActionRow key={action.id} action={action} selected={action.id === selectedId} onSelect={() => setSelectedId(action.id)} />)}</div>
-              {items.length > 5 && <button type="button" onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; })} className="w-full px-5 py-2.5 text-xs font-bold text-primary hover:bg-primary/[0.04]">{showAll ? "Mostrar somente as 5 prioritárias" : `Ver todas as ${items.length} ações`}</button>}
-            </div>;
-          })}
-        </section>
-
-        <aside className="xl:sticky xl:top-20">
-          {selected && !isActionPanelOpen ? <ActionSummaryCard action={selected} onOpen={() => setIsActionPanelOpen(true)} /> : !selected ? <div className="panel bg-surface p-8 text-center text-sm text-on-surface-variant">Selecione uma ação da LDO.</div> : null}
-        </aside>
-      </div>
-
-      {isActionPanelOpen && selected && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4 md:p-8 animate-in fade-in zoom-in-95"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="action-panel-title"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setIsActionPanelOpen(false);
-            }
-          }}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setIsActionPanelOpen(false);
-          }}
-        >
-          <div className="w-full max-w-5xl">
-            <div className="mb-2 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsActionPanelOpen(false)}
-                aria-label="Fechar detalhamento da ação"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant bg-surface text-on-surface shadow-lg hover:bg-surface-container transition-colors"
-              >
-                <span aria-hidden="true" className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-            <div id="action-panel-title" className="sr-only">Detalhamento da ação {selected.acaoCodigo}</div>
-            <ClassificationPanel action={selected} onSaved={loadActions} />
-          </div>
-        </div>
-      )}
+      <DetalhamentoProposta deficitBase={loaRevenue === null || loaExpense === null ? null : loaRevenue - loaExpense} onAjusteTotalChange={setAjusteTotal} />
 
       {actions.some((action) => action.enquadramentos.length) && <TraceabilityMatrix actions={actions} />}
     </div>
   );
 }
 
-function ActionRow({ action, selected, onSelect }: { action: LdoAction; selected: boolean; onSelect: () => void }) {
-  return <button type="button" onClick={onSelect} aria-pressed={selected} className={`w-full text-left px-5 py-4 transition-colors ${selected ? "bg-primary/[0.06] ring-1 ring-inset ring-primary/30" : "hover:bg-surface-container-low"}`}>
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] text-on-surface-variant truncate">{action.programaCodigo ? `${action.programaCodigo} — ` : ""}{action.programaNome}</p><p className="text-[11px] text-on-surface-variant truncate">Função {action.funcaoCodigo || "—"} — {action.funcaoNome || "Não informada"} · Subfunção {action.subfuncaoCodigo || "—"} — {action.subfuncaoNome || "Não informada"}</p><h4 className="font-bold text-sm text-on-surface mt-0.5">{action.acaoCodigo}{action.acaoNome ? ` — ${action.acaoNome}` : ""}</h4><p className="text-xs text-on-surface-variant mt-1 line-clamp-2">{action.produto || "Produto não informado"}</p></div><span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold ${STATUS_CLASS[action.status]}`}>{STATUS_LABEL[action.status]}</span></div>
-    <div className="mt-3"><div className="flex justify-between text-[11px] mb-1"><span>{currency.format(action.valorDistribuido)} distribuídos</span><strong>{currency.format(action.saldo)} disponíveis</strong></div><ProgressBar value={action.valorDistribuido} total={action.custoFinanceiro} /></div>
-  </button>;
-}
-
-function ActionSummaryCard({ action, onOpen }: { action: LdoAction; onOpen: () => void }) {
-  return <button type="button" onClick={onOpen} className="panel w-full bg-surface text-left transition-shadow hover:shadow-lg" aria-label={`Abrir detalhamento da ação ${action.acaoCodigo}`}>
-    <div className="border-b border-outline-variant bg-[#001a4b] p-5 text-white"><p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Ação selecionada</p><h2 className="mt-1 font-bold">{action.acaoCodigo}{action.acaoNome ? ` — ${action.acaoNome}` : ""}</h2><p className="mt-1 text-xs text-white/70">{action.secretariaNome}</p></div>
-    <div className="space-y-4 p-5"><div><p className="text-[11px] text-on-surface-variant">Função / Subfunção</p><p className="text-xs font-semibold">{action.funcaoCodigo || "—"} — {action.funcaoNome || "Não informada"}</p><p className="text-xs font-semibold">{action.subfuncaoCodigo || "—"} — {action.subfuncaoNome || "Não informada"}</p></div><div><div className="flex justify-between text-xs"><span>Distribuído</span><strong>{currency.format(action.valorDistribuido)}</strong></div><ProgressBar value={action.valorDistribuido} total={action.custoFinanceiro} /><div className="mt-1 flex justify-between text-[11px] text-on-surface-variant"><span>Saldo</span><strong>{currency.format(action.saldo)}</strong></div></div><div className="flex items-center justify-between"><span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${STATUS_CLASS[action.status]}`}>{STATUS_LABEL[action.status]}</span><span className="text-xs font-bold text-primary">Abrir detalhes →</span></div></div>
-  </button>;
+function SummaryCard({ icon, label, value, hint, tone }: { icon: string; label: string; value: number | null; hint: string; tone?: "positive" | "negative" }) {
+  const valueClass = tone === "negative" ? "text-red-700" : tone === "positive" ? "text-green-700" : "text-on-surface";
+  return (
+    <div className="panel bg-surface border border-outline-variant p-4">
+      <div className="flex items-center justify-between text-on-surface-variant">
+        <span className="text-[11px] font-bold uppercase tracking-wider">{label}</span>
+        <span aria-hidden="true" className="material-symbols-outlined text-[20px]">{icon}</span>
+      </div>
+      <p className={`mt-2 text-2xl font-bold tabular-nums ${valueClass}`}>{value === null ? "—" : currency.format(value)}</p>
+      <p className="mt-1 text-[11px] text-on-surface-variant">{hint}</p>
+    </div>
+  );
 }
 
 function ProgressBar({ value, total }: { value: number; total: number }) {
   const width = total > 0 ? Math.min(100, (value / total) * 100) : 0;
   return <div className="h-2 bg-surface-container-high rounded-full overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={value}><div className="h-full bg-primary transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${width}%` }} /></div>;
-}
-
-function ClassificationPanel({ action, onSaved }: { action: LdoAction; onSaved: () => Promise<void> }) {
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [expenses, setExpenses] = useState<AuxiliaryCode[]>([]);
-  const [sources, setSources] = useState<AuxiliaryCode[]>([]);
-  const [applications, setApplications] = useState<AuxiliaryCode[]>([]);
-  const [expenseSearch, setExpenseSearch] = useState("");
-  const [expenseId, setExpenseId] = useState("");
-  const [sourceId, setSourceId] = useState("");
-  const [applicationId, setApplicationId] = useState("");
-  const [value, setValue] = useState("");
-  const [justification, setJustification] = useState("");
-  const [suggestionReason, setSuggestionReason] = useState("");
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-  const [existingExpenses, setExistingExpenses] = useState<ExpenseWithoutSubelement[]>([]);
-  const [saving, setSaving] = useState(false);
-  const expense = [...suggestions, ...expenses].find((item) => item.id === expenseId);
-
-  useEffect(() => {
-    setExpenseId(""); setSourceId(""); setApplicationId(""); setValue(""); setJustification(""); setSuggestionReason(""); setMessage(null);
-    void Promise.all([
-      fetch(`/api/elaboracao-loa/sugestoes?actionId=${action.id}`).then((response) => response.json()).then((data) => setSuggestions(data.suggestions ?? [])),
-      fetch("/api/elaboracao-loa/codigos?exercise=2026&type=FONTE_RECURSO&limit=100").then((response) => response.json()).then((data) => setSources(data.items ?? [])),
-      fetch("/api/elaboracao-loa/codigos?exercise=2026&type=CODIGO_APLICACAO&limit=500").then((response) => response.json()).then((data) => setApplications(data.items ?? [])),
-      fetch(`/api/elaboracao-loa/despesas-sem-subelemento?action=${encodeURIComponent(action.acaoCodigo)}&secretariat=${encodeURIComponent(action.secretariaNome)}`).then((response) => response.json()).then((data) => {
-        let customMap: Record<string, number> = {};
-        let justificationMap: Record<string, string> = {};
-        try { customMap = JSON.parse(localStorage.getItem("painel_loa_custom_edits_v1") || "{}"); justificationMap = JSON.parse(localStorage.getItem("painel_loa_justifications_v1") || "{}"); } catch { /* valores antigos inválidos não impedem a consulta */ }
-        setExistingExpenses((data.items ?? []).map((item: ExpenseWithoutSubelement) => {
-          const saved = Object.entries(customMap).find(([key]) => key.includes(item.natureza) && key.includes(`|${item.vinculo}|`));
-          const savedJustification = saved ? justificationMap[saved[0]] : undefined;
-          return { ...item, valorLoa: saved ? saved[1] : item.valorLoa, justificativa: savedJustification };
-        }));
-      }),
-    ]);
-  }, [action.id, action.acaoCodigo, action.secretariaNome]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const params = new URLSearchParams({ exercise: "2026", type: "SUBELEMENTO_DESPESA", limit: "40" });
-      if (expenseSearch) params.set("search", expenseSearch);
-      void fetch(`/api/elaboracao-loa/codigos?${params}`).then((response) => response.json()).then((data) => setExpenses(data.items ?? []));
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [expenseSearch]);
-
-  const validation = useMemo<EnquadramentoRuleMessage[]>(() => expense ? validateClassification({
-    actionText: `${action.acaoCodigo} ${action.acaoNome ?? ""}`, product: action.produto, expenseCode: expense.codigo,
-    sourceCode: sources.find((item) => item.id === sourceId)?.codigo, applicationCode: applications.find((item) => item.id === applicationId)?.codigo,
-    value: Number(String(value).replace(".", "").replace(",", ".")), remaining: action.saldo, justification,
-  }) : [], [action, expense, sourceId, applicationId, sources, applications, value, justification]);
-  const requiresJustification = expense ? isGenericExpenseCode(expense.codigo) : false;
-
-  async function save() {
-    if (!expense) return;
-    setSaving(true); setMessage(null);
-    try {
-      const response = await fetch("/api/elaboracao-loa/enquadramentos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actionId: action.id, expenseId: expense.id, sourceId, applicationId, value: Number(String(value).replace(".", "").replace(",", ".")), justification, suggestionReason }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.validation?.map((item: EnquadramentoRuleMessage) => item.message).join(" ") || data.message);
-      setMessage({ type: "success", text: "Enquadramento salvo e saldo atualizado." });
-      setValue(""); setJustification("");
-      await onSaved();
-    } catch (error) { setMessage({ type: "error", text: error instanceof Error ? error.message : "Não foi possível salvar." }); }
-    finally { setSaving(false); }
-  }
-
-  async function remove(id: string) {
-    if (!window.confirm("Remover este enquadramento? O registro continuará disponível no histórico.")) return;
-    await fetch(`/api/elaboracao-loa/enquadramentos?id=${id}`, { method: "DELETE" });
-    await onSaved();
-  }
-
-  return <section className="panel bg-surface border border-outline-variant overflow-hidden" aria-labelledby="classification-title">
-    <div className="bg-[#001a4b] text-white p-5"><p className="text-[10px] uppercase tracking-wider text-white/60 font-bold">Ação selecionada</p><h2 id="classification-title" className="font-bold mt-1">{action.acaoCodigo}{action.acaoNome ? ` — ${action.acaoNome}` : ""}</h2><p className="text-xs text-white/70 mt-1">Saldo disponível: <strong className="text-white">{currency.format(action.saldo)}</strong></p></div>
-    <div className="p-5 space-y-5">
-      <div><label htmlFor="expense-search" className="text-xs font-bold text-on-surface block mb-1">Buscar despesa ou subelemento</label><input id="expense-search" name="expense-search" autoComplete="off" value={expenseSearch} onChange={(event) => setExpenseSearch(event.target.value)} placeholder="Código ou descrição…" className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm" /><select name="expense" autoComplete="off" aria-label="Despesa selecionada" value={expenseId} onChange={(event) => { setExpenseId(event.target.value); setSuggestionReason(""); }} className="w-full mt-2 rounded-lg border border-outline-variant px-3 py-2 text-xs"><option value="">Selecione no catálogo</option>{expenses.map((item) => <option key={item.id} value={item.id}>{item.codigo} — {item.nome}</option>)}</select></div>
-      <div className="grid grid-cols-1 gap-3"><label className="text-xs font-bold">Fonte de recurso *<select name="source" autoComplete="off" value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="w-full mt-1 rounded-lg border border-outline-variant px-3 py-2 text-xs font-normal"><option value="">Selecione</option>{sources.map((item) => <option key={item.id} value={item.id}>{item.codigo} — {item.nome}</option>)}</select></label><label className="text-xs font-bold">Código de aplicação *<select name="application" autoComplete="off" value={applicationId} onChange={(event) => setApplicationId(event.target.value)} className="w-full mt-1 rounded-lg border border-outline-variant px-3 py-2 text-xs font-normal"><option value="">Selecione</option>{applications.map((item) => <option key={item.id} value={item.id}>{item.codigo} — {item.nome}</option>)}</select></label></div>
-      <label className="text-xs font-bold block">Valor do enquadramento *<input name="allocation-value" autoComplete="off" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value.replace(/-/g, ""))} placeholder="Ex.: 1.250,00" className="w-full mt-1 rounded-lg border border-outline-variant px-3 py-2 text-sm text-right font-mono tabular-nums" /></label>
-      {requiresJustification && <label className="text-xs font-bold block text-amber-900">Justificativa técnica *<textarea name="technical-justification" autoComplete="off" value={justification} onChange={(event) => setJustification(event.target.value)} rows={3} placeholder="Explique por que a classificação genérica é necessária…" className="w-full mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-on-surface" /></label>}
-      {expense && validation.length > 0 && <div className="space-y-1" aria-live="polite">{validation.map((item, index) => <p key={`${item.rule}-${index}`} className={`text-xs border-l-2 pl-2 ${item.severity === "error" ? "border-red-500 text-red-700" : "border-amber-500 text-amber-800"}`}><strong>{item.rule}:</strong> {item.message}</p>)}</div>}
-      {message && <div role="status" className={`rounded-lg border p-3 text-xs ${message.type === "success" ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>{message.text}</div>}
-      <button type="button" onClick={() => void save()} disabled={!expenseId || validation.some((item) => item.severity === "error") || saving} className="w-full min-h-11 bg-primary text-on-primary font-bold text-sm disabled:opacity-50">{saving ? "Salvando…" : "Salvar enquadramento"}</button>
-      {action.enquadramentos.length > 0 && <div className="pt-4 border-t border-outline-variant"><h3 className="text-xs font-bold mb-2">Despesas já vinculadas</h3><div className="space-y-2">{action.enquadramentos.map((item) => <div key={item.id} className="border border-outline-variant p-3 text-xs"><div className="flex justify-between gap-2"><div><strong className="font-mono text-primary">{item.despesa.codigo}</strong><p className="mt-0.5">{item.despesa.nome}</p></div><button type="button" onClick={() => void remove(item.id)} aria-label={`Remover ${item.despesa.codigo}`} className="material-symbols-outlined text-red-600 text-[18px]">delete</button></div><p className="font-bold mt-2">{currency.format(item.valor)}</p>{item.justificativa && <p className="mt-2 text-on-surface-variant"><strong>Justificativa:</strong> {item.justificativa}</p>}</div>)}</div></div>}
-      {existingExpenses.length > 0 && (() => {
-        const groupedExpensesMap = new Map<string, {
-          natureza: string;
-          elemento: string;
-          vinculos: Set<string>;
-          processos: Set<string>;
-          justificativas: Set<string>;
-          valorTotal: number;
-          itensCount: number;
-          itens: typeof existingExpenses;
-        }>();
-
-        existingExpenses.forEach((item) => {
-          const key = item.natureza || item.elemento || "Sem Código";
-          const existing = groupedExpensesMap.get(key);
-          if (existing) {
-            existing.valorTotal += item.valorLoa;
-            existing.itensCount += 1;
-            if (item.vinculo && item.vinculo !== "—") existing.vinculos.add(item.vinculo);
-            if (item.processo && item.processo !== "—") existing.processos.add(item.processo);
-            if (item.justificativa && item.justificativa !== "—") existing.justificativas.add(item.justificativa);
-            existing.itens.push(item);
-          } else {
-            const vinculos = new Set<string>();
-            const processos = new Set<string>();
-            const justificativas = new Set<string>();
-            if (item.vinculo && item.vinculo !== "—") vinculos.add(item.vinculo);
-            if (item.processo && item.processo !== "—") processos.add(item.processo);
-            if (item.justificativa && item.justificativa !== "—") justificativas.add(item.justificativa);
-            groupedExpensesMap.set(key, {
-              natureza: item.natureza,
-              elemento: item.elemento,
-              vinculos,
-              processos,
-              justificativas,
-              valorTotal: item.valorLoa,
-              itensCount: 1,
-              itens: [item],
-            });
-          }
-        });
-
-        const groupedExpenses = Array.from(groupedExpensesMap.values());
-
-        return (
-          <div className="pt-4 border-t border-outline-variant">
-            <h3 className="text-xs font-bold mb-1">Despesas LOA já digitadas sem subelemento (Agrupadas por Natureza)</h3>
-            <p className="text-[11px] text-on-surface-variant mb-2">Informações agregadas da Análise LOA por código de natureza de despesa.</p>
-            <div className="overflow-x-auto rounded-lg border border-blue-200">
-              <table className="w-full min-w-[760px] text-left text-xs">
-                <caption className="sr-only">Despesas já digitadas sem subelemento agrupadas por código de natureza</caption>
-                <thead className="bg-blue-50 text-[10px] uppercase tracking-wide text-on-surface-variant">
-                  <tr>
-                    <th scope="col" className="px-3 py-2 font-bold">Natureza da Despesa</th>
-                    <th scope="col" className="px-3 py-2 font-bold">Elemento</th>
-                    <th scope="col" className="px-3 py-2 font-bold">Vínculo(s)</th>
-                    <th scope="col" className="px-3 py-2 font-bold">Processo(s)</th>
-                    <th scope="col" className="px-3 py-2 text-right font-bold">Valor Total LOA</th>
-                    <th scope="col" className="px-3 py-2 font-bold">Justificativas</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-blue-100">
-                  {groupedExpenses.map((group) => (
-                    <tr key={group.natureza || group.elemento} className="bg-blue-50/30 align-top">
-                      <td className="px-3 py-2 font-medium text-on-surface">
-                        <div>{group.natureza || "—"}</div>
-                        {group.itensCount > 1 && (
-                          <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-semibold">
-                            {group.itensCount} registros agrupados
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 font-mono font-bold text-primary">{group.elemento || "—"}</td>
-                      <td className="px-3 py-2 text-on-surface-variant">
-                        {group.vinculos.size > 0 ? Array.from(group.vinculos).join(", ") : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-on-surface-variant">
-                        {group.processos.size > 0 ? Array.from(group.processos).join(", ") : "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-primary">
-                        {currency.format(group.valorTotal)}
-                      </td>
-                      <td className="max-w-[260px] px-3 py-2 text-on-surface-variant">
-                        {group.justificativas.size > 0 ? Array.from(group.justificativas).join(" | ") : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="border-t border-blue-200 bg-blue-50">
-                  <tr>
-                    <td colSpan={4} className="px-3 py-2 font-bold text-on-surface">
-                      Total Geral ({existingExpenses.length} registros em {groupedExpenses.length} naturezas)
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-primary">
-                      {currency.format(existingExpenses.reduce((total, item) => total + item.valorLoa, 0))}
-                    </td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        );
-      })()}
-      {suggestions.length > 0 && <fieldset className="border-t border-outline-variant pt-4"><legend className="text-xs font-bold text-on-surface mb-2">Sugestões para esta ação</legend><p className="text-[11px] text-on-surface-variant mb-2">Selecione uma sugestão para preencher a despesa do enquadramento.</p><div className="space-y-2">{suggestions.slice(0, 4).map((item) => <button key={item.id} type="button" onClick={() => { setExpenseId(item.id); setSuggestionReason(item.reason); }} className={`w-full text-left border p-3 transition-colors ${expenseId === item.id ? "border-primary bg-primary/[0.05]" : "border-outline-variant hover:border-primary/50"}`}><span className="font-mono text-xs font-bold text-primary">{item.codigo}</span><span className="block text-xs font-semibold mt-0.5">{item.nome}</span><span className="block text-[10px] text-on-surface-variant mt-1">Motivo: {item.reason}</span></button>)}</div></fieldset>}
-    </div>
-  </section>;
 }
 
 function EmptyState() {

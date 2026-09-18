@@ -95,7 +95,11 @@ export const AnaliseLoaAdvancedFilters = React.memo(function AnaliseLoaAdvancedF
   );
 
   return (
-    <section className="glass-card p-5 bg-surface border border-outline-variant space-y-4 rounded-2xl shadow-xs">
+    <section
+      className={`glass-card p-5 bg-surface border border-outline-variant space-y-4 rounded-2xl shadow-xs ${
+        openFilterKey ? "relative z-50" : ""
+      }`}
+    >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">tune</span>

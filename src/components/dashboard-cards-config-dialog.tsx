@@ -12,7 +12,10 @@ export const DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG: AnalyticDashboardLayoutCo
   sectionsOrder: [
     "top-kpis",
     "analises-combinadas",
+    "indices-constitucionais",
+    "emendas-impositivas",
     "filtros",
+    "comparativo-secretarias-ldo",
     "classificacao-despesa",
     "menu-secretarias",
     "composicao-analise",
@@ -32,7 +35,10 @@ export const DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG: AnalyticDashboardLayoutCo
     // Seções
     "top-kpis": true,
     "analises-combinadas": true,
+    "indices-constitucionais": true,
+    "emendas-impositivas": true,
     "filtros": true,
+    "comparativo-secretarias-ldo": true,
     "classificacao-despesa": true,
     "menu-secretarias": true,
     "composicao-analise": true,
@@ -55,6 +61,16 @@ export const ANALYTIC_SECTIONS_METADATA: Record<string, { label: string; icon: s
     icon: "grid_view",
     description: "Visão rápida com Despesa LDO, Despesa LOA, Correntes, Investimentos e Conformidade.",
   },
+  "indices-constitucionais": {
+    label: "Índices Constitucionais Mínimos",
+    icon: "gavel",
+    description: "Mínimos de Saúde (15%) e Educação (25%): valor a deduzir da receita e valor aplicado na LOA.",
+  },
+  "emendas-impositivas": {
+    label: "Emendas Impositivas",
+    icon: "how_to_vote",
+    description: "Vereadores, cota por vereador, mínimo para Saúde e total das cotas.",
+  },
   "analises-combinadas": {
     label: "Análises Combinadas & Alertas",
     icon: "insights",
@@ -64,6 +80,11 @@ export const ANALYTIC_SECTIONS_METADATA: Record<string, { label: string; icon: s
     label: "Filtros Orçamentários",
     icon: "tune",
     description: "Seleção por órgão, unidade, função, subfunção, programa, ação e vínculos.",
+  },
+  "comparativo-secretarias-ldo": {
+    label: "Quadro Comparativo LOA vs. LDO por Secretaria",
+    icon: "balance",
+    description: "Comparativo detalhado entre Valor LOA proposta (vigente + reajuste), Valor LDO e Diferença.",
   },
   "classificacao-despesa": {
     label: "Classificação da Despesa (Gráficos)",

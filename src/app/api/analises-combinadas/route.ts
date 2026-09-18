@@ -18,12 +18,9 @@ export async function GET(req: NextRequest) {
 
     const countLoaDespesas = await db.budgetRecord.count();
 
-    // LOA Receitas: podemos verificar no ArquivoImportacao ou se existe alguma tabela futura
-    const countLoaReceitas = await db.arquivoImportacao.count({
-      where: {
-        tipoImportacao: "LOA_RECEITAS",
-        status: { in: ["CONCLUIDO", "CONCLUIDO_COM_ALERTAS"] },
-      },
+    // LOA Receitas: consulta a base de previsão da LOA
+    const countLoaReceitas = await db.loaReceita.count({
+      where: exercicio ? { exercicio } : {},
     });
 
     const statusBases = {
@@ -64,6 +61,21 @@ export async function GET(req: NextRequest) {
       (sum, r) => sum + Number(r.valorTotalLdo || 0),
       0
     );
+
+    // LDO da administração indireta (o restante é da Prefeitura). "IPMO - RC" vem antes de "IPMO".
+    const entidadesIndiretas = [
+      { nome: "CMO", padrao: /\bCMO\b/i },
+      { nome: "IPMO - RC", padrao: /IPMO\s*-\s*RC/i },
+      { nome: "IPMO", padrao: /\bIPMO\b/i },
+      { nome: "FITO", padrao: /\bFITO\b/i },
+    ];
+    const ldoEntidades = entidadesIndiretas.map(({ nome }) => ({ nome, valor: 0 }));
+    ldoRecords.forEach((r) => {
+      const apelido = r.apelidoNormalizado || r.apelidoOriginal || "";
+      const index = entidadesIndiretas.findIndex(({ padrao }) => padrao.test(apelido));
+      if (index >= 0) ldoEntidades[index].valor += Number(r.valorTotalLdo || 0);
+    });
+    ldoEntidades.forEach((entidade) => { entidade.valor = Math.round(entidade.valor * 100) / 100; });
 
     // LDO por Vínculo consolidado
     const ldoPorVinculoMap: Record<string, { vinculo: string; descricao: string; totalLdo: number }> = {};
@@ -166,6 +178,27 @@ export async function GET(req: NextRequest) {
       console.error("Erro ao consultar IniciativaEstrategica:", iniciativaErr instanceof Error ? iniciativaErr.message : iniciativaErr);
     }
 
+    const totalLoaReceitasRaw = await db.loaReceita.aggregate({
+      where: exercicio ? { exercicio } : {},
+      _sum: { valor: true },
+    });
+    const totalLoaReceitas = Number(totalLoaReceitasRaw._sum?.valor || 0);
+
+    // Receita LOA por natureza (apelido) e fontes com valor previsto, para os cards do painel LOA
+    const loaReceitaPorNatureza = await db.loaReceita.groupBy({
+      by: ["naturezaReceita"],
+      where: exercicio ? { exercicio } : {},
+      _sum: { valor: true },
+    });
+    const maiorReceitaLoa = loaReceitaPorNatureza
+      .map((r) => ({ natureza: r.naturezaReceita, valor: Number(r._sum.valor || 0) }))
+      .sort((a, b) => b.valor - a.valor)[0] ?? null;
+    const fontesLoaReceita = await db.loaReceita.findMany({
+      where: { ...(exercicio ? { exercicio } : {}), valor: { not: 0 } },
+      distinct: ["fonteRecurso"],
+      select: { fonteRecurso: true },
+    });
+
     return NextResponse.json({
       statusBases: {
         ...statusBases,
@@ -178,7 +211,10 @@ export async function GET(req: NextRequest) {
       totais: {
         totalDespesaLoa,
         totalReceitaLdo,
-        totalLoaReceitas: 0, // Inexistente ou parcial
+        ldoEntidades,
+        totalLoaReceitas,
+        maiorReceitaLoa,
+        qtdFontesLoaReceita: fontesLoaReceita.length,
         totalReceitaArrecadada: arrecadadaTotal,
         qtdAnosArrecadacao,
         totalIniciativas,

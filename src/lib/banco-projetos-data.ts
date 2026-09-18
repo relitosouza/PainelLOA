@@ -4,6 +4,66 @@ export type BancoProjetosDetalhes = { editais: number; naturezas: string[] };
 export const BANCO_PROJETOS_TOTAL_REGISTROS = 175;
 export const BANCO_PROJETOS_TOTAL_VALOR = 264155332.95;
 
+/**
+ * Secretarias do orçamento vigente (peças LOA/LDO de public/loa_new.xlsx).
+ *
+ * A importação inicial do Banco de Projetos cobre apenas parte delas, por isso esta lista
+ * é a base das sugestões do formulário: sem ela não seria possível lançar um projeto para
+ * a Saúde ou para qualquer órgão que não tivesse projeto na planilha original.
+ */
+export const SECRETARIAS_ORCAMENTO: string[] = [
+  "01 - CMO",
+  "02 - GABINETE DO PREFEITO",
+  "04 - SECRETARIA DE FINANÇAS",
+  "05 - PROCURADORIA GERAL DO MUNICÍPIO",
+  "06 - SECRETARIA DE ADMINISTRAÇÃO",
+  "07 - SECRETARIA DE EMPREGO, TRABALHO E RENDA",
+  "08 - SECRETARIA DE EDUCAÇÃO",
+  "09 - SECRETARIA DA SAÚDE",
+  "11 - SECRETARIA DE SERVIÇOS E OBRAS",
+  "12 - SECRETARIA DE ESPORTE, RECREAÇÃO E LAZER",
+  "13 - SECRETARIA DE HABITAÇÃO",
+  "14 - SECRETARIA DE ASSISTÊNCIA SOCIAL",
+  "15 - SECRETARIA DA CULTURA",
+  "16 - SECRETARIA DE TECNOLOGIA, INOVAÇÃO E DESENVOLVIMENTO ECONÔMICO",
+  "17 - SECRETARIA DE MEIO AMBIENTE E RECURSOS HÍDRICOS",
+  "18 - ENCARGOS/ADMINISTRAÇÃO",
+  "18 - ENCARGOS/FINANÇAS",
+  "18 - ENCARGOS/TECNOLOGIA",
+  "19 - SECRETARIA DE TRANSPORTE E DA MOBILIDADE URBANA",
+  "20 - SECRETARIA DE SEGURANÇA E CONTROLE URBANO",
+  "21 - IPMO",
+  "22 - FITO",
+  "23 - SECRETARIA DE COMUNICAÇÃO",
+  "24 - SECRETARIA DE PLANEJAMENTO E GESTÃO",
+  "27 - CONTROLADORIA GERAL DO MUNICÍPIO",
+  "28 - SECRETARIA DE GOVERNO",
+  "29 - SECRETARIA EXECUTIVA DA INFÂNCIA E JUVENTUDE",
+  "30 - SECRETARIA EXECUTIVA DA PESSOA COM DEFICIÊNCIA",
+  "31 - SECRETARIA EXECUTIVA DE POLITICAS DE PROMOÇÃO DA IGUALDADE RACIAL",
+  "32 - SECRETARIA EXECUTIVA DE POLÍTICAS PARA MULHERES E DIVERSIDADE",
+  "33 - SECRETARIA EXECUTIVA DE COMPRAS E LICITAÇÕES",
+  "34 - COORDENADORIA DA DEFESA CIVIL",
+  "35 - SECRETARIA DA CASA CIVIL",
+  "36 - SECRETARIA DA FAMÍLIA, CIDADANIA E SEGURANÇA ALIMENTAR",
+  "77 - IPMO - RC",
+  "99 - PMO - RC",
+];
+
+/**
+ * Sugestões do campo Secretaria: o orçamento vigente, as secretarias da importação inicial
+ * e as criadas manualmente (`extras`), para que um órgão novo reapareça nos próximos
+ * lançamentos. O campo continua aceitando texto livre.
+ */
+export function getSecretariasSugeridas(extras: string[] = []): string[] {
+  const todas = new Set<string>([
+    ...SECRETARIAS_ORCAMENTO,
+    ...BANCO_PROJETOS_SECRETARIAS.map((item) => item.secretaria),
+    ...extras.filter(Boolean),
+  ]);
+  return [...todas].sort((left, right) => left.localeCompare(right, "pt-BR", { numeric: true }));
+}
+
 export const BANCO_PROJETOS_SECRETARIAS: BancoProjetosSecretaria[] = [
   { secretaria: "13 - SECRETARIA DE HABITAÇÃO", projetos: 23, valor: 126723821.29 },
   { secretaria: "11 - SECRETARIA DE SERVIÇOS E OBRAS", projetos: 13, valor: 33999919.77 },
