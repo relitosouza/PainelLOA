@@ -118,7 +118,9 @@ if [ "$SKIP_BACKUP" = false ]; then
   DB_CONTAINER="painel-loa-db"
   if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
     log_info "Executando backup de segurança do PostgreSQL antes do deploy..."
-    mkdir -p "${BACKUP_DIR}"
+    mkdir -p "${BACKUP_DIR}" 2>/dev/null || true
+    chmod 777 "${BACKUP_DIR}" 2>/dev/null || true
+    chmod -R a+rwX "${BACKUP_DIR}" 2>/dev/null || true
     BACKUP_FILE="${BACKUP_DIR}/dump_pre_deploy_${TIMESTAMP}.sql"
     
     # Obtém credenciais do container ou do ambiente
@@ -127,11 +129,12 @@ if [ "$SKIP_BACKUP" = false ]; then
     
     if docker exec "${DB_CONTAINER}" pg_dump -U "${POSTGRES_USER_VAL}" -d "${POSTGRES_DB_VAL}" > "${BACKUP_FILE}" 2>/dev/null; then
       gzip -f "${BACKUP_FILE}"
+      chmod 666 "${BACKUP_FILE}.gz" 2>/dev/null || true
       log_success "Backup salvo em: ${BACKUP_FILE}.gz"
       # Manter apenas os últimos 10 backups automáticos para economizar disco
-      ls -t "${BACKUP_DIR}"/dump_pre_deploy_*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
+      ls -t "${BACKUP_DIR}"/dump_pre_deploy_*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm -f 2>/dev/null || true
     else
-      log_warning "Não foi possível gerar pg_dump automático. Continuando com cautela..."
+      log_warning "Não foi possível gerar pg_dump automático. Verifique permissões da pasta ${BACKUP_DIR}."
       rm -f "${BACKUP_FILE}"
     fi
   else

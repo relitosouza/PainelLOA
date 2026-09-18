@@ -34,17 +34,23 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
+RUN apk add --no-cache postgresql-client bash gzip
+
 # Instala prisma globalmente no runner para permitir comandos como `prisma db push`
 RUN npm install -g prisma@^6.10.0
+
+# Cria diretório de backups com permissões para o usuário da aplicação
+RUN mkdir -p /app/backups && chown -R nextjs:nodejs /app/backups && chmod 777 /app/backups
 
 # Copia arquivos públicos e standalone compilados
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --chown=nextjs:nodejs scripts ./scripts
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 
-RUN chmod +x ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh ./scripts/*.sh
 
 USER nextjs
 
