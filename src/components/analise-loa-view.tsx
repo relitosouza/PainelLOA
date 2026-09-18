@@ -2313,28 +2313,78 @@ export function AnaliseLoaView() {
       };
     });
 
-    // 2. Aba: Detalhamento Analítico Completo
+    // Extração de códigos e referências completas para enriquecer a exportação
+    const extractCode = (value?: string) => value?.trim().match(/^[\d.]+/)?.[0] ?? "";
+    const classificationKey = (item: RawBudgetItem) => [item.secretaria, item.unidade, item.programa, item.acao].join("|");
+    const classificationByContext = new Map<string, RawBudgetItem>();
+    const classificationByAction = new Map<string, RawBudgetItem>();
+    rawItems.forEach((item) => {
+      if (!item.programaticaLoa) return;
+      classificationByContext.set(classificationKey(item), item);
+      if (!classificationByAction.has(item.acao)) classificationByAction.set(item.acao, item);
+    });
+
+    // 2. Aba: Detalhamento Analítico Completo (Todas as Colunas Orçamentárias)
     const analiticoData = editableGroups.flatMap((group) =>
       group.children.map((item) => {
+        const reference = classificationByContext.get(classificationKey(item)) || classificationByAction.get(item.acao);
+        const functionName = item.funcao || reference?.funcao || "";
+        const subfunction = item.subfuncao || reference?.subfuncao || "";
+        const programaticaLoa = item.programaticaLoa || reference?.programaticaLoa || "";
+        const secretariaCode = extractCode(item.secretaria);
+        const unidadeCode = extractCode(item.unidade);
         const original = originalValuesById.get(item.id) ?? item.valLdo;
+        const vinculoCompleto = item.codigoAplicacao
+          ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+          : item.fonteVinculo || "01";
+        const valLoaTotal = getItemLoaTotal(item);
+        const diffTotal = valLoaTotal - item.valLdo;
+        const tipoDespesa = (item.contrato || item.projetoIniciado || "").trim() ? "CONTRATO" : "DEMAIS";
+
         return {
-          Secretaria: item.secretaria,
-          Programa: item.programa,
-          Ação: item.acao,
+          "UG": secretariaCode,
+          "Cód. Secretaria": secretariaCode,
+          "Secretaria": item.secretaria,
+          "Cód. Órgão": extractCode(item.orgao),
+          "Órgão": item.orgao || "01 - PREFEITURA DO MUNICÍPIO DE OSASCO",
+          "Cód. Unidade": unidadeCode,
+          "Unidade Orçamentária": item.unidade,
+          "Cód. Função": extractCode(functionName),
+          "Função": functionName,
+          "Cód. Subfunção": extractCode(subfunction),
+          "Subfunção": subfunction,
+          "Cód. Programa": extractCode(item.programa),
+          "Programa": item.programa,
+          "Cód. Ação": extractCode(item.acao),
+          "Ação": item.acao,
+          "Tipo de Ação": item.tipoAcao || getActionTypeLabel(item.acao),
+          "Programática LOA": programaticaLoa,
+          "Cód. Natureza": extractCode(item.natureza || item.elemento),
           "Natureza da Despesa": item.natureza || item.elemento,
-          Elemento: item.elemento,
-          Subelemento: item.subelemento || "—",
-          "Fonte/Vínculo": item.fonteVinculo || "01",
-          Processo: item.processo || "—",
+          "Categoria Econômica": item.categoriaEconomica || "—",
+          "Grupo de Natureza": item.grupoNatureza || "—",
+          "Elemento de Despesa": item.elemento,
+          "Subelemento": item.subelemento || "—",
+          "Fonte/Vínculo": vinculoCompleto,
+          "Código de Aplicação": item.codigoAplicacao || "—",
+          "Processo Administrativo": item.processo || "—",
           "Contrato / Projeto Iniciado": (item.contrato || item.projetoIniciado || "").trim() || "NÃO",
-          "Valor Original (R$)": original,
+          "Tipo de Despesa": tipoDespesa,
+          "Peça Orçamentária": "LOA 2027",
+          "Valor Original LDO (R$)": original,
+          "Valor LOA 2026 (Inicial) (R$)": item.valLoa2026 ?? 0,
           "Valor LOA Vigente (R$)": item.valLoa,
           "Valor Reajuste (R$)": item.valorReajuste ?? 0,
+          "Valor Vigente + Reajuste (R$)": item.valLoa + (item.valorReajuste ?? 0),
           "Valor Aditamento (R$)": item.valorAditamento ?? 0,
-          "Valor Total (R$)": getItemLoaTotal(item),
-          "Diferença Total - LDO (R$)": getItemLoaTotal(item) - item.valLdo,
-          "Validado pelo usuário": validatedRows[item.id] ? "SIM" : "NÃO",
-          "Justificativa do Ajuste": (justifications[item.id] || "").trim() || "—",
+          "Valor Sugestão SF (R$)": item.valorSugestaoSf ?? 0,
+          "Valor Corte GP (R$)": item.valorCorteGp ?? 0,
+          "Valor Total LOA 2027 (R$)": valLoaTotal,
+          "Diferença Total - LDO (R$)": diffTotal,
+          "Variação vs LDO (%)": item.valLdo > 0 ? (diffTotal / item.valLdo) * 100 : 0,
+          "Status Orçamentário": getStatusLabel(item.valLdo, valLoaTotal),
+          "Validado pelo Usuário": validatedRows[item.id] ? "SIM" : "NÃO",
+          "Justificativa / Observação": item.observacao || (justifications[item.id] || "").trim() || "—",
         };
       })
     );
