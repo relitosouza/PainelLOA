@@ -2325,8 +2325,9 @@ export function AnaliseLoaView() {
     });
 
     // 2. Aba: Detalhamento Analítico Completo (Todas as Colunas Orçamentárias)
-    const analiticoData = editableGroups.flatMap((group) =>
-      group.children.map((item) => {
+    const analiticoData = editableGroups.flatMap((group) => {
+      const ldoData = getLdoPlanningForGroup(group);
+      return group.children.map((item) => {
         const reference = classificationByContext.get(classificationKey(item)) || classificationByAction.get(item.acao);
         const functionName = item.funcao || reference?.funcao || "";
         const subfunction = item.subfuncao || reference?.subfuncao || "";
@@ -2370,6 +2371,7 @@ export function AnaliseLoaView() {
           "Processo Administrativo": item.processo || "—",
           "Contrato / Projeto Iniciado": (item.contrato || item.projetoIniciado || "").trim() || "NÃO",
           "Tipo de Despesa": tipoDespesa,
+          "Origem da Despesa": item.origem || (item.id.startsWith("banco-projeto-") ? "Banco de Projetos" : "LOA Base"),
           "Peça Orçamentária": "LOA 2027",
           "Valor Original LDO (R$)": original,
           "Valor LOA 2026 (Inicial) (R$)": item.valLoa2026 ?? 0,
@@ -2385,9 +2387,12 @@ export function AnaliseLoaView() {
           "Status Orçamentário": getStatusLabel(item.valLdo, valLoaTotal),
           "Validado pelo Usuário": validatedRows[item.id] ? "SIM" : "NÃO",
           "Justificativa / Observação": item.observacao || (justifications[item.id] || "").trim() || "—",
+          "Indicador LDO": ldoData?.indicador || "Não informado",
+          "Unidade de Medida LDO": ldoData?.unidadeMedida || "Unidade",
+          "Meta Física LDO 2027": ldoData?.custoFisico2027 ?? 0,
         };
-      })
-    );
+      });
+    });
 
     // 3. Aba: Memória de Ajustes e Exclusões (Auditoria)
     const pendingItems = [
@@ -2412,26 +2417,29 @@ export function AnaliseLoaView() {
     });
 
     const workbook = XLSX.utils.book_new();
-    const wsAcoes = XLSX.utils.json_to_sheet(acoesData);
-    const wsAnalitico = XLSX.utils.json_to_sheet(analiticoData);
-    XLSX.utils.book_append_sheet(workbook, wsAcoes, "Resumo_Acoes_LOA");
 
-    // Abas de Contratos e Demais Despesas
+    // 1. Aba Principal: Detalhamento Analítico Completo (Primeira aba do Excel)
+    const wsAnalitico = XLSX.utils.json_to_sheet(analiticoData);
+    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_LOA_Completo");
+
+    // 2. Abas Especializadas por tipo de despesa (com todas as colunas)
     const analiticoContratos = analiticoData.filter((r) => String(r["Contrato / Projeto Iniciado"] || "").toUpperCase() === "SIM");
     const analiticoDemais = analiticoData.filter((r) => String(r["Contrato / Projeto Iniciado"] || "").toUpperCase() !== "SIM");
 
     if (analiticoContratos.length > 0) {
       const wsContratos = XLSX.utils.json_to_sheet(analiticoContratos);
-      XLSX.utils.book_append_sheet(workbook, wsContratos, "Contratos");
+      XLSX.utils.book_append_sheet(workbook, wsContratos, "Contratos_Vigentes");
     }
     if (analiticoDemais.length > 0) {
       const wsDemais = XLSX.utils.json_to_sheet(analiticoDemais);
       XLSX.utils.book_append_sheet(workbook, wsDemais, "Demais_Despesas");
     }
 
+    // 3. Aba de Resumo Consolidado por Ação
+    const wsAcoes = XLSX.utils.json_to_sheet(acoesData);
+    XLSX.utils.book_append_sheet(workbook, wsAcoes, "Resumo_Acoes");
 
-    XLSX.utils.book_append_sheet(workbook, wsAnalitico, "Detalhamento_Geral");
-
+    // 4. Aba de Memória de Auditoria e Alterações
     if (auditoriaData.length > 0) {
       const wsAuditoria = XLSX.utils.json_to_sheet(auditoriaData);
       XLSX.utils.book_append_sheet(workbook, wsAuditoria, "Memoria_Ajustes");
