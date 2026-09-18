@@ -12,6 +12,8 @@ import {
   type AnaliseLoaLayoutConfig,
 } from "./analise-loa-cards-config-dialog";
 import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
+import { ImportarDetalhamentoModal } from "./importar-detalhamento-modal";
+import type { ImportDetalhamentoResult } from "@/lib/import-detalhamento-excel";
 import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
@@ -210,6 +212,7 @@ export function AnaliseLoaView() {
 
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [expandedEditGroups, setExpandedEditGroups] = useState<Set<string>>(new Set());
   const [expandedNatureGroups, setExpandedNatureGroups] = useState<Set<string>>(new Set());
   const [collapsedLdoPlanningGroups, setCollapsedLdoPlanningGroups] = useState<Set<string>>(new Set());
@@ -1529,6 +1532,102 @@ export function AnaliseLoaView() {
     }
   };
 
+  // Aplicar alterações vindas da importação da aba Detalhamento_LOA_Completo (Excel)
+  const handleApplyImport = async (result: ImportDetalhamentoResult, justificativaGeral: string) => {
+    // 1. Atualizar o estado em memória dos itens
+    setRawItems(result.updatedRawItems);
+    setSavedRawItems(JSON.parse(JSON.stringify(result.updatedRawItems)));
+    setJustifications(result.justifications);
+    setValidatedRows(result.validatedRows);
+    setHasChanges(false);
+
+    // 2. Persistir no banco de dados e trilha de auditoria
+    const currentUser = getActiveUser();
+    const alteracoesPayload = result.alteracoes.map((alt) => ({
+      dotacaoId: alt.itemId,
+      campo: alt.campo,
+      valorAnterior: String(alt.antigo),
+      novoValor: String(alt.novo),
+      justificativa: justificativaGeral || "Importação em lote via planilha Excel",
+    }));
+
+    if (alteracoesPayload.length > 0) {
+      void fetch("/api/orcamento/alteracoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nomeOperador: currentUser.nome || "Técnico Responsável",
+          emailOperador: currentUser.email || null,
+          justificativaGeral: justificativaGeral || `Importação Excel por ${currentUser.nome}`,
+          alteracoes: alteracoesPayload,
+        }),
+      });
+    }
+
+    // Carregar configurações atuais para merge seguro
+    let existingCustomEdits = {};
+    let existingFinancialEdits = {};
+    let existingSubelementEdits = {};
+    try {
+      const [resC, resF, resS] = await Promise.all([
+        fetch("/api/configuracoes/layout?chave=painel_loa_custom_edits"),
+        fetch("/api/configuracoes/layout?chave=painel_loa_reajustes_aditamentos"),
+        fetch("/api/configuracoes/layout?chave=painel_loa_subelement_edits"),
+      ]);
+      if (resC.ok) {
+        const d = await resC.json();
+        if (d.success && d.valor) existingCustomEdits = d.valor;
+      }
+      if (resF.ok) {
+        const d = await resF.json();
+        if (d.success && d.valor) existingFinancialEdits = d.valor;
+      }
+      if (resS.ok) {
+        const d = await resS.json();
+        if (d.success && d.valor) existingSubelementEdits = d.valor;
+      }
+    } catch { }
+
+    const mergedCustomEdits = { ...existingCustomEdits, ...result.customEdits };
+    const mergedFinancialEdits = { ...existingFinancialEdits, ...result.financialEdits };
+    const mergedSubelementEdits = { ...existingSubelementEdits, ...result.subelementEdits };
+
+    const responses = await Promise.all([
+      fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_custom_edits", valor: mergedCustomEdits }),
+      }),
+      fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_reajustes_aditamentos", valor: mergedFinancialEdits }),
+      }),
+      fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_subelement_edits", valor: mergedSubelementEdits }),
+      }),
+      fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_justifications", valor: result.justifications }),
+      }),
+      fetch("/api/configuracoes/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chave: "painel_loa_validated_rows", valor: result.validatedRows }),
+      }),
+    ]);
+
+    if (responses.some((r) => !r.ok)) {
+      throw new Error("O servidor recusou a persistência de algumas configurações da planilha.");
+    }
+
+    notifyAnaliseLoaSaved();
+    alert(`Importação concluída com sucesso! ${result.itensModificados} item(ns) e ${result.alteracoes.length} campo(s) foram atualizados no sistema.`);
+  };
+
   // Extrair opções únicas cascading para os Chips de Filtro (dependente dos filtros atuais)
   const filterOptions = useMemo(() => {
     const getOptions = (key: keyof RawBudgetItem, currentFilterItems: RawBudgetItem[]) =>
@@ -2343,6 +2442,7 @@ export function AnaliseLoaView() {
         const tipoDespesa = (item.contrato || item.projetoIniciado || "").trim() ? "CONTRATO" : "DEMAIS";
 
         return {
+          "ID": item.id,
           "UG": secretariaCode,
           "Cód. Secretaria": secretariaCode,
           "Secretaria": item.secretaria,
@@ -3394,14 +3494,24 @@ export function AnaliseLoaView() {
                       </button>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Exportar</span>
+                      <span className="px-1 text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant">Planilhas & Relatórios</span>
                       <div className="flex flex-wrap gap-2">
                       <button
-                    onClick={exportToExcel}
-                    className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-sm">description</span>
-                    Excel
+                        type="button"
+                        onClick={() => setImportModalOpen(true)}
+                        className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-teal-50 text-teal-700 border border-teal-300 hover:bg-teal-100 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                        title="Importar dados e alterações da aba Detalhamento_LOA_Completo em Excel"
+                      >
+                        <span className="material-symbols-outlined text-sm">upload_file</span>
+                        <span>Importar Excel</span>
+                      </button>
+                      <button
+                        onClick={exportToExcel}
+                        className="min-h-11 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Exportar planilha analítica completa com todas as colunas em Excel"
+                      >
+                        <span className="material-symbols-outlined text-sm">description</span>
+                        Excel
                       </button>
                       <button
                     type="button"
@@ -5539,6 +5649,16 @@ export function AnaliseLoaView() {
           // Forçar recarregamento transparente dos dados no Painel
           setDataReloadKey((prev) => prev + 1);
         }}
+      />
+
+      {/* 10. POPUP MODAL: Importação da Planilha Detalhamento LOA Completo */}
+      <ImportarDetalhamentoModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        currentItems={rawItems}
+        currentValidatedRows={validatedRows}
+        currentJustifications={justifications}
+        onApplyImport={handleApplyImport}
       />
     </div>
   );
