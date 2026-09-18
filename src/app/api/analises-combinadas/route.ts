@@ -169,6 +169,21 @@ export async function GET(req: NextRequest) {
     });
     const totalLoaReceitas = Number(totalLoaReceitasRaw._sum?.valor || 0);
 
+    // Receita LOA por natureza (apelido) e fontes com valor previsto, para os cards do painel LOA
+    const loaReceitaPorNatureza = await db.loaReceita.groupBy({
+      by: ["naturezaReceita"],
+      where: exercicio ? { exercicio } : {},
+      _sum: { valor: true },
+    });
+    const maiorReceitaLoa = loaReceitaPorNatureza
+      .map((r) => ({ natureza: r.naturezaReceita, valor: Number(r._sum.valor || 0) }))
+      .sort((a, b) => b.valor - a.valor)[0] ?? null;
+    const fontesLoaReceita = await db.loaReceita.findMany({
+      where: { ...(exercicio ? { exercicio } : {}), valor: { not: 0 } },
+      distinct: ["fonteRecurso"],
+      select: { fonteRecurso: true },
+    });
+
     return NextResponse.json({
       statusBases: {
         ...statusBases,
@@ -182,6 +197,8 @@ export async function GET(req: NextRequest) {
         totalDespesaLoa,
         totalReceitaLdo,
         totalLoaReceitas,
+        maiorReceitaLoa,
+        qtdFontesLoaReceita: fontesLoaReceita.length,
         totalReceitaArrecadada: arrecadadaTotal,
         qtdAnosArrecadacao,
         totalIniciativas,

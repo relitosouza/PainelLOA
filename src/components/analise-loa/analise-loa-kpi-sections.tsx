@@ -7,10 +7,14 @@ import type { AnaliseLoaLayoutConfig } from "../analise-loa-cards-config-dialog"
 interface AnaliseLoaKpisProps {
   layoutConfig: AnaliseLoaLayoutConfig;
   ldoReceitaTotal: number;
+  loaReceitaResumo: { total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number };
   loaExpectativaTotal: number;
   metrics: {
     valLdoTotal: number;
     valLoaTotal: number;
+    valLoa2026Total: number;
+    valorSugestaoSfTotal: number;
+    valorCorteGpTotal: number;
     diff: number;
     percentExec: number;
     totalNaturezas: number;
@@ -20,7 +24,9 @@ interface AnaliseLoaKpisProps {
 export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
   layoutConfig,
   ldoReceitaTotal,
-}: Pick<AnaliseLoaKpisProps, "layoutConfig" | "ldoReceitaTotal">) {
+  loaReceitaResumo,
+}: Pick<AnaliseLoaKpisProps, "layoutConfig" | "ldoReceitaTotal" | "loaReceitaResumo">) {
+  const recLoa = loaReceitaResumo.total;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
@@ -48,7 +54,7 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
               <div key="rec-loa" className="glass-card bg-surface p-4 border-t-2 border-t-blue-600 shadow-sm rounded-xl">
                 <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor Previsto LOA</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                  {currency.format(0)}
+                  {currency.format(recLoa)}
                 </h3>
                 <p className="text-[10px] text-blue-700 font-semibold mt-1">Receita Fixada LOA</p>
               </div>
@@ -57,7 +63,6 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
 
           if (kpiId === "rec-diff") {
             const recLdo = ldoReceitaTotal;
-            const recLoa = 0;
             const recDiff = recLoa - recLdo;
             const isGreater = recDiff > 0;
             const isSmaller = recDiff < 0;
@@ -80,7 +85,7 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
               <div key="rec-exec" className="glass-card bg-surface p-4 border-t-2 border-t-tertiary shadow-sm rounded-xl">
                 <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Execução Planejamento</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                  {percent.format(ldoReceitaTotal > 0 ? 0 : 1)}
+                  {percent.format(ldoReceitaTotal > 0 ? recLoa / ldoReceitaTotal : 0)}
                 </h3>
                 <p className="text-[10px] text-tertiary font-semibold mt-1">Transformado em LOA</p>
               </div>
@@ -90,11 +95,11 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
           if (kpiId === "rec-maior") {
             return (
               <div key="rec-maior" className="glass-card bg-surface p-4 border-t-2 border-t-teal-600 shadow-sm rounded-xl">
-                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Maior Arrecadação LDO</p>
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Maior Receita LOA</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                  {currency.format(0)}
+                  {currency.format(loaReceitaResumo.maior?.valor ?? 0)}
                 </h3>
-                <p className="text-[10px] text-teal-700 font-semibold mt-1">Maior Fonte LDO</p>
+                <p className="text-[10px] text-teal-700 font-semibold mt-1">{loaReceitaResumo.maior?.natureza ?? "Sem receita LOA"}</p>
               </div>
             );
           }
@@ -104,9 +109,9 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
               <div key="rec-fontes" className="glass-card bg-surface p-4 border-t-2 border-t-amber-600 shadow-sm rounded-xl">
                 <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Total Fontes / Vínculos</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                  {integer.format(61)}
+                  {integer.format(loaReceitaResumo.qtdFontes)}
                 </h3>
-                <p className="text-[10px] text-amber-700 font-semibold mt-1">Fontes de Recurso LDO</p>
+                <p className="text-[10px] text-amber-700 font-semibold mt-1">Fontes com receita na LOA</p>
               </div>
             );
           }
@@ -191,6 +196,42 @@ export const AnaliseLoaDespesaKpis = React.memo(function AnaliseLoaDespesaKpis({
                   {percent.format(metrics.percentExec / 100)}
                 </h3>
                 <p className="text-[10px] text-teal-700 font-semibold mt-1">Transformado em LOA</p>
+              </div>
+            );
+          }
+
+          if (kpiId === "desp-loa2026") {
+            return (
+              <div key="desp-loa2026" className="glass-card bg-surface p-4 border-t-2 border-t-slate-500 shadow-sm rounded-xl">
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor LOA 2026</p>
+                <h3 className="text-lg font-headline font-extrabold text-on-surface">
+                  {currency.format(metrics.valLoa2026Total)}
+                </h3>
+                <p className="text-[10px] text-on-surface-variant font-semibold mt-1">Dotação inicial 2026</p>
+              </div>
+            );
+          }
+
+          if (kpiId === "desp-sugestao-sf") {
+            return (
+              <div key="desp-sugestao-sf" className="glass-card bg-surface p-4 border-t-2 border-t-amber-600 shadow-sm rounded-xl">
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Sugestão SF</p>
+                <h3 className="text-lg font-headline font-extrabold text-amber-700">
+                  {currency.format(metrics.valorSugestaoSfTotal)}
+                </h3>
+                <p className="text-[10px] text-amber-700 font-semibold mt-1">Cortes sugeridos</p>
+              </div>
+            );
+          }
+
+          if (kpiId === "desp-corte-gp") {
+            return (
+              <div key="desp-corte-gp" className="glass-card bg-surface p-4 border-t-2 border-t-rose-600 shadow-sm rounded-xl">
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Corte GP</p>
+                <h3 className="text-lg font-headline font-extrabold text-rose-700">
+                  {currency.format(metrics.valorCorteGpTotal)}
+                </h3>
+                <p className="text-[10px] text-rose-700 font-semibold mt-1">Cortes definidos</p>
               </div>
             );
           }
