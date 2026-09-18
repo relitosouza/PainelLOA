@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { Fragment, cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { currency, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
@@ -17,6 +17,17 @@ import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/anal
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
 import { openLoaReportWindow, shouldExcludeReportVinculo, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
+import {
+  buildAnaliseLoaItems,
+  getActionTypeLabel,
+  normalizeBancoProjetoAllocation,
+  withAddedExpenses,
+  withCustomEdits,
+  withFinancialEdits,
+  withSubelementEdits,
+  withoutRemoved,
+  type RawBudgetItem,
+} from "@/lib/loa-analise-items";
 import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
 import { normalizeActionLabel, normalizeProgramLabel } from "@/lib/loa-labels";
 import {
@@ -69,40 +80,7 @@ const INITIAL_FILTERS: TechnicalFilterState = {
   search: "",
 };
 
-export interface RawBudgetItem {
-  id: string;
-  progKey: string;
-  secretaria: string;
-  orgao: string;
-  unidade: string;
-  programa: string;
-  tipoAcao: string;
-  acao: string;
-  natureza: string;
-  fonteVinculo: string;
-  categoriaEconomica: string;
-  grupoNatureza: string;
-  elemento: string;
-  subelemento: string;
-  processo: string;
-  funcao?: string;
-  subfuncao?: string;
-  programaticaLoa?: string;
-  codigoAplicacao?: string;
-  projetoIniciado?: string;
-  contrato?: string;
-  observacao?: string;
-  valLdo: number;
-  valLoa: number;
-  valLoa2026?: number;
-  valorReajuste?: number;
-  valorAditamento?: number;
-  valorSugestaoSf?: number;
-  valorCorteGp?: number;
-  origem?: "Banco de Projetos";
-  bancoProjetoKey?: string;
-  vinculoParentId?: string;
-}
+export type { RawBudgetItem } from "@/lib/loa-analise-items";
 
 interface EditableGroup {
   id: string;
@@ -148,22 +126,19 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
   { key: "adjusted", label: "Validação" },
 ];
 
+// Ação e Elemento formam a coluna da árvore e ficam fixas no início; as demais podem mudar de posição.
+const FIXED_ANALYTICAL_COLUMNS: AnalyticalColumn[] = ["acao", "elemento"];
+const DEFAULT_COLUMN_ORDER = ANALYTICAL_COLUMNS.map((column) => column.key).filter((key) => !FIXED_ANALYTICAL_COLUMNS.includes(key));
+const orderFromSaved = (saved: AnalyticalColumn[]) => [
+  ...saved.filter((key) => DEFAULT_COLUMN_ORDER.includes(key)),
+  ...DEFAULT_COLUMN_ORDER.filter((key) => !saved.includes(key)),
+];
+
 const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
   calculateAnalyticalValues(item).loa2027;
 
 const getItemVigenteReajuste = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste">) =>
   calculateAnalyticalValues(item).vigenteComReajuste;
-
-const normalizeBancoProjetoAllocation = (item: RawBudgetItem): RawBudgetItem => {
-  const isBancoProjeto = item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey);
-  if (!isBancoProjeto || item.valLoa === 0) return item;
-  return {
-    ...item,
-    valLoa: 0,
-    valorAditamento: (item.valorAditamento ?? 0) + item.valLoa,
-    valLoa2026: 0,
-  };
-};
 
 const getColumnsPreferenceKey = (user: ActiveUser) => {
   const identity = user.id || user.email || user.nome || "usuario";
@@ -177,15 +152,6 @@ const getNatureValidationStatus = (validatedCount: number, totalCount: number): 
   return "Pendente";
 };
 
-function getActionTypeLabel(action: string): string {
-  if (!action) return "Outros";
-  const clean = action.trim();
-  const firstChar = clean.charAt(0);
-  if (firstChar === "0") return "0. Operação Especial";
-  if (firstChar === "1") return "1. Projeto";
-  if (firstChar === "2") return "2. Atividade";
-  return "Outros";
-}
 
 function getStatusLabel(valLdo: number, valLoa: number) {
   if (valLdo === 0 && valLoa > 0) return "Nova Dotação";
@@ -249,6 +215,7 @@ export function AnaliseLoaView() {
   const [tableSearch, setTableSearch] = useState("");
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(10);
+  const analyticalScrollRef = useRef<HTMLDivElement>(null);
   const [tableSort, setTableSort] = useState<{ column: TableSortColumn; direction: "asc" | "desc" }>({ column: "acao", direction: "asc" });
   const [natureSort, setNatureSort] = useState<{ column: "natureza" | "subelementos" | "valLdo" | "valLoa" | "diff" | "status"; direction: "asc" | "desc" }>({ column: "natureza", direction: "asc" });
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
@@ -259,6 +226,29 @@ export function AnaliseLoaView() {
   const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
     () => new Set(ANALYTICAL_COLUMNS.map((column) => column.key))
   );
+  const [columnOrder, setColumnOrder] = useState<AnalyticalColumn[]>(DEFAULT_COLUMN_ORDER);
+  const moveColumn = (key: AnalyticalColumn, offset: -1 | 1) =>
+    setColumnOrder((current) => {
+      const from = current.indexOf(key);
+      const to = from + offset;
+      if (from < 0 || to < 0 || to >= current.length) return current;
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+  // Renderiza as células de valor na ordem escolhida, alternando as faixas pela posição exibida.
+  const renderOrderedCells = (cells: Partial<Record<AnalyticalColumn, ReactNode>>) => {
+    let position = 0;
+    return columnOrder.map((key) => {
+      const cell = cells[key];
+      if (!isValidElement<{ className?: string }>(cell)) return null;
+      const band = position++ % 2 === 0 ? "col-band-gray" : "col-band-white";
+      const className = typeof cell.props.className === "string"
+        ? cell.props.className.replace(/col-band-(white|gray)/, band)
+        : cell.props.className;
+      return <Fragment key={key}>{cloneElement(cell, { className })}</Fragment>;
+    });
+  };
   const [columnsSaveState, setColumnsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -275,11 +265,11 @@ export function AnaliseLoaView() {
   const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
   const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
-  // Administração indireta (CMO, IPMO, IPMO-RC e FITO) não está na receita da Prefeitura (LoaReceita, UG 201).
+  // Administração indireta (IPMO, IPMO-RC e FITO) não está na receita da Prefeitura (LoaReceita, UG 201).
   // A receita LOA delas entra no card pelo valor da LOA 2027 de cada entidade na planilha base.
+  // A CMO fica de fora: é custeada pelo duodécimo repassado pela Prefeitura, já contido na receita da Prefeitura.
   const receitaLoaEntidades = useMemo(() => {
     const entidades = [
-      { codigo: "01", nome: "CMO" },
       { codigo: "21", nome: "IPMO" },
       { codigo: "77", nome: "IPMO - RC" },
       { codigo: "22", nome: "FITO" },
@@ -375,6 +365,7 @@ export function AnaliseLoaView() {
             ));
             ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
             setVisibleTableColumns(savedColumns);
+            setColumnOrder(orderFromSaved([...savedColumns]));
             return;
           }
         }
@@ -392,6 +383,7 @@ export function AnaliseLoaView() {
             ));
             ANALYTICAL_COLUMNS.filter((column) => column.required).forEach((column) => savedColumns.add(column.key));
             setVisibleTableColumns(savedColumns);
+            setColumnOrder(orderFromSaved([...savedColumns]));
           }
         }
       } catch { }
@@ -404,7 +396,7 @@ export function AnaliseLoaView() {
   }, [currentUser]);
 
   const saveColumnsPreference = async () => {
-    const columns = ANALYTICAL_COLUMNS.filter((column) => visibleTableColumns.has(column.key)).map((column) => column.key);
+    const columns = [...FIXED_ANALYTICAL_COLUMNS, ...columnOrder].filter((key) => visibleTableColumns.has(key));
     const preferenceKey = getColumnsPreferenceKey(currentUser);
     setColumnsSaveState("saving");
     try {
@@ -968,151 +960,7 @@ export function AnaliseLoaView() {
         const wb = XLSX.read(buffer, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-        const headers = (rows[0] ?? []) as unknown[];
-        const findCol = (...aliases: string[]) => {
-          const targets = aliases.map((a) => a.toLowerCase().trim());
-          for (let idx = headers.length - 1; idx >= 0; idx--) {
-            const h = String(headers[idx] ?? "").toLowerCase().trim();
-            if (targets.includes(h)) return idx;
-          }
-          return -1;
-        };
-
-        const columns = {
-          piece: findCol("peça orçamentária", "peca orcamentaria", "peça", "peca"),
-          programKey: findCol("programática_loa", "programatica_loa", "programatica"),
-          organ: findCol("secretaria", "orgao", "órgão", "secretaria_nome"),
-          unit: findCol("unidade", "unid", "cd_unid.-ds_unid."),
-          functionName: findCol("funcao", "função", "cd_função-ds_função", "cd_funcao-ds_funcao"),
-          subfunction: findCol("subfuncao", "subfunção", "cd subfunção-ds_subfunção", "cd subfuncao-ds_subfuncao"),
-          program: findCol("programa", "cd_programa-ds_programa"),
-          action: findCol("acao", "ação", "cd_ação-ds_ação", "cd_acao-ds_acao"),
-          nature: findCol("natureza", "natureza de despesa", "natureza da despesa"),
-          subelement: findCol("desc_sub", "desc sub", "subelemento", "descrição subelemento", "descricao subelemento"),
-          process: findCol("processo", "processo administrativo", "proc.", "proc", "processo_administrativo"),
-          value: findCol("valor", "val_loa", "valor loa", "valor_loa"),
-          link: findCol("vínculo", "vinculo", "fonte", "fonte de recursos", "fonte/vínculo", "fonte/vinculo"),
-          appCode: findCol("codigo_aplicacao", "cod_aplicacao", "codigo de aplicacao", "código de aplicação", "cod. aplicacao", "cod aplicacao", "aplicacao", "aplicação", "cd_aplicacao"),
-          obs: findCol("obs.", "obs", "observacao", "observação", "observacoes", "observações", "justificativa"),
-          iniciado: findCol("contrato", "contratos", "iniciado", "projeto iniciado", "projeto_iniciado", "contrato_iniciado"),
-        };
-
-        for (let i = 1; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r || r.length === 0) continue;
-
-          const peca = String(r[columns.piece] || "").trim().toUpperCase();
-          // Ignora linhas de totalização ou vazias sem identificador de peça
-          if (peca !== "LOA" && peca !== "LDO") continue;
-
-          const progKey = String(r[columns.programKey] || "").trim().replace(/^\.+/, "");
-          let organStr = String(r[columns.organ] || "").trim().replace(/^\.+/, "");
-          organStr = organStr.replace(/^(\d+)\s*-\s*/, (match, code) => `${code.padStart(2, "0")} - `);
-          if (organStr === "01 - CMO" || organStr === "01- CMO") organStr = "01 - CMO";
-          const rawUnitStr = String(r[columns.unit] || "").trim().replace(/^\.+/, "");
-          const unitStr = normalizeUnidadeOrcamentaria(organStr, rawUnitStr, progKey);
-          const functionStr = columns.functionName >= 0 ? String(r[columns.functionName] || "").trim().replace(/^\.+/, "") : "";
-          const subfunctionStr = columns.subfunction >= 0 ? String(r[columns.subfunction] || "").trim().replace(/^\.+/, "") : "";
-          const programStr = normalizeProgramLabel(String(r[columns.program] || "").trim().replace(/^\.+/, ""));
-          const actionStr = normalizeActionLabel(String(r[columns.action] || "").trim().replace(/^\.+/, ""));
-          if (!organStr && !programStr && !actionStr) continue;
-          let natureStr = String(r[columns.nature] || "").trim().replace(/^\.+/, "").replace(/\.\./g, ".");
-          natureStr = natureStr
-            .replace(/^3\.50\.39/, "3.3.50.39")
-            .replace(/^3\.90\.35/, "3.3.90.35")
-            .replace(/^4\.90\.52/, "4.4.90.52");
-          const subelemStr = String(r[columns.subelement] || "").trim().replace(/^\.+/, "");
-          const processStr = String(r[columns.process] || "").trim().replace(/^\.+/, "");
-          const obsStr = columns.obs >= 0 ? String(r[columns.obs] || "").trim() : "";
-          const iniciadoRaw = columns.iniciado >= 0 ? String(r[columns.iniciado] || "").trim().toUpperCase() : "";
-          const projetoIniciado = iniciadoRaw === "SIM" || iniciadoRaw === "NÃO" || iniciadoRaw === "NAO"
-            ? (iniciadoRaw === "NAO" ? "NÃO" : iniciadoRaw)
-            : undefined;
-          const valor = Number(r[columns.value]) || 0;
-          const realVinculoStr = String(r[columns.link] || "").trim();
-          let extractedFonte = realVinculoStr;
-          let extractedCodigoAplicacao: string | undefined = columns.appCode >= 0 ? String(r[columns.appCode] || "").trim() || undefined : undefined;
-
-          // Se o vínculo vier no formato composto por pontos (ex.: 01.110.0000)
-          if (realVinculoStr.includes(".") && !extractedCodigoAplicacao) {
-            const vParts = realVinculoStr.split(".");
-            if (vParts.length >= 2) {
-              extractedFonte = vParts[0];
-              extractedCodigoAplicacao = vParts.slice(1).join(".");
-            }
-          }
-
-          const natCodeClean = natureStr.split("-")[0].trim();
-          const natCodeRaw = natCodeClean.replace(/\D/g, "");
-          const officialDesc = nomMap[natCodeClean] || nomMap[natCodeRaw];
-          if (officialDesc) {
-            natureStr = `${natCodeClean} - ${officialDesc}`;
-          }
-
-          const parts = natCodeClean.split(".");
-          const catDespesaMap: Record<string, string> = {
-            "3": "3 — DESPESAS CORRENTES",
-            "4": "4 — DESPESAS DE CAPITAL",
-            "9": "9 — RESERVA DE CONTINGÊNCIA",
-          };
-          const catEcon = parts[0] ? (catDespesaMap[parts[0]] || `${parts[0]} — Despesa`) : "Outras";
-          const grupoDespesaMap: Record<string, string> = {
-            "0": "RESTOS A PAGAR",
-            "1": "PESSOAL E ENCARGOS SOCIAIS",
-            "2": "JUROS E ENCARGOS DA DÍVIDA",
-            "3": "OUTRAS DESPESAS CORRENTES",
-            "4": "INVESTIMENTOS",
-            "5": "INVERSÕES FINANCEIRAS",
-            "6": "AMORTIZAÇÃO DA DÍVIDA",
-            "8": "EXTRAORÇAMENTÁRIA",
-            "9": "RESERVA DE CONTINGÊNCIA",
-          };
-          const grupoNome = parts[1] ? grupoDespesaMap[parts[1]] : undefined;
-          const grpNat = parts[1]
-            ? (grupoNome ? `${parts[0]}.${parts[1]} — ${grupoNome}` : `${parts[0]}.${parts[1]} — Grupo`)
-            : "Outros";
-          const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
-          const vinculo = extractedFonte || (parts[3] ? `${parts[2]}.${parts[3]}` : "Tesouro / Próprio");
-          const codApp = extractedCodigoAplicacao;
-
-          const groupKey = `${organStr}|${actionStr}|${natureStr}|${vinculo}|${codApp || ""}|${processStr}|${subelemStr}`;
-
-          if (!loaMap.has(groupKey)) {
-            loaMap.set(groupKey, {
-              id: groupKey,
-              progKey: progKey || groupKey,
-              secretaria: organStr,
-              orgao: organStr,
-              unidade: unitStr,
-              funcao: functionStr,
-              subfuncao: subfunctionStr,
-              programaticaLoa: progKey,
-              programa: programStr,
-              tipoAcao: getActionTypeLabel(actionStr),
-              acao: actionStr,
-              natureza: natureStr,
-              fonteVinculo: vinculo,
-              codigoAplicacao: codApp,
-              categoriaEconomica: catEcon,
-              grupoNatureza: grpNat,
-              elemento: elem,
-              subelemento: subelemStr,
-              processo: processStr || "—",
-              projetoIniciado: projetoIniciado,
-              contrato: projetoIniciado || undefined,
-              observacao: obsStr || undefined,
-              valLdo: 0,
-              valLoa: 0,
-            });
-          }
-
-          const item = loaMap.get(groupKey)!;
-          if (peca === "LDO") {
-            item.valLdo = Math.round((item.valLdo + Math.round(valor * 100) / 100) * 100) / 100;
-          } else {
-            item.valLoa += valor;
-          }
-        }
+        buildAnaliseLoaItems(rows as unknown[][], nomMap).forEach((item) => loaMap.set(item.id, item));
 
         // A LOA 2026 é publicada por natureza de despesa, sem subelemento/processo. O valor Inicial é
         // distribuído entre os subelementos só para que os totais por natureza fechem; na tela ele
@@ -1147,7 +995,7 @@ export function AnaliseLoaView() {
           const addedById = new Map([...apiAddedList, ...localAddedList].map((item) => [item.id, item]));
           const addedList = [...addedById.values()];
           if (addedList.length) {
-            itemsArray = [...itemsArray, ...addedList.map(item => ({ ...item, valLoa2026: item.valLoa2026 ?? 0, tipoAcao: item.tipoAcao || getActionTypeLabel(item.acao) }))];
+            itemsArray = withAddedExpenses(itemsArray, addedList);
           }
         } catch {
           // Registros adicionais inválidos não impedem o carregamento da análise.
@@ -1165,10 +1013,7 @@ export function AnaliseLoaView() {
             const savedRemoved = localStorage.getItem("painel_loa_removed_expenses_v1");
             if (savedRemoved) removedIds = JSON.parse(savedRemoved) as string[];
           }
-          if (removedIds.length > 0) {
-            const removedSet = new Set(removedIds);
-            itemsArray = itemsArray.filter((item) => !removedSet.has(item.id));
-          }
+          itemsArray = withoutRemoved(itemsArray, removedIds);
         } catch { }
 
         // 3. Carregar e aplicar edições de valores
@@ -1179,14 +1024,7 @@ export function AnaliseLoaView() {
             const data = await resCustom.json();
             if (data.success && data.valor) customMap = data.valor;
           }
-          if (Object.keys(customMap).length > 0) {
-            itemsArray = itemsArray.map((item) => {
-              if (customMap[item.id] !== undefined) {
-                return { ...item, valLoa: customMap[item.id] };
-              }
-              return item;
-            });
-          }
+          itemsArray = withCustomEdits(itemsArray, customMap);
 
           let loadedJustifications: Record<string, string> = {};
           const resJust = await fetch("/api/configuracoes/layout?chave=painel_loa_justifications");
@@ -1213,14 +1051,7 @@ export function AnaliseLoaView() {
             const savedSub = localStorage.getItem("painel_loa_subelement_edits_v1");
             if (savedSub) subelementEdits = JSON.parse(savedSub);
           }
-          if (Object.keys(subelementEdits).length > 0) {
-            itemsArray = itemsArray.map((item) => {
-              if (subelementEdits[item.id]) {
-                return { ...item, ...subelementEdits[item.id] };
-              }
-              return item;
-            });
-          }
+          itemsArray = withSubelementEdits(itemsArray, subelementEdits);
         } catch (e) {
           console.warn("Erro ao carregar customizações de subelementos:", e);
         }
@@ -1233,7 +1064,7 @@ export function AnaliseLoaView() {
             const financialEdits = data.success && data.valor
               ? data.valor as Record<string, { valorReajuste?: number; valorAditamento?: number; valorSugestaoSf?: number; valorCorteGp?: number }>
               : {};
-            itemsArray = itemsArray.map((item) => ({ ...item, ...(financialEdits[item.id] || {}) }));
+            itemsArray = withFinancialEdits(itemsArray, financialEdits);
           }
         } catch (e) {
           console.warn("Erro ao carregar reajustes e aditamentos:", e);
@@ -1959,6 +1790,14 @@ export function AnaliseLoaView() {
     [editableGroups.length, tablePageSize]
   );
 
+  // Ao trocar de página ou de quantidade por página, volta ao topo da tabela para a mudança ficar visível.
+  useEffect(() => {
+    const scroller = analyticalScrollRef.current;
+    if (!scroller) return;
+    scroller.scrollTo({ top: 0 });
+    if (scroller.getBoundingClientRect().top < 0) scroller.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [tablePage, tablePageSize]);
+
   const paginatedEditableGroups = useMemo(() => {
     const start = (tablePage - 1) * tablePageSize;
     return editableGroups.slice(start, start + tablePageSize);
@@ -2131,7 +1970,12 @@ export function AnaliseLoaView() {
   }, [filteredItems, metrics]);
 
   // Construção do Pivot Tree View (Árvore Hierárquica Esquerda)
-  const [pivotSort, setPivotSort] = useState<"codigo" | "desc" | "asc">("codigo");
+  const [pivotSort, setPivotSort] = useState<{ column: "codigo" | "nome" | "valLoa" | "diff"; direction: "asc" | "desc" }>({ column: "codigo", direction: "asc" });
+  // Clique no cabeçalho: mesma coluna inverte a direção; coluna nova começa em Maior → Menor (A → Z no nome).
+  const togglePivotSort = (column: "nome" | "valLoa" | "diff") =>
+    setPivotSort((current) => current.column === column
+      ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { column, direction: column === "nome" ? "asc" : "desc" });
 
   const pivotTree = useMemo(() => {
     const rootNodes: TreeNode[] = [];
@@ -2236,13 +2080,19 @@ export function AnaliseLoaView() {
     };
 
     // Ordenação por valor (Fixação LOA) em todos os níveis; em "codigo" mantém a ordem de inserção dos filhos.
-    const byValue = (a: TreeNode, b: TreeNode) => (pivotSort === "asc" ? a.valLoa - b.valLoa : b.valLoa - a.valLoa);
+    const sign = pivotSort.direction === "asc" ? 1 : -1;
+    const byColumn = (a: TreeNode, b: TreeNode) =>
+      pivotSort.column === "nome"
+        ? sign * a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" })
+        : pivotSort.column === "diff"
+          ? sign * (a.diff - b.diff)
+          : sign * (a.valLoa - b.valLoa);
     const sortChildren = (node: TreeNode): TreeNode =>
       node.children
-        ? { ...node, children: (pivotSort === "codigo" ? node.children : [...node.children].sort(byValue)).map(sortChildren) }
+        ? { ...node, children: (pivotSort.column === "codigo" ? node.children : [...node.children].sort(byColumn)).map(sortChildren) }
         : node;
     const sortRoots = (nodes: TreeNode[]) =>
-      pivotSort === "codigo" ? nodes.sort((a, b) => getSecCode(a.name) - getSecCode(b.name)) : nodes.sort(byValue);
+      pivotSort.column === "codigo" ? nodes.sort((a, b) => getSecCode(a.name) - getSecCode(b.name)) : nodes.sort(byColumn);
 
     // As entidades da administração indireta continuam no fim, também ordenadas pelo critério escolhido.
     const regularNodes = sortRoots(rootNodes.filter((n) => !isSpecialBottom(n.name))).map(sortChildren);
@@ -3063,18 +2913,20 @@ export function AnaliseLoaView() {
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1 p-1 rounded-lg bg-surface-container-low/70 border border-outline-variant/70" role="group" aria-label="Ordenar estrutura">
                     {([
-                      { value: "codigo", label: "Código", icon: "format_list_numbered", title: "Ordem pelo código da secretaria" },
-                      { value: "desc", label: "Maior → Menor", icon: "arrow_downward", title: "Maior Fixação LOA primeiro" },
-                      { value: "asc", label: "Menor → Maior", icon: "arrow_upward", title: "Menor Fixação LOA primeiro" },
-                    ] as const).map((option) => (
+                      { key: "codigo", sort: { column: "codigo", direction: "asc" }, label: "Código", icon: "format_list_numbered", title: "Ordem pelo código da secretaria" },
+                      { key: "desc", sort: { column: "valLoa", direction: "desc" }, label: "Maior → Menor", icon: "arrow_downward", title: "Maior Fixação LOA primeiro" },
+                      { key: "asc", sort: { column: "valLoa", direction: "asc" }, label: "Menor → Maior", icon: "arrow_upward", title: "Menor Fixação LOA primeiro" },
+                    ] as const).map((option) => {
+                      const active = pivotSort.column === option.sort.column && (option.sort.column === "codigo" || pivotSort.direction === option.sort.direction);
+                      return (
                       <button
-                        key={option.value}
+                        key={option.key}
                         type="button"
-                        onClick={() => setPivotSort(option.value)}
-                        aria-pressed={pivotSort === option.value}
+                        onClick={() => setPivotSort({ ...option.sort })}
+                        aria-pressed={active}
                         title={option.title}
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
-                          pivotSort === option.value
+                          active
                             ? "bg-primary text-on-primary shadow-xs"
                             : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
                         }`}
@@ -3082,7 +2934,8 @@ export function AnaliseLoaView() {
                         <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
                         {option.label}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                   <button
                     onClick={expandAllNodes}
@@ -3103,11 +2956,34 @@ export function AnaliseLoaView() {
 
               {/* Legend Header Bar */}
               <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-lg bg-surface-container/70 border border-outline-variant/60 text-[11px] font-bold text-on-surface-variant">
-                <span>Estrutura / Agrupamento</span>
-                <div className="flex items-center gap-6 pr-2">
-                  <span className="text-primary font-bold">Fixação LOA (R$)</span>
-                  <span className="text-on-surface-variant font-bold">Diferença (LOA - LDO)</span>
-                </div>
+                {(() => {
+                  const header = (column: "nome" | "valLoa" | "diff", label: string, className: string) => {
+                    const active = pivotSort.column === column;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => togglePivotSort(column)}
+                        aria-sort={active ? (pivotSort.direction === "asc" ? "ascending" : "descending") : "none"}
+                        title={`Ordenar por ${label}`}
+                        className={`inline-flex items-center gap-1 font-bold hover:text-sky-700 transition-colors cursor-pointer ${className}`}
+                      >
+                        <span>{label}</span>
+                        <span className={`material-symbols-outlined text-[13px] ${active ? "text-sky-700" : "text-sky-400"}`}>
+                          {active ? (pivotSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                        </span>
+                      </button>
+                    );
+                  };
+                  return (
+                    <>
+                      {header("nome", "Estrutura / Agrupamento", "")}
+                      <div className="flex items-center gap-6 pr-2">
+                        {header("valLoa", "Fixação LOA (R$)", "text-primary")}
+                        {header("diff", "Diferença (LOA - LDO)", "text-on-surface-variant")}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="max-h-[350px] overflow-y-auto pr-1 space-y-1">
@@ -3312,42 +3188,78 @@ export function AnaliseLoaView() {
                           onClick={() => setColumnsDropdownOpen(false)}
                           aria-label="Fechar seleção de colunas"
                         />
-                        <div className="absolute right-0 z-30 mt-1.5 w-64 rounded-xl border border-outline-variant bg-surface p-2 shadow-xl" role="menu" aria-label="Selecionar colunas visíveis">
+                        <div className="absolute right-0 z-30 mt-1.5 w-72 rounded-xl border border-outline-variant bg-surface p-2 shadow-xl" role="menu" aria-label="Mostrar, ocultar e ordenar colunas">
                           <div className="flex items-center justify-between border-b border-outline-variant/60 px-2 pb-2 pt-1">
-                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-on-surface-variant">Colunas visíveis</span>
-                            <button
-                              type="button"
-                              onClick={() => setVisibleTableColumns(new Set(ANALYTICAL_COLUMNS.map((column) => column.key)))}
-                              className="text-[10px] font-bold text-primary hover:underline"
-                            >
-                              Mostrar todas
-                            </button>
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-on-surface-variant">Colunas e ordem</span>
+                            <span className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => { setColumnOrder(DEFAULT_COLUMN_ORDER); setColumnsSaveState("idle"); }}
+                                className="text-[10px] font-bold text-on-surface-variant hover:text-on-surface hover:underline"
+                              >
+                                Ordem padrão
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVisibleTableColumns(new Set(ANALYTICAL_COLUMNS.map((column) => column.key)))}
+                                className="text-[10px] font-bold text-primary hover:underline"
+                              >
+                                Mostrar todas
+                              </button>
+                            </span>
                           </div>
                           <div className="mt-1 space-y-0.5">
-                            {ANALYTICAL_COLUMNS.map((column) => {
+                            {[...FIXED_ANALYTICAL_COLUMNS, ...columnOrder].map((key) => ANALYTICAL_COLUMNS.find((column) => column.key === key)!).map((column) => {
                               const checked = visibleTableColumns.has(column.key);
+                              const orderIndex = columnOrder.indexOf(column.key);
                               return (
-                                <label
+                                <div
                                   key={column.key}
-                                  className={`flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs ${column.required ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-surface-container"}`}
+                                  className={`flex min-h-9 items-center gap-1.5 rounded-lg px-1.5 text-xs hover:bg-surface-container ${checked ? "" : "bg-surface-container-low/60"}`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
+                                  <button
+                                    type="button"
                                     disabled={column.required}
-                                    onChange={() => {
+                                    onClick={() => {
                                       setVisibleTableColumns((current) => {
                                         const next = new Set(current);
                                         if (next.has(column.key)) next.delete(column.key);
                                         else next.add(column.key);
                                         return next;
                                       });
+                                      setColumnsSaveState("idle");
                                     }}
-                                    className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
-                                  />
-                                  <span className="flex-1 text-on-surface">{column.label}</span>
-                                  {column.required && <span className="text-[9px] font-bold uppercase text-on-surface-variant">Fixa</span>}
-                                </label>
+                                    aria-pressed={checked}
+                                    aria-label={`${checked ? "Ocultar" : "Mostrar"} coluna ${column.label}`}
+                                    title={column.required ? "Coluna fixa" : checked ? "Ocultar coluna" : "Mostrar coluna"}
+                                    className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "text-primary hover:bg-primary/10" : "text-on-surface-variant/60 hover:bg-surface-container-high hover:text-on-surface"}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">{checked ? "visibility" : "visibility_off"}</span>
+                                  </button>
+                                  <span className={`flex-1 ${checked ? "text-on-surface" : "text-on-surface-variant/60 line-through"}`}>{column.label}</span>
+                                  {orderIndex < 0 ? (
+                                    <span className="text-[9px] font-bold uppercase text-on-surface-variant">Fixa</span>
+                                  ) : (
+                                    <span className="flex items-center">
+                                      {([[-1, "arrow_upward", "Mover para a esquerda"], [1, "arrow_downward", "Mover para a direita"]] as const).map(([offset, icon, label]) => {
+                                        const disabled = offset === -1 ? orderIndex === 0 : orderIndex === columnOrder.length - 1;
+                                        return (
+                                          <button
+                                            key={icon}
+                                            type="button"
+                                            disabled={disabled}
+                                            onClick={() => { moveColumn(column.key, offset); setColumnsSaveState("idle"); }}
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30 disabled:hover:bg-transparent"
+                                            aria-label={`${label}: ${column.label}`}
+                                            title={label}
+                                          >
+                                            <span className="material-symbols-outlined text-[16px]">{icon}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
@@ -3540,24 +3452,45 @@ export function AnaliseLoaView() {
 
               {/* Data Grid Analítica Editável */}
               <p className="mb-2 text-[11px] text-on-surface-variant sm:hidden">Deslize horizontalmente para visualizar todas as colunas.</p>
-              <div className="analitico-scroll w-full max-h-[calc(100vh-7rem)] overflow-auto overscroll-contain rounded-lg border border-sky-100 dark:border-sky-900/40 shadow-sm" tabIndex={0} aria-label="Tabela de detalhamento analítico, role na vertical e na horizontal para ver todas as linhas e colunas">
+              <div className="flex items-center justify-end gap-2 mb-2 text-xs text-on-surface-variant">
+                <span>
+                  Exibindo <strong>{editableGroups.length > 0 ? (tablePage - 1) * tablePageSize + 1 : 0}</strong> a{" "}
+                  <strong>{Math.min(tablePage * tablePageSize, editableGroups.length)}</strong> de <strong>{editableGroups.length}</strong> ações
+                </span>
+                <label className="sr-only" htmlFor="analitico-page-size-top">Ações por página</label>
+                <select
+                  id="analitico-page-size-top"
+                  value={tablePageSize}
+                  onChange={(e) => {
+                    setTablePageSize(Number(e.target.value));
+                    setTablePage(1);
+                  }}
+                  className="px-2 py-1 text-xs rounded-lg border border-outline-variant bg-surface text-on-surface font-medium"
+                >
+                  {[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size} por página</option>)}
+                  <option value={editableGroups.length || 9999}>Todas</option>
+                </select>
+              </div>
+              <div ref={analyticalScrollRef} className="analitico-scroll w-full overflow-x-auto rounded-lg border border-sky-100 dark:border-sky-900/40 shadow-sm" tabIndex={0} aria-label="Tabela de detalhamento analítico, role na horizontal para ver todas as colunas">
                 <table className="w-full min-w-[760px] text-left border-collapse text-xs sm:min-w-[980px]">
                   <thead className="bg-sky-50/70 dark:bg-sky-950/40 sticky top-0 z-10 text-[11px] font-bold text-sky-900 dark:text-sky-200 border-b border-sky-100 dark:border-sky-900/50">
                     <tr>
                       <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[300px] min-w-[260px] sm:w-[450px] sm:min-w-[350px]">{renderSortHeader("acao", "Ação")}</th>
                       {visibleTableColumns.has("elemento") && <th className="p-2.5 border-b border-sky-100 dark:border-sky-900/50 w-[100px] min-w-[90px] sm:w-[110px] sm:min-w-[100px]">{renderSortHeader("elemento", "Elemento de Despesa")}</th>}
-                      {visibleTableColumns.has("valLdo") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>}
-                      {visibleTableColumns.has("valLoa2026") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa2026", "LOA 2026 (Inicial)", "text-right")}</th>}
-                      {visibleTableColumns.has("valorTotal") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorTotal", "LOA 2027", "text-right")}</th>}
-                      {visibleTableColumns.has("valLoa") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Vigente", "text-right")}</th>}
-                      {visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Reajuste", "text-right")}</th>}
-                      {visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("vigenteReajuste", "Vigente + Reajuste", "text-right")}</th>}
-                      {visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Aditamento", "text-right")}</th>}
-                      {visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorSugestaoSf", "Sugestão SF", "text-right")}</th>}
-                      {visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorCorteGp", "Corte GP", "text-right")}</th>}
-                      {visibleTableColumns.has("diff") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>}
-                      {visibleTableColumns.has("status") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>}
-                      {visibleTableColumns.has("adjusted") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>}
+                      {renderOrderedCells({
+                        valLdo: (visibleTableColumns.has("valLdo") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLdo", "Valor LDO", "text-right")}</th>),
+                        valLoa2026: (visibleTableColumns.has("valLoa2026") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa2026", "LOA 2026 (Inicial)", "text-right")}</th>),
+                        valorTotal: (visibleTableColumns.has("valorTotal") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorTotal", "LOA 2027", "text-right")}</th>),
+                        valLoa: (visibleTableColumns.has("valLoa") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valLoa", "Vigente", "text-right")}</th>),
+                        valorReajuste: (visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Reajuste", "text-right")}</th>),
+                        vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("vigenteReajuste", "Vigente + Reajuste", "text-right")}</th>),
+                        valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Aditamento", "text-right")}</th>),
+                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorSugestaoSf", "Sugestão SF", "text-right")}</th>),
+                        valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorCorteGp", "Corte GP", "text-right")}</th>),
+                        diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>),
+                        status: (visibleTableColumns.has("status") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>),
+                        adjusted: (visibleTableColumns.has("adjusted") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>),
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-sky-100/60 dark:divide-sky-900/20 font-mono">
@@ -3668,42 +3601,44 @@ export function AnaliseLoaView() {
                             {visibleTableColumns.has("elemento") && <td className="p-3 text-on-surface-variant font-sans w-[100px] max-w-[100px] truncate sm:w-[110px] sm:max-w-[110px]" title={group.elemento}>
                               {group.elemento}
                             </td>}
-                            {visibleTableColumns.has("valLdo") && <td className="col-band-gray p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
+                            {renderOrderedCells({
+                              valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-3 text-right font-mono text-on-surface-variant font-medium select-none bg-surface-container-low/60">
                               {formatBr(group.valLdo)}
-                            </td>}
-                            {visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40" title="LOA 2026 inicial">
+                            </td>),
+                              valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40" title="LOA 2026 inicial">
                               {formatBr(group.valLoa2026)}
-                            </td>}
-                            {visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>}
-                            {visibleTableColumns.has("valLoa") && (
+                            </td>),
+                              valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.valorTotal)}</td>),
+                              valLoa: (visibleTableColumns.has("valLoa") && (
                               <td className="col-band-white p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
                                 {formatBr(group.valLoa)}
                               </td>
-                            )}
-                            {visibleTableColumns.has("valorReajuste") && (
+                            )),
+                              valorReajuste: (visibleTableColumns.has("valorReajuste") && (
                               <td className="col-band-gray p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
                                 {formatBr(group.valorReajuste)}
                               </td>
-                            )}
-                            {visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-3 text-right font-mono font-bold text-primary select-none bg-surface-container-low/40">{formatBr(group.vigenteReajuste)}</td>}
-                            {visibleTableColumns.has("valorAditamento") && (
+                            )),
+                              vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-3 text-right font-mono font-bold text-primary select-none bg-surface-container-low/40">{formatBr(group.vigenteReajuste)}</td>),
+                              valorAditamento: (visibleTableColumns.has("valorAditamento") && (
                               <td className="col-band-gray p-3 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/40">
                                 {formatBr(group.valorAditamento)}
                               </td>
-                            )}
-                            {visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right font-mono font-bold text-amber-700 select-none bg-surface-container-low/40">{formatBr(group.valorSugestaoSf)}</td>}
-                            {visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right font-mono font-bold text-rose-700 select-none bg-surface-container-low/40">{formatBr(group.valorCorteGp)}</td>}
-                            {visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-semibold ${diffColor}`}>
+                            )),
+                              valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right font-mono font-bold text-amber-700 select-none bg-surface-container-low/40">{formatBr(group.valorSugestaoSf)}</td>),
+                              valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right font-mono font-bold text-rose-700 select-none bg-surface-container-low/40">{formatBr(group.valorCorteGp)}</td>),
+                              diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-semibold ${diffColor}`}>
                               {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
-                            </td>}
-                            {visibleTableColumns.has("status") && <td className="col-band-gray p-3 text-center">
+                            </td>),
+                              status: (visibleTableColumns.has("status") && <td className="col-band-gray p-3 text-center">
                               <span className={`inline-block px-2.5 py-1 text-[9.5px] font-bold rounded-full border ${status.class}`}>{status.label}</span>
-                            </td>}
-                            {visibleTableColumns.has("adjusted") && <td className="col-band-white p-3 text-center">
+                            </td>),
+                              adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-3 text-center">
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${actionValidationClass}`}>
                                 {validatedNatures}/{natureGroups.length} Naturezas · {actionValidationStatus}
                               </span>
-                            </td>}
+                            </td>),
+                            })}
                           </tr>
                           {isExpanded && (
                             <Fragment>
@@ -4004,7 +3939,8 @@ export function AnaliseLoaView() {
                                     </span>
                                   </button>
                                 </th>}
-                                {visibleTableColumns.has("valLdo") && <th className="col-band-gray p-2 text-right">
+                                {renderOrderedCells({
+                                  valLdo: (visibleTableColumns.has("valLdo") && <th className="col-band-gray p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "valLdo", direction: curr.column === "valLdo" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -4016,10 +3952,10 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "valLdo" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("valLoa2026") && <th className="col-band-white p-2 text-right">LOA 2026</th>}
-                                {visibleTableColumns.has("valorTotal") && <th className="col-band-gray p-2 text-right">LOA 2027</th>}
-                                {visibleTableColumns.has("valLoa") && <th className="col-band-white p-2 text-right">
+                                </th>),
+                                  valLoa2026: (visibleTableColumns.has("valLoa2026") && <th className="col-band-white p-2 text-right">LOA 2026</th>),
+                                  valorTotal: (visibleTableColumns.has("valorTotal") && <th className="col-band-gray p-2 text-right">LOA 2027</th>),
+                                  valLoa: (visibleTableColumns.has("valLoa") && <th className="col-band-white p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "valLoa", direction: curr.column === "valLoa" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -4031,13 +3967,13 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "valLoa" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2 text-right">Reajuste</th>}
-                                {visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2 text-right">Vigente + Reajuste</th>}
-                                {visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2 text-right">Aditamento</th>}
-                                {visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2 text-right">Sugestão SF</th>}
-                                {visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2 text-right">Corte GP</th>}
-                                {visibleTableColumns.has("diff") && <th className="col-band-white p-2 text-right">
+                                </th>),
+                                  valorReajuste: (visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2 text-right">Reajuste</th>),
+                                  vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2 text-right">Vigente + Reajuste</th>),
+                                  valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2 text-right">Aditamento</th>),
+                                  valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2 text-right">Sugestão SF</th>),
+                                  valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2 text-right">Corte GP</th>),
+                                  diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2 text-right">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "diff", direction: curr.column === "diff" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -4049,8 +3985,8 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "diff" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("status") && <th className="col-band-gray p-2 text-center">
+                                </th>),
+                                  status: (visibleTableColumns.has("status") && <th className="col-band-gray p-2 text-center">
                                   <button
                                     type="button"
                                     onClick={() => setNatureSort((curr) => ({ column: "status", direction: curr.column === "status" && curr.direction === "asc" ? "desc" : "asc" }))}
@@ -4062,8 +3998,9 @@ export function AnaliseLoaView() {
                                       {natureSort.column === "status" ? (natureSort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
                                     </span>
                                   </button>
-                                </th>}
-                                {visibleTableColumns.has("adjusted") && <th className="col-band-white p-2 text-center text-sky-800/80 dark:text-sky-300/80">Validação</th>}
+                                </th>),
+                                  adjusted: (visibleTableColumns.has("adjusted") && <th className="col-band-white p-2 text-center text-sky-800/80 dark:text-sky-300/80">Validação</th>),
+                                })}
                               </tr>
 
                               {/* NÍVEL 2: LINHAS DAS NATUREZAS DE DESPESA (FILHAS) */}
@@ -4147,50 +4084,52 @@ export function AnaliseLoaView() {
                                           )}
                                         </div>
                                       </td>}
-                                      {visibleTableColumns.has("valLdo") && (
+                                      {renderOrderedCells({
+                                        valLdo: (visibleTableColumns.has("valLdo") && (
                                         <td className="col-band-gray p-2.5 text-right font-mono text-on-surface-variant/50 font-medium select-none bg-surface-container-low/40 text-xs">
                                           0,00
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-on-surface text-xs" title="LOA 2026 inicial da natureza de despesa">{formatBr(natureLoa2026)}</td>}
-                                      {visibleTableColumns.has("valorTotal") && (
+                                      )),
+                                        valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-on-surface text-xs" title="LOA 2026 inicial da natureza de despesa">{formatBr(natureLoa2026)}</td>),
+                                        valorTotal: (visibleTableColumns.has("valorTotal") && (
                                         <td className="col-band-gray p-2.5 text-right font-mono font-extrabold text-primary text-xs">
                                           {formatBr(natureTotal)}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("valLoa") && (
+                                      )),
+                                        valLoa: (visibleTableColumns.has("valLoa") && (
                                         <td className="col-band-white p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
                                           {formatBr(natureLoa)}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("valorReajuste") && (
+                                      )),
+                                        valorReajuste: (visibleTableColumns.has("valorReajuste") && (
                                         <td className="col-band-gray p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
                                           {formatBr(natureReajuste)}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-primary text-xs">{formatBr(natureVigenteReajuste)}</td>}
-                                      {visibleTableColumns.has("valorAditamento") && (
+                                      )),
+                                        vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-primary text-xs">{formatBr(natureVigenteReajuste)}</td>),
+                                        valorAditamento: (visibleTableColumns.has("valorAditamento") && (
                                         <td className="col-band-gray p-2.5 text-right font-mono font-bold text-on-surface select-none bg-surface-container-low/30 text-xs">
                                           {formatBr(natureAditamento)}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-amber-700 text-xs">{formatBr(natureSugestaoSf)}</td>}
-                                      {visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-2.5 text-right font-mono font-bold text-rose-700 text-xs">{formatBr(natureCorteGp)}</td>}
-                                      {visibleTableColumns.has("diff") && (
+                                      )),
+                                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-amber-700 text-xs">{formatBr(natureSugestaoSf)}</td>),
+                                        valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-2.5 text-right font-mono font-bold text-rose-700 text-xs">{formatBr(natureCorteGp)}</td>),
+                                        diff: (visibleTableColumns.has("diff") && (
                                         <td className={`col-band-white p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
                                           {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("status") && (
+                                      )),
+                                        status: (visibleTableColumns.has("status") && (
                                         <td className="col-band-gray p-2.5 text-center">
                                           <span className={`inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold ${natureStatus.class}`}>{natureStatus.label}</span>
                                         </td>
-                                      )}
-                                      {visibleTableColumns.has("adjusted") && <td className="col-band-white p-2.5 text-center">
+                                      )),
+                                        adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-2.5 text-center">
                                         <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold ${validationStatusClass}`}>
                                           {validatedSubelements}/{validatableItems.length} · {validationStatus}
                                         </span>
-                                      </td>}
+                                      </td>),
+                                      })}
                                     </tr>
 
                                     {/* NÍVEL 3: LINHAS DOS SUBELEMENTOS (unidades validáveis) */}
@@ -4314,10 +4253,11 @@ export function AnaliseLoaView() {
                                                 </div>
                                               </div>
                                             </td>
-                                          {visibleTableColumns.has("valLdo") && <td className="col-band-gray p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
-                                          {visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2 text-right font-mono text-on-surface-variant/50 text-xs" title="A LOA 2026 é publicada por natureza de despesa, sem subelemento">—</td>}
-                                          {visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>}
-                                          {visibleTableColumns.has("valLoa") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          {renderOrderedCells({
+                                            valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>),
+                                            valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2 text-right font-mono text-on-surface-variant/50 text-xs" title="A LOA 2026 é publicada por natureza de despesa, sem subelemento">—</td>),
+                                            valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(item))}</td>),
+                                            valLoa: (visibleTableColumns.has("valLoa") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(entry.valLoa)}
@@ -4335,8 +4275,8 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            valorReajuste: (visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(entry.valorReajuste ?? 0)}
@@ -4354,9 +4294,9 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2 text-right font-mono font-bold text-primary text-xs">{formatBr(getItemVigenteReajuste(item))}</td>}
-                                          {visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2 text-right font-mono font-bold text-primary text-xs">{formatBr(getItemVigenteReajuste(item))}</td>),
+                                            valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(entry.valorAditamento ?? 0)}
@@ -4374,8 +4314,8 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
@@ -4393,8 +4333,8 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorCorteGp" ? tempInputValue : formatBr(entry.valorCorteGp ?? 0)}
@@ -4412,16 +4352,16 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("diff") && <td className={`col-band-white p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
+                                          </td>),
+                                            diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
                                             {currency.format(getItemLoaTotal(item) - item.valLdo)}
-                                          </td>}
-                                          {visibleTableColumns.has("status") && <td className="col-band-gray p-2 text-center">
+                                          </td>),
+                                            status: (visibleTableColumns.has("status") && <td className="col-band-gray p-2 text-center">
                                             <span className={`inline-block px-2 py-0.5 text-[8.5px] font-bold rounded-full border ${getStatusInfo(item.valLdo, getItemLoaTotal(item)).class}`}>
                                               {getStatusInfo(item.valLdo, getItemLoaTotal(item)).label}
                                             </span>
-                                          </td>}
-                                          {visibleTableColumns.has("adjusted") && <td className="col-band-white p-2 text-center">
+                                          </td>),
+                                            adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-2 text-center">
                                             {(() => {
                                               const itemSec = item.orgao || (item as unknown as { secretaria?: string }).secretaria || "";
                                               const canValidateItem = canUserValidateSecretaria(itemSec);
@@ -4452,7 +4392,8 @@ export function AnaliseLoaView() {
                                                 </button>
                                               );
                                             })()}
-                                          </td>}
+                                          </td>),
+                                          })}
                                         </tr>
                                         {vinculoEntries.slice(1).map((child, childIndex) => (
                                           <tr key={child.id} className={`bg-surface-container-lowest !border-t-transparent [&>td]:!border-t-transparent ${childIndex === vinculoEntries.length - 2 && !hasSubelementDetails ? "border-b border-outline-variant/10" : "!border-b-transparent [&>td]:!border-b-transparent"}`}>
@@ -4468,10 +4409,11 @@ export function AnaliseLoaView() {
                                                 </span>
                                               </div>
                                             </td>
-                                          {visibleTableColumns.has("valLdo") && <td className="col-band-gray p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>}
-                                          {visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2 text-right font-mono text-on-surface-variant/50 text-xs" title="A LOA 2026 é publicada por natureza de despesa, sem subelemento">—</td>}
-                                          {visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(child))}</td>}
-                                          {visibleTableColumns.has("valLoa") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          {renderOrderedCells({
+                                            valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-2 text-right font-mono text-on-surface-variant/50 text-xs">0,00</td>),
+                                            valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-2 text-right font-mono text-on-surface-variant/50 text-xs" title="A LOA 2026 é publicada por natureza de despesa, sem subelemento">—</td>),
+                                            valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemLoaTotal(child))}</td>),
+                                            valLoa: (visibleTableColumns.has("valLoa") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valLoa" ? tempInputValue : formatBr(entry.valLoa)}
@@ -4489,8 +4431,8 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 text-right px-2 py-1 rounded-lg border border-outline-variant bg-surface font-mono font-bold text-on-surface focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none shadow-sm dark:bg-surface-container-high dark:text-white text-xs"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            valorReajuste: (visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorReajuste" ? tempInputValue : formatBr(entry.valorReajuste ?? 0)}
@@ -4508,9 +4450,9 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2 text-right font-mono font-bold text-primary text-xs">{formatBr(getItemVigenteReajuste(child))}</td>}
-                                          {visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-2 text-right font-mono font-bold text-primary text-xs">{formatBr(getItemVigenteReajuste(child))}</td>),
+                                            valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorAditamento" ? tempInputValue : formatBr(entry.valorAditamento ?? 0)}
@@ -4528,8 +4470,8 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
@@ -4547,8 +4489,8 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                          </td>),
+                                            valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
                                               type="text"
                                               value={editingCell?.id === entry.id && editingCell.field === "valorCorteGp" ? tempInputValue : formatBr(entry.valorCorteGp ?? 0)}
@@ -4566,10 +4508,11 @@ export function AnaliseLoaView() {
                                               onBlur={() => setEditingCell(null)}
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
-                                          </td>}
-                                          {visibleTableColumns.has("diff") && <td className="col-band-white" />}
-                                          {visibleTableColumns.has("status") && <td className="col-band-gray" />}
-                                          {visibleTableColumns.has("adjusted") && <td className="col-band-white" />}
+                                          </td>),
+                                            diff: (visibleTableColumns.has("diff") && <td className="col-band-white" />),
+                                            status: (visibleTableColumns.has("status") && <td className="col-band-gray" />),
+                                            adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white" />),
+                                          })}
                                           </tr>
                                         ))}
                                         {hasSubelementDetails && (
@@ -4640,26 +4583,28 @@ export function AnaliseLoaView() {
                       <td colSpan={visibleTableColumns.has("elemento") ? 2 : 1} className="p-3 text-on-surface font-sans font-extrabold uppercase tracking-wider text-[11px]">
                         Total Geral Filtrado ({filteredItems.length} registros)
                       </td>
-                      {visibleTableColumns.has("valLdo") && <td className="col-band-gray p-3 text-right text-on-surface-variant font-extrabold">
+                      {renderOrderedCells({
+                        valLdo: (visibleTableColumns.has("valLdo") && <td className="col-band-gray p-3 text-right text-on-surface-variant font-extrabold">
                         {formatBr(metrics.valLdoTotal)}
-                      </td>}
-                      {visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valLoa2026Total)}</td>}
-                      {visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-3 text-right text-primary font-extrabold">{formatBr(metrics.valLoaTotal)}</td>}
-                      {visibleTableColumns.has("valLoa") && <td className="col-band-white p-3 text-right text-primary font-extrabold">
+                      </td>),
+                        valLoa2026: (visibleTableColumns.has("valLoa2026") && <td className="col-band-white p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valLoa2026Total)}</td>),
+                        valorTotal: (visibleTableColumns.has("valorTotal") && <td className="col-band-gray p-3 text-right text-primary font-extrabold">{formatBr(metrics.valLoaTotal)}</td>),
+                        valLoa: (visibleTableColumns.has("valLoa") && <td className="col-band-white p-3 text-right text-primary font-extrabold">
                         {formatBr(metrics.valLoaVigenteTotal)}
-                      </td>}
-                      {visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorReajusteTotal)}</td>}
-                      {visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-3 text-right text-primary font-extrabold">{formatBr(metrics.vigenteReajusteTotal)}</td>}
-                      {visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>}
-                      {visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right text-amber-700 font-extrabold">{formatBr(metrics.valorSugestaoSfTotal)}</td>}
-                      {visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right text-rose-700 font-extrabold">{formatBr(metrics.valorCorteGpTotal)}</td>}
-                      {visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
+                      </td>),
+                        valorReajuste: (visibleTableColumns.has("valorReajuste") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorReajusteTotal)}</td>),
+                        vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <td className="col-band-white p-3 text-right text-primary font-extrabold">{formatBr(metrics.vigenteReajusteTotal)}</td>),
+                        valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>),
+                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right text-amber-700 font-extrabold">{formatBr(metrics.valorSugestaoSfTotal)}</td>),
+                        valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right text-rose-700 font-extrabold">{formatBr(metrics.valorCorteGpTotal)}</td>),
+                        diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
                         {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
-                      </td>}
-                      {visibleTableColumns.has("status") && <td className="col-band-gray p-3 text-center text-on-surface-variant text-[10px]">
+                      </td>),
+                        status: (visibleTableColumns.has("status") && <td className="col-band-gray p-3 text-center text-on-surface-variant text-[10px]">
                         TOTALIZADOR
-                      </td>}
-                      {visibleTableColumns.has("adjusted") && <td className="col-band-white p-3 text-center text-on-surface-variant">—</td>}
+                      </td>),
+                        adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white p-3 text-center text-on-surface-variant">—</td>),
+                      })}
                     </tr>
                   </tfoot>
                 </table>

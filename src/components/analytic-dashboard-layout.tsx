@@ -9,6 +9,7 @@ import { getPrimaryPageLinks } from "@/lib/page-navigation";
 import { Filters, EMPTY_FILTERS, type FilterState } from "./filters";
 import { BarChart } from "./bar-chart";
 import { AnalisesCombinadasSection } from "./analises-combinadas";
+import { EmendasImpositivasSection, IndicesConstitucionaisSection } from "./indicadores-constitucionais";
 import { SecretariasMenu } from "./secretarias-menu";
 import { SecretariasLdoComparativoCard } from "./secretarias-ldo-comparativo-card";
 import {
@@ -49,7 +50,14 @@ function mergeSectionsOrder(savedOrder?: string[]): string[] {
   const result = [...savedOrder];
   for (const defaultSec of DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG.sectionsOrder) {
     if (!result.includes(defaultSec)) {
-      if (defaultSec === "comparativo-secretarias-ldo") {
+      if (defaultSec === "indices-constitucionais" || defaultSec === "emendas-impositivas") {
+        // Seções novas entram logo após as Análises Combinadas em layouts já salvos.
+        const anchor = defaultSec === "emendas-impositivas" && result.includes("indices-constitucionais")
+          ? result.indexOf("indices-constitucionais")
+          : result.indexOf("analises-combinadas");
+        if (anchor !== -1) result.splice(anchor + 1, 0, defaultSec);
+        else result.push(defaultSec);
+      } else if (defaultSec === "comparativo-secretarias-ldo") {
         const classIdx = result.indexOf("classificacao-despesa");
         if (classIdx !== -1) {
           result.splice(classIdx, 0, defaultSec);
@@ -540,6 +548,10 @@ export function AnalyticDashboardLayout({
       }
       case "analises-combinadas":
         return <AnalisesCombinadasSection key="analises-combinadas" />;
+      case "indices-constitucionais":
+        return <IndicesConstitucionaisSection key="indices-constitucionais" exercicio={2027} />;
+      case "emendas-impositivas":
+        return <EmendasImpositivasSection key="emendas-impositivas" />;
       case "filtros":
         return (
           <Filters

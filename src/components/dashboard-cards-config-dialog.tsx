@@ -12,6 +12,8 @@ export const DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG: AnalyticDashboardLayoutCo
   sectionsOrder: [
     "top-kpis",
     "analises-combinadas",
+    "indices-constitucionais",
+    "emendas-impositivas",
     "filtros",
     "comparativo-secretarias-ldo",
     "classificacao-despesa",
@@ -33,6 +35,8 @@ export const DEFAULT_ANALYTIC_DASHBOARD_LAYOUT_CONFIG: AnalyticDashboardLayoutCo
     // Seções
     "top-kpis": true,
     "analises-combinadas": true,
+    "indices-constitucionais": true,
+    "emendas-impositivas": true,
     "filtros": true,
     "comparativo-secretarias-ldo": true,
     "classificacao-despesa": true,
@@ -56,6 +60,16 @@ export const ANALYTIC_SECTIONS_METADATA: Record<string, { label: string; icon: s
     label: "Cards Principais de Despesa e Conformidade",
     icon: "grid_view",
     description: "Visão rápida com Despesa LDO, Despesa LOA, Correntes, Investimentos e Conformidade.",
+  },
+  "indices-constitucionais": {
+    label: "Índices Constitucionais Mínimos",
+    icon: "gavel",
+    description: "Mínimos de Saúde (15%) e Educação (25%): valor a deduzir da receita e valor aplicado na LOA.",
+  },
+  "emendas-impositivas": {
+    label: "Emendas Impositivas",
+    icon: "how_to_vote",
+    description: "Vereadores, cota por vereador, mínimo para Saúde e total das cotas.",
   },
   "analises-combinadas": {
     label: "Análises Combinadas & Alertas",

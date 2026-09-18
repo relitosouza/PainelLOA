@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSecretariatDemoRecords } from "@/lib/secretariat-data";
+import { calculateAnalyticalValues } from "@/lib/loa-analytical-values";
+import { loadAnaliseLoaItems } from "@/lib/loa-analise-items.server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as XLSX from "xlsx";
@@ -54,65 +56,21 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const exercise = Number(searchParams.get("exercise") || 2027);
-    const importIdParam = searchParams.get("importId");
 
-    // 1. Identificar importação ativa de LOA
-    let activeLoa = null;
-    if (importIdParam) {
-      activeLoa = await db.loaImport.findUnique({
-        where: { id: importIdParam },
-      });
+    // LOA por secretaria a partir das mesmas linhas da Análise LOA (planilha base + dados salvos do painel),
+    // para que a Proposta aqui seja igual ao Valor Previsto LOA de lá.
+    const analiseItems = await loadAnaliseLoaItems();
+    const loaBySecretaria = new Map<string, { vigente: number; reajuste: number; aditamento: number; proposta: number }>();
+    for (const item of analiseItems) {
+      const valores = calculateAnalyticalValues(item);
+      const atual = loaBySecretaria.get(item.secretaria) ?? { vigente: 0, reajuste: 0, aditamento: 0, proposta: 0 };
+      atual.vigente += valores.vigente;
+      atual.reajuste += valores.reajuste;
+      atual.aditamento += valores.aditamento;
+      atual.proposta += valores.loa2027;
+      loaBySecretaria.set(item.secretaria, atual);
     }
-    if (!activeLoa) {
-      activeLoa = await db.loaImport.findFirst({
-        orderBy: { createdAt: "desc" },
-      });
-    }
-
-    // Consultar registros originais da LOA para a importação ativa. Quando a
-    // Análise LOA foi salva, o mapa de edições passa a ser a fonte consolidada:
-    // ele já inclui inclusões, exclusões e redistribuições de subelementos.
-    let loaByOrgan: Array<{ organ: string; _sum: { value: number | null } }> = activeLoa
-      ? (await db.budgetRecord.groupBy({
-          by: ["organ"],
-          where: { importId: activeLoa.id },
-          _sum: { value: true },
-        })).map((row) => ({ organ: row.organ, _sum: { value: Number(row._sum.value || 0) } }))
-      : [];
-
-    const customEditsConfig = await db.painelConfig.findUnique({
-      where: { chave: "painel_loa_custom_edits" },
-    });
-    const addedExpensesConfig = await db.painelConfig.findUnique({
-      where: { chave: "painel_loa_added_expenses" },
-    });
-
-    if (customEditsConfig?.valor && typeof customEditsConfig.valor === "object") {
-      const customValues = customEditsConfig.valor as Record<string, number>;
-      const addedById = new Map<string, { secretaria?: string }>();
-      if (Array.isArray(addedExpensesConfig?.valor)) {
-        for (const item of addedExpensesConfig.valor) {
-          if (item && typeof item === "object" && "id" in item && typeof item.id === "string") {
-            addedById.set(item.id, item as { secretaria?: string });
-          }
-        }
-      }
-
-      const totalsByOrgan = new Map<string, number>();
-      for (const [id, value] of Object.entries(customValues)) {
-        const addedItem = addedById.get(id);
-        const organ = addedItem?.secretaria || id.split("|")[0];
-        if (!organ || !id.includes("|") && !addedItem) continue;
-        totalsByOrgan.set(organ, (totalsByOrgan.get(organ) || 0) + (Number(value) || 0));
-      }
-
-      if (totalsByOrgan.size > 0) {
-        loaByOrgan = [...totalsByOrgan.entries()].map(([organ, value]) => ({
-          organ,
-          _sum: { value },
-        }));
-      }
-    }
+    const loaByOrgan = [...loaBySecretaria.entries()].map(([organ, valores]) => ({ organ, ...valores }));
 
     const hasRealLoa = loaByOrgan.length > 0;
 
@@ -137,55 +95,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Consultar reajustes e aditamentos persistidos
-    const reajusteMap = new Map<string, number>();
-    const aditamentoMap = new Map<string, number>();
-    try {
-      // Mapear dotacaoId -> código de secretaria usando alteracaoOrcamentaria e subelementoCustomizado
-      const dotacaoToSec = new Map<string, string>();
-
-      const alts = await db.alteracaoOrcamentaria.findMany({
-        select: { dotacaoId: true, codigoSecretaria: true, secretaria: true },
-      });
-      for (const a of alts) {
-        if (a.dotacaoId && (a.codigoSecretaria || a.secretaria)) {
-          const code = getSecretariatCode(a.codigoSecretaria || a.secretaria);
-          if (code) dotacaoToSec.set(a.dotacaoId, code);
-        }
-      }
-
-      const subs = await db.subelementoCustomizado.findMany({
-        select: { id: true, secretaria: true },
-      });
-      for (const s of subs) {
-        if (s.id && s.secretaria) {
-          const code = getSecretariatCode(s.secretaria);
-          if (code) dotacaoToSec.set(s.id, code);
-        }
-      }
-
-      // Complementar com config de reajustes e aditamentos da Análise LOA
-      const configReajustes = await db.painelConfig.findUnique({
-        where: { chave: "painel_loa_reajustes_aditamentos" },
-      });
-      if (configReajustes?.valor && typeof configReajustes.valor === "object") {
-        const valMap = configReajustes.valor as Record<string, { valorReajuste?: number; valorAditamento?: number }>;
-        for (const [id, vals] of Object.entries(valMap)) {
-          const secCode = dotacaoToSec.get(id);
-          const reajuste = Number(vals.valorReajuste) || 0;
-          const aditamento = Number(vals.valorAditamento) || 0;
-          if (secCode && reajuste) {
-            reajusteMap.set(secCode, (reajusteMap.get(secCode) || 0) + reajuste);
-          }
-          if (secCode && aditamento) {
-            aditamentoMap.set(secCode, (aditamentoMap.get(secCode) || 0) + aditamento);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Aviso: falha ao agregar reajustes:", e);
-    }
-
     const items: ComparativoSecretariaItem[] = [];
 
     if (hasRealLoa) {
@@ -194,24 +103,20 @@ export async function GET(req: NextRequest) {
       for (const row of loaByOrgan) {
         const rawName = row.organ || "Não Identificado";
         const code = getSecretariatCode(rawName) || rawName;
-        const val = Number(row._sum.value || 0);
-        loaTotalsByCode.set(code, (loaTotalsByCode.get(code) || 0) + val);
+        loaTotalsByCode.set(code, (loaTotalsByCode.get(code) || 0) + row.proposta);
       }
 
       for (const row of loaByOrgan) {
         const rawName = row.organ || "Não Identificado";
         const code = getSecretariatCode(rawName) || rawName;
-        const valLoaVigente = Number(Number(row._sum.value || 0).toFixed(2));
+        const valLoaVigente = Number(row.vigente.toFixed(2));
+        const valorReajuste = Number(row.reajuste.toFixed(2));
+        const valorAditamento = Number(row.aditamento.toFixed(2));
+        const valLoaProposta = Number(row.proposta.toFixed(2));
 
-        const totalLoaForCode = loaTotalsByCode.get(code) || valLoaVigente;
-        const share = totalLoaForCode > 0 ? valLoaVigente / totalLoaForCode : 1;
-
-        // Ratear reajuste proporcionalmente ao peso do órgão dentro do mesmo código
-        const rawReajusteForCode = reajusteMap.get(code) || 0;
-        const valorReajuste = Number((rawReajusteForCode * share).toFixed(2));
-        const valorAditamento = Number(((aditamentoMap.get(code) || 0) * share).toFixed(2));
-
-        const valLoaProposta = Number((valLoaVigente + valorReajuste + valorAditamento).toFixed(2));
+        // Órgãos que dividem o mesmo código (ex.: 18 - Encargos) repartem a LDO do código pelo peso na LOA
+        const totalLoaForCode = loaTotalsByCode.get(code) || valLoaProposta;
+        const share = totalLoaForCode > 0 ? valLoaProposta / totalLoaForCode : 1;
 
         // Obter valor LDO mapeado pelo código do órgão (rateado se houver múltiplos órgãos com mesmo código, como 18)
         const fullLdoForCode = ldoMap.get(code) ?? 0;
