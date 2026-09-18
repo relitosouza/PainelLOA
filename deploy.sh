@@ -159,6 +159,7 @@ log_success "Código atualizado para o commit ${CURRENT_COMMIT} na branch ${BRAN
 # 5. Build e Inicialização com Docker Compose
 log_info "Construindo imagens e subindo os serviços..."
 ${DOCKER_COMPOSE_CMD} build --no-cache app
+${DOCKER_COMPOSE_CMD} up -d --force-recreate --no-deps app
 ${DOCKER_COMPOSE_CMD} up -d --remove-orphans
 
 # 6. Aguardar saúde do PostgreSQL e subida do App
