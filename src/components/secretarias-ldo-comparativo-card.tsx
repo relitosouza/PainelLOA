@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useState, useEffect, useMemo, useRef } from "react";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { currency, percent } from "@/lib/format";
 import type { DashboardData } from "@/types/loa";
 
@@ -86,35 +87,39 @@ export function SecretariasLdoComparativoCard({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Carregar dados comparativos
-  useEffect(() => {
-    let isCancelled = false;
-    async function loadComparativo() {
-      try {
-        setLoading(true);
-        const queryParams = new URLSearchParams();
-        if (selectedImportId) {
-          queryParams.set("importId", selectedImportId);
-        }
-        const url = `/api/orcamento/comparativo-secretarias${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const json = await res.json();
-          if (!isCancelled && json.items) {
-            setItems(json.items);
-          }
-        }
-      } catch (err) {
-        console.warn("Falha ao carregar comparativo de secretarias:", err);
-      } finally {
-        if (!isCancelled) setLoading(false);
+  // Carregar dados comparativos. As atualizações em segundo plano (useLiveRefresh) não mostram o "Carregando".
+  const [atualizadoEm, setAtualizadoEm] = useState<Date | null>(null);
+  const requestIdRef = useRef(0);
+  const loadComparativo = useCallback(async (silencioso = false) => {
+    const requestId = ++requestIdRef.current;
+    try {
+      if (!silencioso) setLoading(true);
+      const queryParams = new URLSearchParams();
+      if (selectedImportId) {
+        queryParams.set("importId", selectedImportId);
       }
+      const url = `/api/orcamento/comparativo-secretarias${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        if (requestId === requestIdRef.current && json.items) {
+          setItems(json.items);
+          setAtualizadoEm(new Date());
+        }
+      }
+    } catch (err) {
+      console.warn("Falha ao carregar comparativo de secretarias:", err);
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
     }
+  }, [selectedImportId]);
+
+  useEffect(() => {
     loadComparativo();
-    return () => {
-      isCancelled = true;
-    };
-  }, [dataSource, selectedImportId]);
+  }, [dataSource, loadComparativo]);
+
+  const refreshSilencioso = useCallback(() => { loadComparativo(true); }, [loadComparativo]);
+  useLiveRefresh(refreshSilencioso);
 
   // Filtragem e ordenação
   const filteredAndSortedItems = useMemo(() => {
@@ -205,6 +210,15 @@ export function SecretariasLdoComparativoCard({
           <p className="text-xs text-on-surface-variant mt-1">
             Confronto detalhado da dotação proposta para a LOA (vigente + reajustes) em relação ao teto e custo financeiro previsto na LDO.
           </p>
+          {atualizadoEm && (
+            <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400" aria-live="polite">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60 motion-reduce:animate-none" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-600" />
+              </span>
+              Ao vivo · atualizado às {atualizadoEm.toLocaleTimeString("pt-BR")}
+            </p>
+          )}
         </div>
 
         {/* Badges de Resumo Global */}

@@ -29,6 +29,7 @@ import {
   type RawBudgetItem,
 } from "@/lib/loa-analise-items";
 import { normalizeUnidadeOrcamentaria } from "@/lib/unidades-orcamentarias-catalogo";
+import { notifyAnaliseLoaSaved } from "@/lib/live-refresh";
 import { normalizeActionLabel, normalizeProgramLabel } from "@/lib/loa-labels";
 import {
   allocateLoa2026Initial,
@@ -1513,6 +1514,7 @@ export function AnaliseLoaView() {
       setHasChanges(false);
       setSaveModalOpen(false);
       setSavingState("saved");
+      notifyAnaliseLoaSaved();
 
       if (itemsToRevert.length > 0) {
         alert(
