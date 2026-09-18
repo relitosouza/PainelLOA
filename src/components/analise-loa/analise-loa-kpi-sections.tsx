@@ -7,7 +7,8 @@ import type { AnaliseLoaLayoutConfig } from "../analise-loa-cards-config-dialog"
 interface AnaliseLoaKpisProps {
   layoutConfig: AnaliseLoaLayoutConfig;
   ldoReceitaTotal: number;
-  loaReceitaResumo: { total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number };
+  ldoReceitaEntidades: Array<{ nome: string; valor: number }>;
+  loaReceitaResumo: { total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number; entidades: Array<{ nome: string; valor: number }> };
   loaExpectativaTotal: number;
   metrics: {
     valLdoTotal: number;
@@ -24,9 +25,13 @@ interface AnaliseLoaKpisProps {
 export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
   layoutConfig,
   ldoReceitaTotal,
+  ldoReceitaEntidades,
   loaReceitaResumo,
-}: Pick<AnaliseLoaKpisProps, "layoutConfig" | "ldoReceitaTotal" | "loaReceitaResumo">) {
-  const recLoa = loaReceitaResumo.total;
+}: Pick<AnaliseLoaKpisProps, "layoutConfig" | "ldoReceitaTotal" | "ldoReceitaEntidades" | "loaReceitaResumo">) {
+  const recLdoEntidades = ldoReceitaEntidades.reduce((sum, entidade) => sum + entidade.valor, 0);
+  const recLdoPrefeitura = ldoReceitaTotal - recLdoEntidades;
+  const recLoaEntidades = loaReceitaResumo.entidades.reduce((sum, entidade) => sum + entidade.valor, 0);
+  const recLoa = loaReceitaResumo.total + recLoaEntidades;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
@@ -45,6 +50,14 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
                   {currency.format(ldoReceitaTotal)}
                 </h3>
                 <p className="text-[10px] text-emerald-700 font-semibold mt-1">Receita Planejada LDO</p>
+                {ldoReceitaEntidades.length > 0 && (
+                  <p
+                    className="text-[10px] text-on-surface-variant mt-1"
+                    title={[`Prefeitura: ${currency.format(recLdoPrefeitura)}`, ...ldoReceitaEntidades.map((e) => `${e.nome}: ${currency.format(e.valor)}`)].join("\n")}
+                  >
+                    Prefeitura {currency.format(recLdoPrefeitura)} + indiretas {currency.format(recLdoEntidades)}
+                  </p>
+                )}
               </div>
             );
           }
@@ -57,6 +70,12 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
                   {currency.format(recLoa)}
                 </h3>
                 <p className="text-[10px] text-blue-700 font-semibold mt-1">Receita Fixada LOA</p>
+                <p
+                  className="text-[10px] text-on-surface-variant mt-1"
+                  title={[`Prefeitura: ${currency.format(loaReceitaResumo.total)}`, ...loaReceitaResumo.entidades.map((e) => `${e.nome}: ${currency.format(e.valor)}`)].join("\n")}
+                >
+                  Prefeitura {currency.format(loaReceitaResumo.total)} + indiretas {currency.format(recLoaEntidades)}
+                </p>
               </div>
             );
           }

@@ -62,6 +62,21 @@ export async function GET(req: NextRequest) {
       0
     );
 
+    // LDO da administração indireta (o restante é da Prefeitura). "IPMO - RC" vem antes de "IPMO".
+    const entidadesIndiretas = [
+      { nome: "CMO", padrao: /\bCMO\b/i },
+      { nome: "IPMO - RC", padrao: /IPMO\s*-\s*RC/i },
+      { nome: "IPMO", padrao: /\bIPMO\b/i },
+      { nome: "FITO", padrao: /\bFITO\b/i },
+    ];
+    const ldoEntidades = entidadesIndiretas.map(({ nome }) => ({ nome, valor: 0 }));
+    ldoRecords.forEach((r) => {
+      const apelido = r.apelidoNormalizado || r.apelidoOriginal || "";
+      const index = entidadesIndiretas.findIndex(({ padrao }) => padrao.test(apelido));
+      if (index >= 0) ldoEntidades[index].valor += Number(r.valorTotalLdo || 0);
+    });
+    ldoEntidades.forEach((entidade) => { entidade.valor = Math.round(entidade.valor * 100) / 100; });
+
     // LDO por Vínculo consolidado
     const ldoPorVinculoMap: Record<string, { vinculo: string; descricao: string; totalLdo: number }> = {};
     ldoRecords.forEach((r) => {
@@ -196,6 +211,7 @@ export async function GET(req: NextRequest) {
       totais: {
         totalDespesaLoa,
         totalReceitaLdo,
+        ldoEntidades,
         totalLoaReceitas,
         maiorReceitaLoa,
         qtdFontesLoaReceita: fontesLoaReceita.length,

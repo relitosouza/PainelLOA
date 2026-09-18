@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { currency, percent } from "@/lib/format";
 import * as XLSX from "xlsx";
 import { BancoProjetosCard } from "./banco-projetos-card";
@@ -228,6 +228,7 @@ export function AnaliseLoaView() {
   const [dataLoadError, setDataLoadError] = useState("");
   const [dataReloadKey, setDataReloadKey] = useState(0);
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
+  const [ldoReceitaEntidades, setLdoReceitaEntidades] = useState<Array<{ nome: string; valor: number }>>([]);
   const [loaReceitaResumo, setLoaReceitaResumo] = useState<{ total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number }>({ total: 0, maior: null, qtdFontes: 0 });
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
@@ -274,6 +275,23 @@ export function AnaliseLoaView() {
   const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
   const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
+  // Administração indireta (CMO, IPMO, IPMO-RC e FITO) não está na receita da Prefeitura (LoaReceita, UG 201).
+  // A receita LOA delas entra no card pelo valor da LOA 2027 de cada entidade na planilha base.
+  const receitaLoaEntidades = useMemo(() => {
+    const entidades = [
+      { codigo: "01", nome: "CMO" },
+      { codigo: "21", nome: "IPMO" },
+      { codigo: "77", nome: "IPMO - RC" },
+      { codigo: "22", nome: "FITO" },
+    ];
+    return entidades.map(({ codigo, nome }) => ({
+      nome,
+      valor: Math.round(originalRawItems
+        .filter((item) => item.secretaria.match(/^(\d+)\s*-/)?.[1] === codigo)
+        .reduce((sum, item) => sum + item.valLoa, 0) * 100) / 100,
+    }));
+  }, [originalRawItems]);
+
   const originalValuesById = useMemo(() => new Map(originalRawItems.map((item) => [item.id, item.valLoa])), [originalRawItems]);
   const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
   const [newExpenseCodigoAplicacao, setNewExpenseCodigoAplicacao] = useState("");
@@ -1251,6 +1269,7 @@ export function AnaliseLoaView() {
             if (apiData?.totais?.totalReceitaLdo) {
               setLdoReceitaTotal(Number(apiData.totais.totalReceitaLdo) || 0);
             }
+            if (Array.isArray(apiData?.totais?.ldoEntidades)) setLdoReceitaEntidades(apiData.totais.ldoEntidades);
             setLoaReceitaResumo({
               total: Number(apiData?.totais?.totalLoaReceitas) || 0,
               maior: apiData?.totais?.maiorReceitaLoa ?? null,
@@ -1743,8 +1762,7 @@ export function AnaliseLoaView() {
   }, [rawItems, filters]);
 
   // Aplicação Dinâmica dos Filtros
-  const filteredItems = useMemo(() => {
-    return rawItems.filter((item) => {
+  const itemMatchesFilters = useCallback((item: RawBudgetItem) => {
       const match = (fieldValues: string[] | undefined, itemValue: string) =>
         !fieldValues || !fieldValues.length || fieldValues.includes(itemValue);
 
@@ -1773,8 +1791,9 @@ export function AnaliseLoaView() {
       }
 
       return true;
-    });
-  }, [rawItems, filters]);
+  }, [filters]);
+
+  const filteredItems = useMemo(() => rawItems.filter(itemMatchesFilters), [rawItems, itemMatchesFilters]);
 
   const isItemContrato = (item: RawBudgetItem) => {
     const ini = String(item.projetoIniciado || item.contrato || "").trim().toUpperCase();
@@ -1809,8 +1828,7 @@ export function AnaliseLoaView() {
     };
   }, [filteredItems]);
 
-  const tableItems = useMemo(() => {
-    return filteredItems.filter((item) => {
+  const itemMatchesTable = useCallback((item: RawBudgetItem) => {
       if (scopeTab === "contratos" && !isItemContrato(item)) return false;
       if (scopeTab === "demais" && isItemContrato(item)) return false;
       if (statusFilters.length > 0) {
@@ -1827,8 +1845,19 @@ export function AnaliseLoaView() {
         item.processo.toLowerCase().includes(query) ||
         item.subelemento.toLowerCase().includes(query)
       );
-    });
-  }, [filteredItems, scopeTab, statusFilters, tableSearch]);
+  }, [scopeTab, statusFilters, tableSearch]);
+
+  const tableItems = useMemo(() => filteredItems.filter(itemMatchesTable), [filteredItems, itemMatchesTable]);
+
+  // Despesas excluídas saem da LOA, mas o valor planejado na LDO continua valendo no total LDO.
+  const removedLdoTotal = useMemo(() => {
+    const currentIds = new Set(rawItems.map((item) => item.id));
+    return originalRawItems
+      .filter((item) => item.valLdo !== 0 && !currentIds.has(item.id))
+      .map((item) => ({ ...item, valLoa: 0, valorReajuste: 0, valorAditamento: 0 }))
+      .filter((item) => itemMatchesFilters(item) && itemMatchesTable(item))
+      .reduce((sum, item) => sum + item.valLdo, 0);
+  }, [rawItems, originalRawItems, itemMatchesFilters, itemMatchesTable]);
 
 
   const editableGroups = useMemo<EditableGroup[]>(() => {
@@ -1961,7 +1990,9 @@ export function AnaliseLoaView() {
       if (item.natureza) naturezasSet.add(item.natureza);
     });
 
-    const valLdoTotal = Math.round(editableGroups.reduce((acc, g) => acc + g.valLdo, 0) * 100) / 100;
+    // LDO oficial: soma das linhas LDO (inclusive as excluídas da LOA). O custo da PLDO que a tabela mostra
+    // nos grupos sem LDO é só referência e não entra no total.
+    const valLdoTotal = Math.round((tableItems.reduce((acc, item) => acc + (item.valLdo || 0), 0) + removedLdoTotal) * 100) / 100;
     const diff = valLoaTotal - valLdoTotal;
     const percentExec = valLdoTotal > 0 ? (valLoaTotal / valLdoTotal) * 100 : 100;
 
@@ -1980,7 +2011,7 @@ export function AnaliseLoaView() {
       totalAcoes: acoesSet.size,
       totalNaturezas: naturezasSet.size,
     };
-  }, [tableItems, editableGroups]);
+  }, [tableItems, removedLdoTotal]);
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
@@ -2100,6 +2131,8 @@ export function AnaliseLoaView() {
   }, [filteredItems, metrics]);
 
   // Construção do Pivot Tree View (Árvore Hierárquica Esquerda)
+  const [pivotSort, setPivotSort] = useState<"codigo" | "desc" | "asc">("codigo");
+
   const pivotTree = useMemo(() => {
     const rootNodes: TreeNode[] = [];
     const secMap = new Map<string, TreeNode>();
@@ -2202,17 +2235,24 @@ export function AnaliseLoaView() {
       );
     };
 
-    const regularNodes = rootNodes
-      .filter((n) => !isSpecialBottom(n.name))
-      .sort((a, b) => getSecCode(a.name) - getSecCode(b.name));
+    // Ordenação por valor (Fixação LOA) em todos os níveis; em "codigo" mantém a ordem de inserção dos filhos.
+    const byValue = (a: TreeNode, b: TreeNode) => (pivotSort === "asc" ? a.valLoa - b.valLoa : b.valLoa - a.valLoa);
+    const sortChildren = (node: TreeNode): TreeNode =>
+      node.children
+        ? { ...node, children: (pivotSort === "codigo" ? node.children : [...node.children].sort(byValue)).map(sortChildren) }
+        : node;
+    const sortRoots = (nodes: TreeNode[]) =>
+      pivotSort === "codigo" ? nodes.sort((a, b) => getSecCode(a.name) - getSecCode(b.name)) : nodes.sort(byValue);
 
-    const bottomNodes = rootNodes
-      .filter((n) => isSpecialBottom(n.name))
-      .sort((a, b) => getSecCode(a.name) - getSecCode(b.name))
+    // As entidades da administração indireta continuam no fim, também ordenadas pelo critério escolhido.
+    const regularNodes = sortRoots(rootNodes.filter((n) => !isSpecialBottom(n.name))).map(sortChildren);
+
+    const bottomNodes = sortRoots(rootNodes.filter((n) => isSpecialBottom(n.name)))
+      .map(sortChildren)
       .map((n) => ({ ...n, isSpecialBottom: true }));
 
     return [...regularNodes, ...bottomNodes];
-  }, [filteredItems]);
+  }, [filteredItems, pivotSort]);
 
   // Função para determinar o status e badge de cada linha
   const getStatusInfo = (valLdo: number, valLoa: number) => {
@@ -2980,7 +3020,8 @@ export function AnaliseLoaView() {
               key="painel-receita"
               layoutConfig={layoutConfig}
               ldoReceitaTotal={ldoReceitaTotal}
-              loaReceitaResumo={loaReceitaResumo}
+              ldoReceitaEntidades={ldoReceitaEntidades}
+              loaReceitaResumo={{ ...loaReceitaResumo, entidades: receitaLoaEntidades }}
             />
           );
         }
@@ -3020,6 +3061,29 @@ export function AnaliseLoaView() {
                   <p className="text-[11px] text-on-surface-variant">Navegação em árvore da distribuição orçamentária</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 p-1 rounded-lg bg-surface-container-low/70 border border-outline-variant/70" role="group" aria-label="Ordenar estrutura">
+                    {([
+                      { value: "codigo", label: "Código", icon: "format_list_numbered", title: "Ordem pelo código da secretaria" },
+                      { value: "desc", label: "Maior → Menor", icon: "arrow_downward", title: "Maior Fixação LOA primeiro" },
+                      { value: "asc", label: "Menor → Maior", icon: "arrow_upward", title: "Menor Fixação LOA primeiro" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setPivotSort(option.value)}
+                        aria-pressed={pivotSort === option.value}
+                        title={option.title}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+                          pivotSort === option.value
+                            ? "bg-primary text-on-primary shadow-xs"
+                            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                   <button
                     onClick={expandAllNodes}
                     className="px-3 py-1.5 text-xs font-bold rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors border border-outline-variant"
