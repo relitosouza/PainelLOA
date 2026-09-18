@@ -141,11 +141,89 @@ describe("Importação do Detalhamento LOA Completo via Excel", () => {
     expect(result.validatedRows["item-fin-001"]).toBe(true);
     expect(result.justifications["item-fin-001"]).toBe("Reajuste anual acordado em comissão");
 
+    // Verificar customEdits como NÚMERO PURO (Record<string, number>)
+    expect(result.customEdits["item-fin-001"]).toBe(115000);
+    expect(typeof result.customEdits["item-fin-001"]).toBe("number");
+
     // Verificar item 2 (casamento sem ID)
     const updatedItem2 = result.updatedRawItems.find((i) => i.id === "item-saude-002");
     expect(updatedItem2).toBeDefined();
     expect(updatedItem2!.valorSugestaoSf).toBe(50000);
     expect(updatedItem2!.valorCorteGp).toBe(10000);
     expect(result.validatedRows["item-saude-002"]).toBe(false);
+  });
+
+  it("deve reconhecer nova linha adicionada pelo usuário e mapeá-la em addedExpenses", () => {
+    const baseItems: RawBudgetItem[] = [
+      {
+        id: "item-base-1",
+        progKey: "2.001|3.3.90.39|Serviços",
+        secretaria: "04 - SECRETARIA DE FINANÇAS",
+        programa: "0001 - GESTÃO FISCAL",
+        acao: "2.001 - MANUTENÇÃO DOS SERVIÇOS",
+        tipoAcao: "Atividade",
+        natureza: "3.3.90.39.00 - Outros Serviços",
+        elemento: "3.3.90.39",
+        subelemento: "Serviços",
+        valLdo: 50000,
+        valLoa: 50000,
+      },
+    ];
+
+    // Planilha contendo o item existente e uma NOVA LINHA que não existe no sistema
+    const excelRows = [
+      {
+        "ID": "item-base-1",
+        "Secretaria": "04 - SECRETARIA DE FINANÇAS",
+        "Programa": "0001 - GESTÃO FISCAL",
+        "Ação": "2.001 - MANUTENÇÃO DOS SERVIÇOS",
+        "Natureza da Despesa": "3.3.90.39.00 - Outros Serviços",
+        "Valor Vigente": "60.000,00", // alteração de valor com nome de coluna flexível
+      },
+      {
+        // NOVA LINHA (sem ID existente)
+        "Secretaria": "08 - SECRETARIA DE SAÚDE",
+        "Programa": "0002 - ATENÇÃO BÁSICA",
+        "Ação": "1.005 - REFORMA DE UBS",
+        "Natureza da Despesa": "4.4.90.51.00 - Obras e Instalações",
+        "Elemento de Despesa": "4.4.90.51",
+        "Subelemento": "Reforma e Ampliação",
+        "Fonte/Vínculo": "02.100.0000",
+        "Valor Total LOA 2027 (R$)": "250.000,00",
+        "Valor Reajuste (R$)": "10.000,00",
+        "Contrato / Projeto Iniciado": "SIM",
+        "Justificativa / Observação": "Nova dotação solicitada pelo FMS",
+      },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.json_to_sheet(excelRows);
+    XLSX.utils.book_append_sheet(workbook, sheet, "Detalhamento_LOA_Completo");
+    const buffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+
+    const result = processDetalhamentoWorkbook(buffer, baseItems);
+
+    expect(result.success).toBe(true);
+    expect(result.totalLinhasLidas).toBe(2);
+    expect(result.correspondencias).toBe(2);
+    expect(result.itensModificados).toBe(2);
+
+    // Validação da alteração no item base com coluna flexível "Valor Vigente"
+    expect(result.customEdits["item-base-1"]).toBe(60000);
+
+    // Validação da nova despesa em addedExpenses
+    expect(result.addedExpenses).toHaveLength(1);
+    const added = result.addedExpenses[0];
+    expect(added.secretaria).toBe("08 - SECRETARIA DE SAÚDE");
+    expect(added.acao).toBe("1.005 - REFORMA DE UBS");
+    expect(added.natureza).toBe("4.4.90.51.00 - Obras e Instalações");
+    expect(added.elemento).toBe("4.4.90.51");
+    expect(added.subelemento).toBe("Reforma e Ampliação");
+    expect(added.valorReajuste).toBe(10000);
+    // 250k total - 10k reajuste = 240k valorLoa
+    expect(added.valLoa).toBe(240000);
+    expect(added.projetoIniciado).toBe("SIM");
+    expect(added.observacao).toBe("Nova dotação solicitada pelo FMS");
+    expect(result.updatedRawItems).toHaveLength(2);
   });
 });

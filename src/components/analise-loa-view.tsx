@@ -1565,14 +1565,17 @@ export function AnaliseLoaView() {
     }
 
     // Carregar configurações atuais para merge seguro
-    let existingCustomEdits = {};
-    let existingFinancialEdits = {};
-    let existingSubelementEdits = {};
+    let existingCustomEdits: Record<string, unknown> = {};
+    let existingFinancialEdits: Record<string, unknown> = {};
+    let existingSubelementEdits: Record<string, unknown> = {};
+    let existingAddedExpenses: RawBudgetItem[] = [];
+
     try {
-      const [resC, resF, resS] = await Promise.all([
+      const [resC, resF, resS, resA] = await Promise.all([
         fetch("/api/configuracoes/layout?chave=painel_loa_custom_edits"),
         fetch("/api/configuracoes/layout?chave=painel_loa_reajustes_aditamentos"),
         fetch("/api/configuracoes/layout?chave=painel_loa_subelement_edits"),
+        fetch("/api/configuracoes/layout?chave=painel_loa_added_expenses"),
       ]);
       if (resC.ok) {
         const d = await resC.json();
@@ -1586,17 +1589,56 @@ export function AnaliseLoaView() {
         const d = await resS.json();
         if (d.success && d.valor) existingSubelementEdits = d.valor;
       }
+      if (resA.ok) {
+        const d = await resA.json();
+        if (d.success && Array.isArray(d.valor)) existingAddedExpenses = d.valor;
+      }
+      if (!existingAddedExpenses.length) {
+        const saved = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
+        if (saved) existingAddedExpenses = JSON.parse(saved);
+      }
     } catch { }
 
-    const mergedCustomEdits = { ...existingCustomEdits, ...result.customEdits };
+    // Merge e sanitização de customEdits para garantir APENAS números
+    const rawMergedCustomEdits = { ...existingCustomEdits, ...result.customEdits };
+    const cleanCustomEdits: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rawMergedCustomEdits)) {
+      const num =
+        typeof v === "number"
+          ? v
+          : typeof v === "object" && v !== null && "valorLoa" in v
+          ? Number((v as { valorLoa?: number }).valorLoa)
+          : Number(v);
+      if (!isNaN(num)) cleanCustomEdits[k] = num;
+    }
+
     const mergedFinancialEdits = { ...existingFinancialEdits, ...result.financialEdits };
     const mergedSubelementEdits = { ...existingSubelementEdits, ...result.subelementEdits };
 
-    const responses = await Promise.all([
+    // Merge de despesas adicionadas (novas linhas da planilha)
+    const addedMap = new Map<string, RawBudgetItem>(existingAddedExpenses.map((i) => [i.id, i]));
+    (result.addedExpenses || []).forEach((item) => {
+      addedMap.set(item.id, item);
+    });
+    const mergedAddedExpenses = Array.from(addedMap.values());
+
+    // Sincronizar no localStorage para persistência offline imediata
+    try {
+      if (mergedAddedExpenses.length > 0) {
+        localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(mergedAddedExpenses));
+      }
+      localStorage.setItem("painel_loa_custom_edits_v1", JSON.stringify(cleanCustomEdits));
+      localStorage.setItem("painel_loa_reajustes_aditamentos_v1", JSON.stringify(mergedFinancialEdits));
+      localStorage.setItem("painel_loa_subelement_edits_v1", JSON.stringify(mergedSubelementEdits));
+      localStorage.setItem("painel_loa_justifications_v1", JSON.stringify(result.justifications));
+      localStorage.setItem("painel_loa_validated_rows_v1", JSON.stringify(result.validatedRows));
+    } catch { }
+
+    const requests = [
       fetch("/api/configuracoes/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chave: "painel_loa_custom_edits", valor: mergedCustomEdits }),
+        body: JSON.stringify({ chave: "painel_loa_custom_edits", valor: cleanCustomEdits }),
       }),
       fetch("/api/configuracoes/layout", {
         method: "POST",
@@ -1618,14 +1660,30 @@ export function AnaliseLoaView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chave: "painel_loa_validated_rows", valor: result.validatedRows }),
       }),
-    ]);
+    ];
+
+    if (mergedAddedExpenses.length > 0) {
+      requests.push(
+        fetch("/api/configuracoes/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chave: "painel_loa_added_expenses", valor: mergedAddedExpenses }),
+        })
+      );
+    }
+
+    const responses = await Promise.all(requests);
 
     if (responses.some((r) => !r.ok)) {
       throw new Error("O servidor recusou a persistência de algumas configurações da planilha.");
     }
 
     notifyAnaliseLoaSaved();
-    alert(`Importação concluída com sucesso! ${result.itensModificados} item(ns) e ${result.alteracoes.length} campo(s) foram atualizados no sistema.`);
+    setDataReloadKey((prev) => prev + 1);
+
+    const totalLinhasNovas = result.addedExpenses?.length ?? 0;
+    const msgNovas = totalLinhasNovas > 0 ? ` e ${totalLinhasNovas} nova(s) linha(s) adicionada(s)` : "";
+    alert(`Importação concluída com sucesso! ${result.itensModificados} item(ns)${msgNovas} e ${result.alteracoes.length} campo(s) foram atualizados no sistema.`);
   };
 
   // Extrair opções únicas cascading para os Chips de Filtro (dependente dos filtros atuais)

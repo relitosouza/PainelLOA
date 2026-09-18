@@ -96,8 +96,19 @@ export async function getValorPrevistoLoaDespesa(): Promise<number | null> {
   const removed = await getConfig<string[]>("painel_loa_removed_expenses", []);
   if (Array.isArray(removed)) removed.forEach((id) => items.delete(id));
 
-  const customEdits = await getConfig<Record<string, number>>("painel_loa_custom_edits", {});
-  Object.entries(customEdits ?? {}).forEach(([id, value]) => { const item = items.get(id); if (item) item.valLoa = value; });
+  const customEdits = await getConfig<Record<string, number | { valorLoa?: number }>>("painel_loa_custom_edits", {});
+  Object.entries(customEdits ?? {}).forEach(([id, value]) => {
+    const item = items.get(id);
+    if (item) {
+      const num =
+        typeof value === "number"
+          ? value
+          : typeof value === "object" && value !== null && "valorLoa" in value
+          ? Number((value as { valorLoa?: number }).valorLoa)
+          : Number(value);
+      item.valLoa = isNaN(num) ? item.valLoa : num;
+    }
+  });
 
   const financialEdits = await getConfig<Record<string, { valorReajuste?: number; valorAditamento?: number }>>("painel_loa_reajustes_aditamentos", {});
   Object.entries(financialEdits ?? {}).forEach(([id, edit]) => { const item = items.get(id); if (item) Object.assign(item, edit); });

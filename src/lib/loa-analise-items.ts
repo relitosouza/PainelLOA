@@ -230,8 +230,23 @@ export const withoutRemoved = (items: RawBudgetItem[], removedIds: string[]) => 
   return items.filter((item) => !removedSet.has(item.id));
 };
 
-export const withCustomEdits = (items: RawBudgetItem[], customMap: Record<string, number>) =>
-  items.map((item) => (customMap[item.id] !== undefined ? { ...item, valLoa: customMap[item.id] } : item));
+export const withCustomEdits = (
+  items: RawBudgetItem[],
+  customMap: Record<string, number | { valorLoa?: number }>
+) =>
+  items.map((item) => {
+    if (customMap[item.id] !== undefined) {
+      const rawVal = customMap[item.id];
+      const numericVal =
+        typeof rawVal === "number"
+          ? rawVal
+          : typeof rawVal === "object" && rawVal !== null && "valorLoa" in rawVal
+          ? Number(rawVal.valorLoa)
+          : Number(rawVal);
+      return { ...item, valLoa: isNaN(numericVal) ? item.valLoa : numericVal };
+    }
+    return item;
+  });
 
 export const withSubelementEdits = (items: RawBudgetItem[], edits: Record<string, Partial<RawBudgetItem>>) =>
   items.map((item) => (edits[item.id] ? { ...item, ...edits[item.id] } : item));

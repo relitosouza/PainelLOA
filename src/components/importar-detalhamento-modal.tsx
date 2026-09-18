@@ -96,7 +96,10 @@ export function ImportarDetalhamentoModal({
   const filteredChanges = analysisResult?.alteracoes.filter((item) => {
     if (filterCampo === "todos") return true;
     if (filterCampo === "valores") {
-      return ["Valor Vigente", "Reajuste", "Aditamento", "Sugestão SF", "Corte GP"].includes(item.campo);
+      return ["Valor Vigente", "Valor Total LOA 2027", "Reajuste", "Aditamento", "Sugestão SF", "Corte GP", "Novo Registro Adicionado"].includes(item.campo);
+    }
+    if (filterCampo === "novos") {
+      return item.campo === "Novo Registro Adicionado";
     }
     if (filterCampo === "cadastral") {
       return ["Processo", "Código de Aplicação", "Contrato / Projeto Iniciado", "Justificativa / Observação"].includes(item.campo);
@@ -219,7 +222,14 @@ export function ImportarDetalhamentoModal({
                 </div>
                 <div className="p-3 rounded-xl border border-outline-variant/60 bg-surface-container-lowest">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Campos Alterados</span>
-                  <p className="text-lg font-extrabold font-mono text-amber-700 dark:text-amber-400">{analysisResult.alteracoes.length}</p>
+                  <p className="text-lg font-extrabold font-mono text-amber-700 dark:text-amber-400">
+                    {analysisResult.alteracoes.length}
+                    {analysisResult.addedExpenses && analysisResult.addedExpenses.length > 0 && (
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 ml-1">
+                        (+{analysisResult.addedExpenses.length} novos)
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
 
@@ -240,6 +250,7 @@ export function ImportarDetalhamentoModal({
                       >
                         <option value="todos">Todos os campos</option>
                         <option value="valores">Apenas Valores Financeiros</option>
+                        <option value="novos">Apenas Novas Linhas Adicionadas</option>
                         <option value="cadastral">Apenas Dados Cadastrais</option>
                       </select>
                     </div>
@@ -346,10 +357,16 @@ export function ImportarDetalhamentoModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={!analysisResult || analysisResult.alteracoes.length === 0 || isSaving}
+              disabled={
+                !analysisResult ||
+                (analysisResult.alteracoes.length === 0 && (!analysisResult.addedExpenses || analysisResult.addedExpenses.length === 0)) ||
+                isSaving
+              }
               onClick={() => void handleConfirm()}
               className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                analysisResult && analysisResult.alteracoes.length > 0 && !isSaving
+                analysisResult &&
+                (analysisResult.alteracoes.length > 0 || (analysisResult.addedExpenses && analysisResult.addedExpenses.length > 0)) &&
+                !isSaving
                   ? "bg-primary text-on-primary hover:bg-primary/90"
                   : "bg-surface-container text-on-surface-variant/50 border border-outline-variant cursor-not-allowed"
               }`}
