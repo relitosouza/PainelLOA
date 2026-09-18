@@ -56,16 +56,22 @@ export function AppShell({ view }: { view: string }) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
     const mediaQuery = window.matchMedia("(min-width: 768px)");
+    if (!mediaQuery) return;
 
     const syncViewport = () => {
       setIsDesktop(mediaQuery.matches);
     };
 
     syncViewport();
-    mediaQuery.addEventListener("change", syncViewport);
-
-    return () => mediaQuery.removeEventListener("change", syncViewport);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", syncViewport);
+      return () => mediaQuery.removeEventListener("change", syncViewport);
+    } else if (mediaQuery.addListener) {
+      mediaQuery.addListener(syncViewport);
+      return () => mediaQuery.removeListener(syncViewport);
+    }
   }, []);
 
   useEffect(() => {
