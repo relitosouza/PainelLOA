@@ -41,7 +41,7 @@ export function ElaboracaoLoaView() {
   const [loaRevenue, setLoaRevenue] = useState<number | null>(null);
   const [loaExpense, setLoaExpense] = useState<number | null>(null);
   useEffect(() => {
-    fetch("/api/elaboracao-loa/resumo?exercise=2026")
+    fetch("/api/elaboracao-loa/resumo?exercise=2027")
       .then((response) => response.ok ? response.json() : null)
       .then((data) => { setLoaRevenue(data?.loaReceita ?? null); setLoaExpense(data?.loaDespesaProposta ?? null); })
       .catch(() => { setLoaRevenue(null); setLoaExpense(null); });

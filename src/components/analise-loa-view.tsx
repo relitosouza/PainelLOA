@@ -2041,7 +2041,7 @@ export function AnaliseLoaView() {
       }
       const entry = map.get(key)!;
       entry.ldo += item.valLdo;
-      entry.loa += item.valLoa;
+      entry.loa += getItemLoaTotal(item);
       entry.diff = entry.loa - entry.ldo;
       entry.count += 1;
     });
@@ -2106,8 +2106,8 @@ export function AnaliseLoaView() {
       if (diff > 0) suplementado += diff;
       if (diff < 0) reduzido += Math.abs(diff);
 
-      progMap.set(item.programa, (progMap.get(item.programa) || 0) + item.valLoa);
-      secMap.set(item.secretaria, (secMap.get(item.secretaria) || 0) + item.valLoa);
+      progMap.set(item.programa, (progMap.get(item.programa) || 0) + itemTotal);
+      secMap.set(item.secretaria, (secMap.get(item.secretaria) || 0) + itemTotal);
     });
 
     const sortedProg = [...progMap.entries()].sort((a, b) => b[1] - a[1]);
