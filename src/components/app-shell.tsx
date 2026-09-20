@@ -33,6 +33,10 @@ export function AppShell({ view }: { view: string }) {
   const sidebarId = "primary-sidebar";
 
   useEffect(() => {
+    if (view === "apresentacao") {
+      setCheckingAuth(false);
+      return;
+    }
     // Validar se o usuário está logado
     const user = getActiveUser();
     if (!user) {
