@@ -36,8 +36,10 @@ import { normalizeActionLabel, normalizeProgramLabel } from "@/lib/loa-labels";
 import {
   allocateLoa2026Initial,
   calculateAnalyticalValues,
+  calculateSugestaoSfAdoption,
   createBancoProjetoValues,
   parseLoa2026InitialWorkbook,
+  type BudgetScenario,
 } from "@/lib/loa-analytical-values";
 
 // --- Tipos de Filtro ---
@@ -137,8 +139,10 @@ const orderFromSaved = (saved: AnalyticalColumn[]) => [
   ...DEFAULT_COLUMN_ORDER.filter((key) => !saved.includes(key)),
 ];
 
-const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
-  calculateAnalyticalValues(item).loa2027;
+const getItemLoaTotal = (
+  item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento" | "valorSugestaoSf">,
+  scenario: BudgetScenario = "oficial"
+) => calculateAnalyticalValues(item, scenario).loa2027;
 
 const getItemVigenteReajuste = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste">) =>
   calculateAnalyticalValues(item).vigenteComReajuste;
@@ -225,6 +229,9 @@ export function AnaliseLoaView() {
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [scopeTab, setScopeTab] = useState<"todos" | "contratos" | "demais">("todos");
+  const [budgetScenario, setBudgetScenario] = useState<BudgetScenario>("oficial");
+  const [sfAdoptionModalOpen, setSfAdoptionModalOpen] = useState(false);
+  const [sfAdoptionScope, setSfAdoptionScope] = useState<{ type: "global" } | { type: "secretaria"; secretaria: string } | null>(null);
   const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
   const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
   const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
@@ -1343,6 +1350,96 @@ export function AnaliseLoaView() {
     setHasChanges(false);
   };
 
+  /**
+   * Adota a Sugestão SF em um único item/dotação:
+   * Ajusta o valorAditamento para que a composição oficial atinja a Sugestão SF.
+   */
+  const handleAdoptSugestaoSfItem = (item: RawBudgetItem) => {
+    if (!item.valorSugestaoSf || item.valorSugestaoSf <= 0) return;
+    const adoption = calculateSugestaoSfAdoption(item);
+    setRawItems((previous) =>
+      previous.map((row) =>
+        row.id === item.id
+          ? { ...row, valorAditamento: adoption.valorAditamento }
+          : row
+      )
+    );
+    setJustifications((prev) => ({
+      ...prev,
+      [item.id]: prev[item.id] || `Ajustado conforme Sugestão SF (${formatBr(item.valorSugestaoSf)})`,
+    }));
+    setHasChanges(true);
+  };
+
+  /** Reverte uma adoção SF ainda não salva para o último valor persistido. */
+  const handleRevertSugestaoSfItem = (item: RawBudgetItem) => {
+    const saved = savedRawItems.find((row) => row.id === item.id);
+    if (!saved) return;
+    setRawItems((previous) => previous.map((row) => row.id === item.id
+      ? { ...row, valorAditamento: saved.valorAditamento ?? 0 }
+      : row));
+    setJustifications((previous) => {
+      const next = { ...previous };
+      const automatic = `Ajustado conforme Sugestão SF (${formatBr(item.valorSugestaoSf ?? 0)})`;
+      if (next[item.id] === automatic) delete next[item.id];
+      return next;
+    });
+    setHasChanges(true);
+  };
+
+  /**
+   * Executa a adoção em lote da Sugestão SF (por secretaria ou global)
+   */
+  const handleExecuteAdoptSugestaoSfBatch = (targetSecretaria?: string) => {
+    let affectedCount = 0;
+    setRawItems((previous) =>
+      previous.map((row) => {
+        if (targetSecretaria && row.secretaria !== targetSecretaria) return row;
+        if (!row.valorSugestaoSf || row.valorSugestaoSf <= 0) return row;
+        const adoption = calculateSugestaoSfAdoption(row);
+        affectedCount++;
+        return { ...row, valorAditamento: adoption.valorAditamento };
+      })
+    );
+
+    if (affectedCount > 0) {
+      setJustifications((prev) => {
+        const next = { ...prev };
+        rawItems.forEach((row) => {
+          if (targetSecretaria && row.secretaria !== targetSecretaria) return;
+          if (row.valorSugestaoSf && row.valorSugestaoSf > 0) {
+            next[row.id] = next[row.id] || `Ajustado conforme Sugestão SF (${formatBr(row.valorSugestaoSf)})`;
+          }
+        });
+        return next;
+      });
+      setHasChanges(true);
+    }
+    setSfAdoptionModalOpen(false);
+    setSfAdoptionScope(null);
+  };
+
+  const handleRevertAdoptSugestaoSfBatch = (targetSecretaria?: string) => {
+    const savedById = new Map(savedRawItems.map((row) => [row.id, row]));
+    setRawItems((previous) => previous.map((row) => {
+      if (targetSecretaria && row.secretaria !== targetSecretaria) return row;
+      const saved = savedById.get(row.id);
+      return saved ? { ...row, valorAditamento: saved.valorAditamento ?? 0 } : row;
+    }));
+    setJustifications((previous) => {
+      const next = { ...previous };
+      rawItems.forEach((row) => {
+        if (targetSecretaria && row.secretaria !== targetSecretaria) return;
+        const automatic = `Ajustado conforme Sugestão SF (${formatBr(row.valorSugestaoSf ?? 0)})`;
+        if (next[row.id] === automatic) delete next[row.id];
+      });
+      return next;
+    });
+    setHasChanges(true);
+    setSfAdoptionModalOpen(false);
+    setSfAdoptionScope(null);
+  };
+
   // Confirmar e Gravar Alterações + Justificativas no localStorage
   const confirmSaveEdits = async () => {
     try {
@@ -1799,7 +1896,7 @@ export function AnaliseLoaView() {
     let totalDemais = 0;
 
     filteredItems.forEach((item) => {
-      const total = getItemLoaTotal(item);
+      const total = getItemLoaTotal(item, budgetScenario);
       countTodos++;
       totalTodos += total;
       if (isItemContrato(item)) {
@@ -1816,13 +1913,13 @@ export function AnaliseLoaView() {
       contratos: { count: countContratos, total: totalContratos },
       demais: { count: countDemais, total: totalDemais },
     };
-  }, [filteredItems]);
+  }, [filteredItems, budgetScenario]);
 
   const itemMatchesTable = useCallback((item: RawBudgetItem) => {
       if (scopeTab === "contratos" && !isItemContrato(item)) return false;
       if (scopeTab === "demais" && isItemContrato(item)) return false;
       if (statusFilters.length > 0) {
-        const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, getItemLoaTotal(item)));
+        const matchesFilter = statusFilters.some((filter) => filter === getStatusLabel(item.valLdo, getItemLoaTotal(item, budgetScenario)));
         if (!matchesFilter) return false;
       }
       if (!tableSearch) return true;
@@ -1835,7 +1932,7 @@ export function AnaliseLoaView() {
         item.processo.toLowerCase().includes(query) ||
         item.subelemento.toLowerCase().includes(query)
       );
-  }, [scopeTab, statusFilters, tableSearch]);
+  }, [scopeTab, statusFilters, tableSearch, budgetScenario]);
 
   const tableItems = useMemo(() => filteredItems.filter(itemMatchesTable), [filteredItems, itemMatchesTable]);
 
@@ -1883,7 +1980,7 @@ export function AnaliseLoaView() {
       group.valorAditamento += item.valorAditamento ?? 0;
       group.valorSugestaoSf += item.valorSugestaoSf ?? 0;
       group.valorCorteGp += item.valorCorteGp ?? 0;
-      group.valorTotal += getItemLoaTotal(item);
+      group.valorTotal += getItemLoaTotal(item, budgetScenario);
       groups.set(groupKey, group);
     });
 
@@ -1931,9 +2028,9 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "valorAditamento") result = (left.valorAditamento ?? 0) - (right.valorAditamento ?? 0);
       else if (tableSort.column === "valorSugestaoSf") result = (left.valorSugestaoSf ?? 0) - (right.valorSugestaoSf ?? 0);
       else if (tableSort.column === "valorCorteGp") result = (left.valorCorteGp ?? 0) - (right.valorCorteGp ?? 0);
-      else if (tableSort.column === "valorTotal") result = getItemLoaTotal(left) - getItemLoaTotal(right);
-      else if (tableSort.column === "diff") result = (getItemLoaTotal(left) - left.valLdo) - (getItemLoaTotal(right) - right.valLdo);
-      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, getItemLoaTotal(left)), getStatusLabel(right.valLdo, getItemLoaTotal(right)));
+      else if (tableSort.column === "valorTotal") result = getItemLoaTotal(left, budgetScenario) - getItemLoaTotal(right, budgetScenario);
+      else if (tableSort.column === "diff") result = (getItemLoaTotal(left, budgetScenario) - left.valLdo) - (getItemLoaTotal(right, budgetScenario) - right.valLdo);
+      else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, getItemLoaTotal(left, budgetScenario)), getStatusLabel(right.valLdo, getItemLoaTotal(right, budgetScenario)));
       else result = getValidated(left) - getValidated(right);
       return tableSort.direction === "asc" ? result : -result;
     };
@@ -1942,7 +2039,7 @@ export function AnaliseLoaView() {
       ...group,
       children: [...group.children].sort(compareChild),
     })).sort(compareGroup);
-  }, [tableItems, tableSort, validatedRows, ldoPlanningMap]);
+  }, [tableItems, tableSort, validatedRows, ldoPlanningMap, budgetScenario]);
 
   const totalTablePages = useMemo(
     () => Math.max(1, Math.ceil(editableGroups.length / tablePageSize)),
@@ -1976,7 +2073,7 @@ export function AnaliseLoaView() {
     const naturezasSet = new Set<string>();
 
     tableItems.forEach((item) => {
-      valLoaTotal += getItemLoaTotal(item);
+      valLoaTotal += getItemLoaTotal(item, budgetScenario);
       valLoa2026Total += item.valLoa2026 ?? 0;
       valLoaVigenteTotal += item.valLoa;
       valorReajusteTotal += item.valorReajuste ?? 0;
@@ -2009,7 +2106,7 @@ export function AnaliseLoaView() {
       totalAcoes: acoesSet.size,
       totalNaturezas: naturezasSet.size,
     };
-  }, [tableItems, removedLdoTotal]);
+  }, [tableItems, removedLdoTotal, budgetScenario]);
 
   // Agrupamento dos Sub-elementos dos itens filtrados
   const subelementosBreakdown = useMemo(() => {
@@ -2041,7 +2138,7 @@ export function AnaliseLoaView() {
       }
       const entry = map.get(key)!;
       entry.ldo += item.valLdo;
-      entry.loa += getItemLoaTotal(item);
+      entry.loa += getItemLoaTotal(item, budgetScenario);
       entry.diff = entry.loa - entry.ldo;
       entry.count += 1;
     });
@@ -2051,7 +2148,7 @@ export function AnaliseLoaView() {
       return items.filter((i) => i.acao === cardSubelementosAcao).sort((a, b) => b.loa - a.loa);
     }
     return items.sort((a, b) => b.loa - a.loa);
-  }, [filteredItems, cardSubelementosAcao]);
+  }, [filteredItems, cardSubelementosAcao, budgetScenario]);
 
   // Ações disponíveis nos sub-elementos para o filtro do card
   const availableSubelementosAcoes = useMemo(() => {
@@ -2091,7 +2188,7 @@ export function AnaliseLoaView() {
     let reduzido = 0;
 
     filteredItems.forEach((item) => {
-      const itemTotal = getItemLoaTotal(item);
+      const itemTotal = getItemLoaTotal(item, budgetScenario);
       const diff = itemTotal - item.valLdo;
       if (diff > maiorAumento.val) {
         maiorAumento = { item: `${item.acao} — ${item.subelemento || item.natureza}`, val: diff };
@@ -3233,53 +3330,105 @@ export function AnaliseLoaView() {
                     <p className="text-[11px] text-on-surface-variant">Dê duplo clique ou edite os valores diretamente nas células</p>
                   </div>
 
-                  {/* Seletor Segmentado de Escopo: Todos / Contratos / Demais */}
-                  <div className="flex items-center gap-1.5 p-1 bg-surface-container-low/70 rounded-xl border border-outline-variant/70 overflow-x-auto shrink-0 shadow-xs">
-                    <button
-                      type="button"
-                      onClick={() => setScopeTab("todos")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        scopeTab === "todos"
-                          ? "bg-primary text-on-primary shadow-xs"
-                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">apps</span>
-                      <span>Todos ({scopeStats.todos.count})</span>
-                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "todos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
-                        {currency.format(scopeStats.todos.total)}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScopeTab("contratos")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        scopeTab === "contratos"
-                          ? "bg-amber-600 text-white shadow-xs"
-                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">description</span>
-                      <span>Contratos ({scopeStats.contratos.count})</span>
-                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "contratos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
-                        {currency.format(scopeStats.contratos.total)}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScopeTab("demais")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        scopeTab === "demais"
-                          ? "bg-sky-700 text-white shadow-xs"
-                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">folder_open</span>
-                      <span>Demais ({scopeStats.demais.count})</span>
-                      <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "demais" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
-                        {currency.format(scopeStats.demais.total)}
-                      </span>
-                    </button>
+                  {/* Controles de Cenário e Escopo */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Seletor de Cenário Orçamentário */}
+                    <div className="flex items-center gap-1 p-1 bg-surface-container-low/90 rounded-xl border border-outline-variant/80 shadow-xs">
+                      <button
+                        type="button"
+                        onClick={() => setBudgetScenario("oficial")}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          budgetScenario === "oficial"
+                            ? "bg-primary text-on-primary shadow-xs"
+                            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                        }`}
+                        title="Proposta consolidada das Secretarias (Vigente + Reajuste + Aditamento)"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">account_balance</span>
+                        <span>Proposta Secretarias</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBudgetScenario("sf")}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          budgetScenario === "sf"
+                            ? "bg-amber-600 text-white shadow-xs ring-2 ring-amber-400/40"
+                            : "text-amber-800 dark:text-amber-400 hover:bg-amber-100/50"
+                        }`}
+                        title="Simulação considerando a Sugestão SF como valor da dotação quando preenchida (> 0)"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">insights</span>
+                        <span>Cenário SF</span>
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-amber-700/30 text-amber-950 dark:text-amber-100 uppercase tracking-wider">
+                          Simulação
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Botão de Efetivação do Cenário SF (Visível em Cenário SF ou quando há sugestões) */}
+                    {metrics.valorSugestaoSfTotal > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSfAdoptionScope({ type: "global" });
+                          setSfAdoptionModalOpen(true);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700/60 hover:bg-amber-500/20 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                        title="Adota todas as sugestões preenchidas da SF no Total Oficial da LOA (ajustando aditamentos)"
+                      >
+                        <span className="material-symbols-outlined text-[15px] text-amber-700 dark:text-amber-400">check_circle</span>
+                        <span>Efetivar Cenário SF</span>
+                      </button>
+                    )}
+
+                    {/* Seletor Segmentado de Escopo: Todos / Contratos / Demais */}
+                    <div className="flex items-center gap-1.5 p-1 bg-surface-container-low/70 rounded-xl border border-outline-variant/70 overflow-x-auto shrink-0 shadow-xs">
+                      <button
+                        type="button"
+                        onClick={() => setScopeTab("todos")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          scopeTab === "todos"
+                            ? "bg-primary text-on-primary shadow-xs"
+                            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">apps</span>
+                        <span>Todos ({scopeStats.todos.count})</span>
+                        <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "todos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                          {currency.format(scopeStats.todos.total)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setScopeTab("contratos")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          scopeTab === "contratos"
+                            ? "bg-amber-600 text-white shadow-xs"
+                            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">description</span>
+                        <span>Contratos ({scopeStats.contratos.count})</span>
+                        <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "contratos" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                          {currency.format(scopeStats.contratos.total)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setScopeTab("demais")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          scopeTab === "demais"
+                            ? "bg-sky-700 text-white shadow-xs"
+                            : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">folder_open</span>
+                        <span>Demais ({scopeStats.demais.count})</span>
+                        <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${scopeTab === "demais" ? "bg-white/20 text-white" : "bg-surface-container-highest text-on-surface-variant"}`}>
+                          {currency.format(scopeStats.demais.total)}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -3814,12 +3963,26 @@ export function AnaliseLoaView() {
                                     Remover
                                   </button>
                                 ))}
+                                {group.valorSugestaoSf > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSfAdoptionScope({ type: "secretaria", secretaria: group.secretaria });
+                                      setSfAdoptionModalOpen(true);
+                                    }}
+                                    title={`Efetivar Sugestões SF desta ação/secretaria (${formatBr(group.valorSugestaoSf)})`}
+                                    className="ml-auto flex min-h-8 px-2 items-center gap-1 rounded-lg border border-amber-300/80 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-[11px] font-bold transition-colors shrink-0 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[15px]">done_all</span>
+                                    <span className="hidden sm:inline">Adotar SF</span>
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => { setAddElementContext(null); setAddExpenseGroup(group); }}
                                   aria-label={`Adicionar Natureza da Despesa em ${group.acao}`}
                                   title="Adicionar Natureza da Despesa"
-                                  className="ml-auto flex min-h-8 px-2 items-center gap-1 rounded-lg border border-primary/30 bg-surface text-primary hover:bg-primary/10 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary shrink-0"
+                                  className={`${group.valorSugestaoSf > 0 ? '' : 'ml-auto '}flex min-h-8 px-2 items-center gap-1 rounded-lg border border-primary/30 bg-surface text-primary hover:bg-primary/10 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary shrink-0`}
                                 >
                                   <span className="material-symbols-outlined text-[15px]">add_circle</span>
                                   <span className="hidden sm:inline">Natureza</span>
@@ -4243,7 +4406,7 @@ export function AnaliseLoaView() {
                                 const natureAditamento = natureItems.reduce((sum, item) => sum + (item.valorAditamento ?? 0), 0);
                                 const natureSugestaoSf = natureItems.reduce((sum, item) => sum + (item.valorSugestaoSf ?? 0), 0);
                                 const natureCorteGp = natureItems.reduce((sum, item) => sum + (item.valorCorteGp ?? 0), 0);
-                                const natureTotal = natureLoa + natureReajuste + natureAditamento;
+                                const natureTotal = natureItems.reduce((sum, item) => sum + getItemLoaTotal(item, budgetScenario), 0);
                                 const natureDiff = natureTotal - natureLdo;
                                 const natureStatus = getStatusInfo(natureLdo, natureTotal);
                                 // Vínculos extras pertencem ao subelemento de origem e não são validados separadamente.
@@ -4543,25 +4706,45 @@ export function AnaliseLoaView() {
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
                                           </td>),
-                                            valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
-                                              type="text"
-                                              value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
-                                              onFocus={() => {
-                                                setEditingCell({ id: entry.id, field: "valorSugestaoSf" });
-                                                setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
-                                              }}
-                                              onChange={(event) => {
-                                                const sanitizedValue = event.target.value.replace(/-/g, "");
-                                                setTempInputValue(sanitizedValue);
-                                                const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
-                                                setHasChanges(true);
-                                              }}
-                                              onBlur={() => setEditingCell(null)}
-                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                            /></div>)}</div>
-                                          </td>),
+                                             valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => (
+                                               <div key={entry.id} className="flex items-center gap-1 justify-end">
+                                                 <input
+                                                   type="text"
+                                                   value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
+                                                   onFocus={() => {
+                                                     setEditingCell({ id: entry.id, field: "valorSugestaoSf" });
+                                                     setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
+                                                   }}
+                                                   onChange={(event) => {
+                                                     const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                     setTempInputValue(sanitizedValue);
+                                                     const value = parseBr(sanitizedValue);
+                                                     setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
+                                                     setHasChanges(true);
+                                                   }}
+                                                   onBlur={() => setEditingCell(null)}
+                                                   className="w-28 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                                 />
+                                                 {entry.valorSugestaoSf && entry.valorSugestaoSf > 0 ? (
+                                                   <button
+                                                     type="button"
+                                                     onClick={() => {
+                                                       const saved = savedRawItems.find((row) => row.id === entry.id);
+                                                       const adopted = saved && Math.abs((entry.valorAditamento ?? 0) - (saved.valorAditamento ?? 0)) > 0.001;
+                                                       if (adopted) handleRevertSugestaoSfItem(entry);
+                                                       else handleAdoptSugestaoSfItem(entry);
+                                                     }}
+                                                     title={`Adotar ou reverter Sugestão SF (${formatBr(entry.valorSugestaoSf)})`}
+                                                     aria-label="Adotar ou reverter Sugestão SF"
+                                                     className="p-1 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors shrink-0 cursor-pointer"
+                                                   >
+                                                     <span className="material-symbols-outlined text-[14px]">{savedRawItems.find((row) => row.id === entry.id) && Math.abs((entry.valorAditamento ?? 0) - (savedRawItems.find((row) => row.id === entry.id)?.valorAditamento ?? 0)) > 0.001 ? "undo" : "arrow_downward"}</span>
+                                                   </button>
+                                                 ) : null}
+                                               </div>
+                                             ))}</div>
+                                           </td>),
                                             valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[item].map((entry) => <div key={entry.id}><input
                                               type="text"
@@ -4699,25 +4882,40 @@ export function AnaliseLoaView() {
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
                                           </td>),
-                                            valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
-                                            <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
-                                              type="text"
-                                              value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
-                                              onFocus={() => {
-                                                setEditingCell({ id: entry.id, field: "valorSugestaoSf" });
-                                                setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
-                                              }}
-                                              onChange={(event) => {
-                                                const sanitizedValue = event.target.value.replace(/-/g, "");
-                                                setTempInputValue(sanitizedValue);
-                                                const value = parseBr(sanitizedValue);
-                                                setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
-                                                setHasChanges(true);
-                                              }}
-                                              onBlur={() => setEditingCell(null)}
-                                              className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                            /></div>)}</div>
-                                          </td>),
+                                             valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-1.5 border border-outline-variant/20 bg-surface text-right">
+                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => (
+                                               <div key={entry.id} className="flex items-center gap-1 justify-end">
+                                                 <input
+                                                   type="text"
+                                                   value={editingCell?.id === entry.id && editingCell.field === "valorSugestaoSf" ? tempInputValue : formatBr(entry.valorSugestaoSf ?? 0)}
+                                                   onFocus={() => {
+                                                     setEditingCell({ id: entry.id, field: "valorSugestaoSf" });
+                                                     setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
+                                                   }}
+                                                   onChange={(event) => {
+                                                     const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                     setTempInputValue(sanitizedValue);
+                                                     const value = parseBr(sanitizedValue);
+                                                     setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
+                                                     setHasChanges(true);
+                                                   }}
+                                                   onBlur={() => setEditingCell(null)}
+                                                   className="w-28 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                                 />
+                                                 {entry.valorSugestaoSf && entry.valorSugestaoSf > 0 ? (
+                                                   <button
+                                                     type="button"
+                                                     onClick={() => handleAdoptSugestaoSfItem(entry)}
+                                                     title={`Adotar Sugestão SF (${formatBr(entry.valorSugestaoSf)}) no Total da LOA`}
+                                                     aria-label="Adotar Sugestão SF"
+                                                     className="p-1 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300/80 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors shrink-0 cursor-pointer"
+                                                   >
+                                                     <span className="material-symbols-outlined text-[14px]">arrow_downward</span>
+                                                   </button>
+                                                 ) : null}
+                                               </div>
+                                             ))}</div>
+                                           </td>),
                                             valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-1.5 border border-outline-variant/20 bg-surface text-right">
                                             <div className="flex flex-col items-end gap-2">{[child].map((entry) => <div key={entry.id}><input
                                               type="text"
@@ -5718,6 +5916,115 @@ export function AnaliseLoaView() {
         currentJustifications={justifications}
         onApplyImport={handleApplyImport}
       />
+
+      {/* 11. POPUP MODAL: Confirmação de Adoção da Sugestão SF */}
+      {sfAdoptionModalOpen && (() => {
+        const targetSec = sfAdoptionScope?.type === "secretaria" ? sfAdoptionScope.secretaria : undefined;
+        const candidates = rawItems.filter((row) => {
+          if (targetSec && row.secretaria !== targetSec) return false;
+          return Boolean(row.valorSugestaoSf && row.valorSugestaoSf > 0);
+        });
+        const count = candidates.length;
+        const totalSf = candidates.reduce((sum, r) => sum + (r.valorSugestaoSf ?? 0), 0);
+        const totalLoaAtual = candidates.reduce((sum, r) => sum + getItemLoaTotal(r, "oficial"), 0);
+        const diffTotal = totalSf - totalLoaAtual;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+            <div
+              className="w-full max-w-lg rounded-2xl border border-outline-variant bg-surface p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-sf-adoption-title"
+            >
+              <div className="flex items-center gap-3 border-b border-outline-variant/60 pb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300">
+                  <span className="material-symbols-outlined text-2xl">published_with_changes</span>
+                </div>
+                <div>
+                  <h3 id="modal-sf-adoption-title" className="text-base font-bold text-on-surface">
+                    Efetivar Cenário da Sugestão SF
+                  </h3>
+                  <p className="text-xs text-on-surface-variant">
+                    {targetSec ? `Escopo: ${targetSec}` : "Escopo: Toda a LOA (Global)"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3 text-xs text-on-surface">
+                <p className="text-on-surface-variant">
+                  Esta ação ajustará o <strong>Aditamento</strong> das dotações para que o valor total oficial reflita com precisão a proposta da <strong>Sugestão SF</strong>. O valor Vigente base permanecerá inalterado.
+                </p>
+
+                <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-3.5 dark:border-amber-900/50 dark:bg-amber-950/30">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-[11px] font-medium text-amber-900/70 dark:text-amber-300/70">Dotações com Sugestão SF:</span>
+                      <p className="font-mono text-sm font-bold text-amber-950 dark:text-amber-100">
+                        {count} {count === 1 ? "item" : "itens"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-medium text-amber-900/70 dark:text-amber-300/70">Impacto Orçamentário Líquido:</span>
+                      <p className={`font-mono text-sm font-bold ${diffTotal >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+                        {diffTotal >= 0 ? "+" : ""}{formatBr(diffTotal)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-medium text-amber-900/70 dark:text-amber-300/70">Valor Atual (Oficial):</span>
+                      <p className="font-mono text-xs font-semibold text-on-surface">
+                        {formatBr(totalLoaAtual)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-medium text-amber-900/70 dark:text-amber-300/70">Novo Valor LOA 2027:</span>
+                      <p className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300">
+                        {formatBr(totalSf)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[16px] text-primary">info</span>
+                  <span>Uma justificativa automática será gerada para cada dotação alterada. As mudanças poderão ser revisadas antes de salvar em definitivo.</span>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-2 border-t border-outline-variant/60 pt-4">
+                <button
+                  type="button"
+                  disabled={count === 0}
+                  onClick={() => handleRevertAdoptSugestaoSfBatch(targetSec)}
+                  className="mr-auto rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">undo</span>
+                  <span>Reverter pendentes</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSfAdoptionModalOpen(false);
+                    setSfAdoptionScope(null);
+                  }}
+                  className="rounded-lg border border-outline-variant px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={count === 0}
+                  onClick={() => handleExecuteAdoptSugestaoSfBatch(targetSec)}
+                  className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">check</span>
+                  <span>Confirmar e Efetivar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

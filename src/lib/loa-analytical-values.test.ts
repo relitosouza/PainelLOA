@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateLoa2026Initial,
   calculateAnalyticalValues,
+  calculateSugestaoSfAdoption,
   createBancoProjetoValues,
   parseLoa2026InitialWorkbook,
 } from "./loa-analytical-values";
@@ -22,10 +23,48 @@ describe("calculateAnalyticalValues", () => {
       reajuste: 100,
       vigenteComReajuste: 1_100,
       aditamento: 250,
+      loa2027Oficial: 1_350,
+      loa2027CenarioSf: 80,
       loa2027: 1_350,
       sugestaoSf: 80,
       corteGp: 50,
+      isSfActive: true,
     });
+  });
+
+  it("calcula valores no cenário SF quando solicitado", () => {
+    const itemComSf = {
+      valLoa: 1_000,
+      valorReajuste: 100,
+      valorAditamento: 250,
+      valorSugestaoSf: 1_150,
+    };
+    const valuesSf = calculateAnalyticalValues(itemComSf, "sf");
+    expect(valuesSf.loa2027).toBe(1_150);
+    expect(valuesSf.loa2027Oficial).toBe(1_350);
+
+    const itemSemSf = {
+      valLoa: 1_000,
+      valorReajuste: 100,
+      valorAditamento: 250,
+      valorSugestaoSf: 0,
+    };
+    const valuesSemSf = calculateAnalyticalValues(itemSemSf, "sf");
+    expect(valuesSemSf.loa2027).toBe(1_350);
+    expect(valuesSemSf.isSfActive).toBe(false);
+  });
+
+  it("calcula adoção da sugestão SF ajustando o valor de aditamento", () => {
+    const item = {
+      valLoa: 1_000,
+      valorReajuste: 100,
+      valorAditamento: 250,
+      valorSugestaoSf: 900,
+    };
+    const adoption = calculateSugestaoSfAdoption(item);
+    expect(adoption.novoTotal).toBe(900);
+    expect(adoption.valorAditamento).toBe(-200); // 900 - (1000 + 100) = -200
+    expect(adoption.diferenca).toBe(-450); // 900 - 1350 = -450
   });
 
   it("aloca um novo projeto integralmente em Aditamento", () => {

@@ -9,19 +9,59 @@ export type AnalyticalFinancialInput = {
   valorCorteGp?: number;
 };
 
-export function calculateAnalyticalValues(item: AnalyticalFinancialInput) {
+export type BudgetScenario = "oficial" | "sf";
+
+export function calculateAnalyticalValues(item: AnalyticalFinancialInput, scenario: BudgetScenario = "oficial") {
   const vigente = Number(item.valLoa) || 0;
   const reajuste = Number(item.valorReajuste) || 0;
   const aditamento = Number(item.valorAditamento) || 0;
+  const sugestaoSf = Number(item.valorSugestaoSf) || 0;
+  const oficialTotal = vigente + reajuste + aditamento;
+  const cenarioSfTotal = sugestaoSf > 0 ? sugestaoSf : oficialTotal;
+
   return {
     loa2026: Number(item.valLoa2026) || 0,
     vigente,
     reajuste,
     vigenteComReajuste: vigente + reajuste,
     aditamento,
-    loa2027: vigente + reajuste + aditamento,
-    sugestaoSf: Number(item.valorSugestaoSf) || 0,
+    loa2027Oficial: oficialTotal,
+    loa2027CenarioSf: cenarioSfTotal,
+    loa2027: scenario === "sf" ? cenarioSfTotal : oficialTotal,
+    sugestaoSf,
     corteGp: Number(item.valorCorteGp) || 0,
+    isSfActive: sugestaoSf > 0,
+  };
+}
+
+/**
+ * Calcula a adoção da Sugestão SF na composição oficial da LOA.
+ * Ajusta o valorAditamento para que Vigente + Reajuste + NovoAditamento = Sugestão SF.
+ */
+export function calculateSugestaoSfAdoption(item: AnalyticalFinancialInput): {
+  valorAditamento: number;
+  novoTotal: number;
+  diferenca: number;
+} {
+  const sugestaoSf = Number(item.valorSugestaoSf) || 0;
+  const vigente = Number(item.valLoa) || 0;
+  const reajuste = Number(item.valorReajuste) || 0;
+  const atualAditamento = Number(item.valorAditamento) || 0;
+  const anteriorTotal = vigente + reajuste + atualAditamento;
+
+  if (sugestaoSf <= 0) {
+    return {
+      valorAditamento: atualAditamento,
+      novoTotal: anteriorTotal,
+      diferenca: 0,
+    };
+  }
+
+  const novoAditamento = sugestaoSf - (vigente + reajuste);
+  return {
+    valorAditamento: novoAditamento,
+    novoTotal: sugestaoSf,
+    diferenca: sugestaoSf - anteriorTotal,
   };
 }
 
