@@ -274,4 +274,136 @@ describe("LoaReportTemplate", () => {
     expect(shouldExcludeReportVinculo("Tesouro / Próprio", false)).toBe(false);
     expect(shouldExcludeReportVinculo(undefined, false)).toBe(false);
   });
+
+  it("deve gerar Capa Executiva (Página 1) completa com Painel da Receita, Despesa e Resultado quando todas as secretarias forem impressas", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "Consolidado Geral do Município",
+      unidadeOrcamentaria: "Todas as Unidades Orçamentárias",
+      isAllSecretariats: true,
+      secretariasList: [
+        "11 - SECRETARIA DE SERVIÇOS E OBRAS",
+        "08 - SECRETARIA DE EDUCAÇÃO",
+        "09 - SECRETARIA DA SAÚDE",
+        "02 - GABINETE DO PREFEITO",
+      ],
+      exercicio: "2027",
+      totals: {
+        ldo: 200000,
+        loa: 100000,
+        reajuste: 5000,
+        aditamento: 2000,
+        ajusteSf: 1000,
+        corteGp: -500,
+        total: 107500,
+      },
+      executiveDashboard: {
+        receita: {
+          ldoTotal: 5868871609.9,
+          loaTotal: 6000000000,
+          diff: 131128390.1,
+          percentExec: 102.23,
+          maiorReceita: { natureza: "1.1.1.8.01.1.1 - IPTU", valor: 1200000000 },
+          qtdFontes: 45,
+          prefeitura: 5500000000,
+          indiretas: 500000000,
+        },
+        despesa: {
+          ldoTotal: 5868871609.9,
+          loaTotal: 5900000000,
+          diff: 31128390.1,
+          percentExec: 100.53,
+          reajuste: 50000000,
+          aditamento: 20000000,
+          ajusteSf: 15000000,
+          corteGp: -10000000,
+          totalGeral: 5975000000,
+          totalNaturezas: 350,
+        },
+        resultado: {
+          ldoResultado: 0,
+          loaResultado: 25000000,
+          isLdoSuperavit: true,
+          isLoaSuperavit: true,
+        },
+      },
+      groups: [],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    // Deve conter a Capa Executiva
+    expect(html).toContain("executive-cover-page");
+    expect(html).toContain("Painel Executivo Orçamentário · Exercício 2027");
+    expect(html).toContain("1. Painel da Receita Orçamentária");
+    expect(html).toContain("2. Painel da Despesa Orçamentária");
+    expect(html).toContain("3. Painel de Resultado · Equilíbrio Orçamentário");
+    // Cards removidos a pedido do usuário
+    expect(html).not.toContain("Maior Receita LOA");
+    expect(html).not.toContain("Total Fontes / Vínculos");
+    expect(html).toContain("Superávit LOA");
+    expect(html).toContain("Capa Executiva Consolidada");
+    // Discriminações em Valor Solicitado e Total Final LOA
+    expect(html).toContain("Base:");
+    expect(html).toContain("Proposta:");
+  });
+
+  it("deve separar visualmente por secretaria com cards individuais e quebra de página (Opção A)", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "Consolidado Geral do Município",
+      isAllSecretariats: true,
+      totals: {
+        ldo: 0,
+        loa: 150000,
+        reajuste: 0,
+        aditamento: 0,
+        total: 150000,
+      },
+      groups: [
+        {
+          groupTitle: "Ação Obras 01",
+          secretaria: "11 - SECRETARIA DE SERVIÇOS E OBRAS",
+          valLdo: 0,
+          valLoa: 100000,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 100000,
+          items: [
+            {
+              natureza: "4.4.90.51.00",
+              vinculo: "01.110.0000",
+              valLoa: 100000,
+              valorTotal: 100000,
+            },
+          ],
+        },
+        {
+          groupTitle: "Ação Educação 01",
+          secretaria: "08 - SECRETARIA DE EDUCAÇÃO",
+          valLdo: 0,
+          valLoa: 50000,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 50000,
+          items: [
+            {
+              natureza: "3.3.90.30.00",
+              vinculo: "01.200.0000",
+              valLoa: 50000,
+              valorTotal: 50000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    // Deve conter blocos segregados por secretaria com cards de indicadores
+    expect(html).toContain("secretaria-report-block");
+    expect(html).toContain("11 - SECRETARIA DE SERVIÇOS E OBRAS");
+    expect(html).toContain("08 - SECRETARIA DE EDUCAÇÃO");
+    expect(html).toContain("Total Pasta LOA");
+    expect(html).toContain("Valor Solicitado");
+    expect(html).toContain("Ação Obras 01");
+    expect(html).toContain("Ação Educação 01");
+  });
 });
+

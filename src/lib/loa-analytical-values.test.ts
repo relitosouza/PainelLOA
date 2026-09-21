@@ -26,6 +26,7 @@ describe("calculateAnalyticalValues", () => {
       loa2027: 1_350,
       sugestaoSf: 80,
       corteGp: 50,
+      total: 1_480,
     });
   });
 
@@ -50,6 +51,7 @@ describe("calculateAnalyticalValues", () => {
       loa2027: 100_000,
       sugestaoSf: -25_000,
       corteGp: -10_000,
+      total: 65_000,
     });
   });
 });

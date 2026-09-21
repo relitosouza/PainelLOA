@@ -105,9 +105,10 @@ interface EditableGroup {
   valorSugestaoSf: number;
   valorCorteGp: number;
   valorTotal: number;
+  total: number;
 }
 
-type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa2026" | "valLoa" | "valorReajuste" | "vigenteReajuste" | "valorAditamento" | "valorSugestaoSf" | "valorCorteGp" | "valorTotal" | "diff" | "status" | "adjusted";
+type TableSortColumn = "acao" | "elemento" | "valLdo" | "valLoa2026" | "valLoa" | "valorReajuste" | "vigenteReajuste" | "valorAditamento" | "valorSugestaoSf" | "valorCorteGp" | "valorTotal" | "total" | "diff" | "status" | "adjusted";
 type AnalyticalColumn = TableSortColumn;
 type NaturezaOption = { codigo: string; nome: string };
 type VinculoAllocation = { id: string; vinculo: string; codigoAplicacao: string; valor: string };
@@ -126,6 +127,7 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
   { key: "valorAditamento", label: "Aditamento" },
   { key: "valorSugestaoSf", label: "Ajuste SF" },
   { key: "valorCorteGp", label: "Corte GP" },
+  { key: "total", label: "Total", required: true },
   { key: "diff", label: "Diferença" },
   { key: "status", label: "Status" },
   { key: "adjusted", label: "Validação" },
@@ -141,6 +143,9 @@ const orderFromSaved = (saved: AnalyticalColumn[]) => [
 
 const getItemLoaTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento">) =>
   calculateAnalyticalValues(item).loa2027;
+
+const getItemTotal = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste" | "valorAditamento" | "valorSugestaoSf" | "valorCorteGp">) =>
+  calculateAnalyticalValues(item).total;
 
 const getItemVigenteReajuste = (item: Pick<RawBudgetItem, "valLoa" | "valorReajuste">) =>
   calculateAnalyticalValues(item).vigenteComReajuste;
@@ -1572,9 +1577,9 @@ export function AnaliseLoaView() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nomeOperador: currentUser.nome || "Técnico Responsável",
-          emailOperador: currentUser.email || null,
-          justificativaGeral: justificativaGeral || `Importação Excel por ${currentUser.nome}`,
+          nomeOperador: currentUser?.nome || "Técnico Responsável",
+          emailOperador: currentUser?.email || null,
+          justificativaGeral: justificativaGeral || `Importação Excel por ${currentUser?.nome || "Técnico"}`,
           alteracoes: alteracoesPayload,
         }),
       });
@@ -1889,6 +1894,7 @@ export function AnaliseLoaView() {
         valorSugestaoSf: 0,
         valorCorteGp: 0,
         valorTotal: 0,
+        total: 0,
       };
       group.children.push(item);
       group.valLdo += item.valLdo || 0;
@@ -1900,6 +1906,7 @@ export function AnaliseLoaView() {
       group.valorSugestaoSf += item.valorSugestaoSf ?? 0;
       group.valorCorteGp += item.valorCorteGp ?? 0;
       group.valorTotal += getItemLoaTotal(item);
+      group.total += getItemTotal(item);
       groups.set(groupKey, group);
     });
 
@@ -1930,6 +1937,7 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "valorSugestaoSf") result = left.valorSugestaoSf - right.valorSugestaoSf;
       else if (tableSort.column === "valorCorteGp") result = left.valorCorteGp - right.valorCorteGp;
       else if (tableSort.column === "valorTotal") result = left.valorTotal - right.valorTotal;
+      else if (tableSort.column === "total") result = left.total - right.total;
       else if (tableSort.column === "diff") result = (left.valorTotal - left.valLdo) - (right.valorTotal - right.valLdo);
       else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, left.valorTotal), getStatusLabel(right.valLdo, right.valorTotal));
       else result = Number(Boolean(validatedRows[left.id])) - Number(Boolean(validatedRows[right.id]));
@@ -1948,6 +1956,7 @@ export function AnaliseLoaView() {
       else if (tableSort.column === "valorSugestaoSf") result = (left.valorSugestaoSf ?? 0) - (right.valorSugestaoSf ?? 0);
       else if (tableSort.column === "valorCorteGp") result = (left.valorCorteGp ?? 0) - (right.valorCorteGp ?? 0);
       else if (tableSort.column === "valorTotal") result = getItemLoaTotal(left) - getItemLoaTotal(right);
+      else if (tableSort.column === "total") result = getItemTotal(left) - getItemTotal(right);
       else if (tableSort.column === "diff") result = (getItemLoaTotal(left) - left.valLdo) - (getItemLoaTotal(right) - right.valLdo);
       else if (tableSort.column === "status") result = compareText(getStatusLabel(left.valLdo, getItemLoaTotal(left)), getStatusLabel(right.valLdo, getItemLoaTotal(right)));
       else result = getValidated(left) - getValidated(right);
@@ -1988,6 +1997,7 @@ export function AnaliseLoaView() {
     let valorAditamentoTotal = 0;
     let valorSugestaoSfTotal = 0;
     let valorCorteGpTotal = 0;
+    let total = 0;
     const acoesSet = new Set<string>();
     const naturezasSet = new Set<string>();
 
@@ -2000,6 +2010,7 @@ export function AnaliseLoaView() {
       valorAditamentoTotal += item.valorAditamento ?? 0;
       valorSugestaoSfTotal += item.valorSugestaoSf ?? 0;
       valorCorteGpTotal += item.valorCorteGp ?? 0;
+      total += getItemTotal(item);
       if (item.acao) acoesSet.add(item.acao);
       if (item.natureza) naturezasSet.add(item.natureza);
     });
@@ -2020,6 +2031,7 @@ export function AnaliseLoaView() {
       valorAditamentoTotal,
       valorSugestaoSfTotal,
       valorCorteGpTotal,
+      total,
       diff,
       percentExec,
       totalAcoes: acoesSet.size,
@@ -2625,10 +2637,12 @@ export function AnaliseLoaView() {
   const buildReportGroupsFromItems = (items: RawBudgetItem[]): LoaReportGroup[] => {
     const groupMap = new Map<string, LoaReportGroup>();
     items.forEach((item) => {
-      const groupKey = [item.programa, item.acao].join("|");
+      const secName = item.secretaria || "Outras Secretarias";
+      const groupKey = [secName, item.programa, item.acao].join("|");
       if (!groupMap.has(groupKey)) {
         groupMap.set(groupKey, {
           groupTitle: item.acao,
+          secretaria: secName,
           valLdo: 0,
           valLoa: 0,
           valorReajuste: 0,
@@ -2687,31 +2701,46 @@ export function AnaliseLoaView() {
       });
     });
 
-    return Array.from(groupMap.values());
+    const groups = Array.from(groupMap.values());
+    // Ordenar por Secretaria e depois por Ação
+    groups.sort((a, b) => {
+      const secA = a.secretaria || "";
+      const secB = b.secretaria || "";
+      if (secA !== secB) return secA.localeCompare(secB, "pt-BR");
+      return (a.groupTitle || "").localeCompare(b.groupTitle || "", "pt-BR");
+    });
+
+    return groups;
   };
 
   const exportToPDF = (targetScope?: "todos" | "contratos" | "demais" | "banco-projetos") => {
     const selectedScope = targetScope || scopeTab;
     const secretariats = [...new Set(filteredItems.map((item) => item.secretaria).filter(Boolean))];
+    const units = [...new Set(filteredItems.map((item) => item.unidade).filter(Boolean))];
+    const organs = [...new Set(filteredItems.map((item) => item.orgao).filter(Boolean))];
+
+    const isAllSecretariats = filters.secretaria.length === 0 || secretariats.length > 3;
     const reportSecretariat = filters.secretaria.length === 1
       ? filters.secretaria[0]
       : secretariats.length === 1
         ? secretariats[0]
-        : secretariats.length > 0 ? secretariats.join(" · ") : "11 - SECRETARIA DE SERVIÇOS E OBRAS";
+        : filters.secretaria.length > 1 && filters.secretaria.length <= 3
+          ? filters.secretaria.join(" · ")
+          : "Consolidado Geral do Município";
 
-    const units = [...new Set(filteredItems.map((item) => item.unidade).filter(Boolean))];
     const reportUnit = filters.unidade.length === 1
       ? filters.unidade[0]
       : units.length === 1
         ? units[0]
-        : units.length > 0 ? units.join(" · ") : "01.11.001.00 - Gabinete da Secretaria de Serviços e Obras";
+        : filters.unidade.length > 1 && filters.unidade.length <= 2
+          ? filters.unidade.join(" · ")
+          : "Todas as Unidades Orçamentárias";
 
-    const organs = [...new Set(filteredItems.map((item) => item.orgao).filter(Boolean))];
     const reportOrgan = filters.orgao.length === 1
       ? filters.orgao[0]
       : organs.length === 1
         ? organs[0]
-        : organs.length > 0 ? organs.join(" · ") : "Órgão 01 - Prefeitura do Município de Osasco";
+        : "Órgão 01 - Prefeitura do Município de Osasco";
 
     // Filtragem estrita para o relatório: excluir despesas com vínculo de 5 dígitos (formato 00.00),
     // exceto quando for item alocado do Banco de Projetos.
@@ -2748,6 +2777,46 @@ export function AnaliseLoaView() {
     const totalAjusteSf = reportEligibleItems.reduce((acc, i) => acc + (i.valorSugestaoSf ?? 0), 0);
     const totalCorteGp = reportEligibleItems.reduce((acc, i) => acc + (i.valorCorteGp ?? 0), 0);
     const totalGeral = totalLoa + totalReajuste + totalAditamento + totalAjusteSf + totalCorteGp;
+
+    // Métricas calculadas para a Capa Executiva Dashboard Geral (Receita, Despesa e Resultado)
+    const recLoaEntidades = Math.round(receitaLoaIndiretas.reduce((sum, entidade) => sum + entidade.valor, 0) * 100) / 100;
+    const recLoaPrefeitura = Math.round((loaReceitaResumo.prefeitura || loaReceitaResumo.total - recLoaEntidades) * 100) / 100;
+    const recLoaTotal = Math.round((recLoaPrefeitura + recLoaEntidades) * 100) / 100;
+
+    const resLdo = Math.round((ldoReceitaTotal - (metrics?.valLdoTotal || totalLdo)) * 100) / 100;
+    const resLoa = Math.round((recLoaTotal - totalGeral) * 100) / 100;
+
+    const executiveDashboard = {
+      receita: {
+        ldoTotal: ldoReceitaTotal,
+        loaTotal: recLoaTotal,
+        diff: recLoaTotal - ldoReceitaTotal,
+        percentExec: ldoReceitaTotal > 0 ? (recLoaTotal / ldoReceitaTotal) * 100 : 100,
+        maiorReceita: loaReceitaResumo.maior,
+        qtdFontes: loaReceitaResumo.qtdFontes,
+        prefeitura: recLoaPrefeitura,
+        indiretas: recLoaEntidades,
+        entidades: receitaLoaIndiretas,
+      },
+      despesa: {
+        ldoTotal: metrics?.valLdoTotal || totalLdo,
+        loaTotal: totalLoa,
+        diff: totalGeral - (metrics?.valLdoTotal || totalLdo),
+        percentExec: (metrics?.valLdoTotal || totalLdo) > 0 ? (totalGeral / (metrics?.valLdoTotal || totalLdo)) * 100 : 100,
+        reajuste: totalReajuste,
+        aditamento: totalAditamento,
+        ajusteSf: totalAjusteSf,
+        corteGp: totalCorteGp,
+        totalGeral: totalGeral,
+        totalNaturezas: metrics?.totalNaturezas,
+      },
+      resultado: {
+        ldoResultado: resLdo,
+        loaResultado: resLoa,
+        isLdoSuperavit: resLdo >= 0,
+        isLoaSuperavit: resLoa >= 0,
+      },
+    };
 
     if (selectedScope === "todos") {
       // Relatório Completo dividido em 3 Seções Visuais com Subtotais:
@@ -2819,6 +2888,10 @@ export function AnaliseLoaView() {
         exercicio: "2027",
         hasAdjustments: hasAnyAdjustment,
         reportScopeTitle: "Consolidado · Contratos, Demais Despesas e Banco de Projetos",
+        isAllSecretariats,
+        secretariasList: secretariats,
+        unidadesList: units,
+        executiveDashboard,
         totals: {
           ldo: totalLdo,
           loa: totalLoa,
@@ -2872,6 +2945,10 @@ export function AnaliseLoaView() {
         exercicio: "2027",
         hasAdjustments: hasAnyAdjustment,
         reportScopeTitle: scopeTitle,
+        isAllSecretariats,
+        secretariasList: secretariats,
+        unidadesList: units,
+        executiveDashboard,
         totals: scopeTotals,
         groups: reportGroups,
       };
@@ -3786,6 +3863,7 @@ export function AnaliseLoaView() {
                         valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Aditamento", "text-right")}</th>),
                         valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorSugestaoSf", "Ajuste SF", "text-right")}</th>),
                         valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorCorteGp", "Corte GP", "text-right")}</th>),
+                        total: (visibleTableColumns.has("total") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("total", "Total", "text-right")}</th>),
                         diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>),
                         status: (visibleTableColumns.has("status") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>),
                         adjusted: (visibleTableColumns.has("adjusted") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("adjusted", "Validação", "text-center")}</th>),
@@ -3926,6 +4004,7 @@ export function AnaliseLoaView() {
                             )),
                               valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right font-mono font-bold text-amber-700 select-none bg-surface-container-low/40">{formatBr(group.valorSugestaoSf)}</td>),
                               valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right font-mono font-bold text-rose-700 select-none bg-surface-container-low/40">{formatBr(group.valorCorteGp)}</td>),
+                              total: (visibleTableColumns.has("total") && <td className="col-band-white p-3 text-right font-mono font-extrabold text-primary">{formatBr(group.total)}</td>),
                               diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-semibold ${diffColor}`}>
                               {diff > 0 ? `▲ ${currency.format(diff)}` : diff < 0 ? `▼ ${currency.format(Math.abs(diff))}` : "—"}
                             </td>),
@@ -4272,6 +4351,7 @@ export function AnaliseLoaView() {
                                   valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2 text-right">Aditamento</th>),
                                   valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2 text-right">Ajuste SF</th>),
                                   valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2 text-right">Corte GP</th>),
+                                  total: (visibleTableColumns.has("total") && <th className="col-band-white p-2 text-right">Total</th>),
                                   diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2 text-right">
                                   <button
                                     type="button"
@@ -4315,6 +4395,7 @@ export function AnaliseLoaView() {
                                 const natureSugestaoSf = natureItems.reduce((sum, item) => sum + (item.valorSugestaoSf ?? 0), 0);
                                 const natureCorteGp = natureItems.reduce((sum, item) => sum + (item.valorCorteGp ?? 0), 0);
                                 const natureTotal = natureLoa + natureReajuste + natureAditamento;
+                                const natureGrandTotal = natureTotal + natureSugestaoSf + natureCorteGp;
                                 const natureDiff = natureTotal - natureLdo;
                                 const natureStatus = getStatusInfo(natureLdo, natureTotal);
                                 // Vínculos extras pertencem ao subelemento de origem e não são validados separadamente.
@@ -4413,6 +4494,7 @@ export function AnaliseLoaView() {
                                       )),
                                         valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-2.5 text-right font-mono font-bold text-amber-700 text-xs">{formatBr(natureSugestaoSf)}</td>),
                                         valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-2.5 text-right font-mono font-bold text-rose-700 text-xs">{formatBr(natureCorteGp)}</td>),
+                                        total: (visibleTableColumns.has("total") && <td className="col-band-white p-2.5 text-right font-mono font-extrabold text-primary text-xs">{formatBr(natureGrandTotal)}</td>),
                                         diff: (visibleTableColumns.has("diff") && (
                                         <td className={`col-band-white p-2.5 text-right text-xs ${natureDiff > 0 ? "text-emerald-600 font-bold" : natureDiff < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
                                           {natureDiff > 0 ? `▲ ${currency.format(natureDiff)}` : natureDiff < 0 ? `▼ ${currency.format(Math.abs(natureDiff))}` : "—"}
@@ -4658,6 +4740,7 @@ export function AnaliseLoaView() {
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
                                           </td>),
+                                            total: (visibleTableColumns.has("total") && <td className="col-band-white p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemTotal(item))}</td>),
                                             diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-2 text-right text-xs ${getItemLoaTotal(item) - item.valLdo > 0 ? "text-emerald-600 font-bold" : getItemLoaTotal(item) - item.valLdo < 0 ? "text-rose-600 font-bold" : "text-gray-400"}`}>
                                             {currency.format(getItemLoaTotal(item) - item.valLdo)}
                                           </td>),
@@ -4820,6 +4903,7 @@ export function AnaliseLoaView() {
                                               className="w-32 rounded-lg border border-outline-variant bg-surface px-2 py-1 text-right font-mono text-xs font-bold text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                                             /></div>)}</div>
                                           </td>),
+                                            total: (visibleTableColumns.has("total") && <td className="col-band-white p-2 text-right font-mono font-extrabold text-primary text-xs">{formatBr(getItemTotal(child))}</td>),
                                             diff: (visibleTableColumns.has("diff") && <td className="col-band-white" />),
                                             status: (visibleTableColumns.has("status") && <td className="col-band-gray" />),
                                             adjusted: (visibleTableColumns.has("adjusted") && <td className="col-band-white" />),
@@ -4908,6 +4992,7 @@ export function AnaliseLoaView() {
                         valorAditamento: (visibleTableColumns.has("valorAditamento") && <td className="col-band-gray p-3 text-right text-on-surface font-extrabold">{formatBr(metrics.valorAditamentoTotal)}</td>),
                         valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <td className="col-band-white p-3 text-right text-amber-700 font-extrabold">{formatBr(metrics.valorSugestaoSfTotal)}</td>),
                         valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <td className="col-band-gray p-3 text-right text-rose-700 font-extrabold">{formatBr(metrics.valorCorteGpTotal)}</td>),
+                        total: (visibleTableColumns.has("total") && <td className="col-band-white p-3 text-right text-primary font-extrabold">{formatBr(metrics.total)}</td>),
                         diff: (visibleTableColumns.has("diff") && <td className={`col-band-white p-3 text-right font-extrabold ${metrics.diff > 0 ? "text-rose-600" : metrics.diff < 0 ? "text-emerald-600" : "text-on-surface"}`}>
                         {metrics.diff > 0 ? `▲ ${currency.format(metrics.diff)}` : metrics.diff < 0 ? `▼ ${currency.format(Math.abs(metrics.diff))}` : "—"}
                       </td>),

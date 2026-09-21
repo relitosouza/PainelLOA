@@ -4167,23 +4167,6 @@ tbody tr:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-/* Make it look nice on transparent page navbar too */
-.transparent-nav-toggle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.transparent-nav-toggle .data-source-toggle {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(8px);
-}
-
-.transparent-nav-toggle .data-source-toggle button.active {
-  background: #1e3a8a; /* primary blue */
-  color: #ffffff;
-}
-
 /* Estilos de divisão dos cards (Receita / Despesa) */
 .budget-overview-divided {
   display: grid;

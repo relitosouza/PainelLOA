@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSecretariatDemoRecords } from "@/lib/secretariat-data";
-import { calculateAnalyticalValues } from "@/lib/loa-analytical-values";
+import { calculateAnalyticalValues, getSecretariatCode } from "@/lib/loa-analytical-values";
 import { loadAnaliseLoaItems } from "@/lib/loa-analise-items.server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -18,11 +18,6 @@ export interface ComparativoSecretariaItem {
   diferenca: number;
   percentual: number;
   situacao: "SUPERAVIT" | "DEFICIT" | "EQUILIBRIO";
-}
-
-function getSecretariatCode(name: string): string | null {
-  const match = name.match(/^(\d+)/);
-  return match ? match[1].padStart(2, "0") : null;
 }
 
 async function getLdoMapFromAnaliseFile(): Promise<Map<string, number>> {

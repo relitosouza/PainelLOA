@@ -13,16 +13,26 @@ export function calculateAnalyticalValues(item: AnalyticalFinancialInput) {
   const vigente = Number(item.valLoa) || 0;
   const reajuste = Number(item.valorReajuste) || 0;
   const aditamento = Number(item.valorAditamento) || 0;
+  const loa2027 = vigente + reajuste + aditamento;
+  const sugestaoSf = Number(item.valorSugestaoSf) || 0;
+  const corteGp = Number(item.valorCorteGp) || 0;
   return {
     loa2026: Number(item.valLoa2026) || 0,
     vigente,
     reajuste,
     vigenteComReajuste: vigente + reajuste,
     aditamento,
-    loa2027: vigente + reajuste + aditamento,
-    sugestaoSf: Number(item.valorSugestaoSf) || 0,
-    corteGp: Number(item.valorCorteGp) || 0,
+    loa2027,
+    sugestaoSf,
+    corteGp,
+    total: loa2027 + sugestaoSf + corteGp,
   };
+}
+
+/** Código do órgão a partir do rótulo "09 - SECRETARIA DA SAÚDE" → "09". */
+export function getSecretariatCode(name: string): string | null {
+  const match = name.match(/^(\d+)/);
+  return match ? match[1].padStart(2, "0") : null;
 }
 
 export function createBancoProjetoValues(valor: number) {
