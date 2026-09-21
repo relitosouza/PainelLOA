@@ -58,7 +58,14 @@ async function main() {
       continue;
     }
 
-    if (!/^\d{2}\.\d{3}\.\d{4}$/.test(fa)) throw new Error(`Linha ${i + 1}: F.A fora do padrão NN.NNN.NNNN: "${fa}"`);
+    // "93.100.02901" tem um zero a mais no último grupo; o CONF da própria planilha ("PMO.93.100.2901")
+    // mostra a forma correta. Só corrigimos quando o zero extra é o que sobra.
+    let faNormalizada = fa;
+    if (/^\d{2}\.\d{3}\.0\d{4}$/.test(fa)) {
+      faNormalizada = fa.replace(/\.0(\d{4})$/, ".$1");
+      corrigidos.push(`linha ${i + 1}: F.A "${fa}" -> "${faNormalizada}"`);
+    }
+    if (!/^\d{2}\.\d{3}\.\d{4}$/.test(faNormalizada)) throw new Error(`Linha ${i + 1}: F.A fora do padrão NN.NNN.NNNN: "${fa}"`);
 
     // O CONF do CSV tem erros de digitação (um repetido da linha de cima, um com dígito a mais).
     // A chave verdadeira é UG + F.A, então recalculamos e registramos a correção.

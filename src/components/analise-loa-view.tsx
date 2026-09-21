@@ -5116,7 +5116,19 @@ export function AnaliseLoaView() {
           );
         }
 
-        // Seção 6: Sub-elementos de Despesa & Iniciativas Estratégicas
+        // Seção 6: Conciliação de Fontes (Receita x Despesa por UG + F.A)
+        if (sectionId === "conciliacao-fontes") {
+          return (
+            <ConciliacaoFontesTable
+              key="conciliacao-fontes"
+              conciliacao={conciliacao}
+              carregando={conciliacaoCarregando}
+              totalCadastrado={conciliacaoCadastro.length}
+            />
+          );
+        }
+
+        // Seção 7: Sub-elementos de Despesa & Iniciativas Estratégicas
         if (sectionId === "subelementos-iniciativas") {
           return (
             <section key="subelementos-iniciativas" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
