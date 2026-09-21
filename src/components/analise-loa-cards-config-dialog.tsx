@@ -30,6 +30,7 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
     "filtros-avancados",
     "estrutura-hierarquica",
     "detalhamento-analitico",
+    "conciliacao-fontes",
     "subelementos-iniciativas",
     "banco-projetos",
   ],
@@ -59,6 +60,7 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
     "filtros-avancados": true,
     "estrutura-hierarquica": true,
     "detalhamento-analitico": true,
+    "conciliacao-fontes": true,
     "subelementos-iniciativas": true,
     "banco-projetos": true,
     // KPIs Receita
@@ -106,6 +108,11 @@ export const SECTION_METADATA: Record<string, { label: string; icon: string; des
     label: "Detalhamento Analítico Editável",
     icon: "table_chart",
     description: "Tabela principal com edição em linha de valores da LOA e exportações.",
+  },
+  "conciliacao-fontes": {
+    label: "Conciliação de Fontes (Receita x Despesa)",
+    icon: "balance",
+    description: "Quadro de equilíbrio por UG + Fonte de Acompanhamento, recalculado a cada edição de valor.",
   },
   "subelementos-iniciativas": {
     label: "Sub-elementos & Iniciativas Estratégicas",

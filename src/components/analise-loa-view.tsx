@@ -41,6 +41,8 @@ import {
   parseLoa2026InitialWorkbook,
   type BudgetScenario,
 } from "@/lib/loa-analytical-values";
+import { montarConciliacao, type LinhaCadastrada } from "@/lib/conciliacao-fontes";
+import { ConciliacaoFontesTable } from "@/components/analise-loa/conciliacao-fontes-table";
 
 // --- Tipos de Filtro ---
 export interface TechnicalFilterState {
@@ -203,6 +205,8 @@ export function AnaliseLoaView() {
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
   const [ldoReceitaEntidades, setLdoReceitaEntidades] = useState<Array<{ nome: string; valor: number }>>([]);
   const [loaReceitaResumo, setLoaReceitaResumo] = useState<{ total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number }>({ total: 0, maior: null, qtdFontes: 0 });
+  const [conciliacaoCadastro, setConciliacaoCadastro] = useState<LinhaCadastrada[]>([]);
+  const [conciliacaoCarregando, setConciliacaoCarregando] = useState(true);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
   const loaExpectativaTotal = useMemo(() => {
@@ -560,9 +564,7 @@ export function AnaliseLoaView() {
           if (data.success && data.valor && isMounted) {
             const parsed = data.valor;
             setLayoutConfig({
-              sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-                ? parsed.sectionsOrder
-                : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+              sectionsOrder: withNewKpis(parsed.sectionsOrder, DEFAULT_LAYOUT_CONFIG.sectionsOrder),
               receitaKpisOrder: withNewKpis(parsed.receitaKpisOrder, DEFAULT_LAYOUT_CONFIG.receitaKpisOrder),
               despesaKpisOrder: withNewKpis(parsed.despesaKpisOrder, DEFAULT_LAYOUT_CONFIG.despesaKpisOrder),
               visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
@@ -580,9 +582,7 @@ export function AnaliseLoaView() {
         if (savedLayout && isMounted) {
           const parsed = JSON.parse(savedLayout);
           setLayoutConfig({
-            sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-              ? parsed.sectionsOrder
-              : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+            sectionsOrder: withNewKpis(parsed.sectionsOrder, DEFAULT_LAYOUT_CONFIG.sectionsOrder),
             receitaKpisOrder: withNewKpis(parsed.receitaKpisOrder, DEFAULT_LAYOUT_CONFIG.receitaKpisOrder),
             despesaKpisOrder: withNewKpis(parsed.despesaKpisOrder, DEFAULT_LAYOUT_CONFIG.despesaKpisOrder),
             visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },

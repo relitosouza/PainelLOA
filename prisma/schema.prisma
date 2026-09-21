@@ -496,3 +496,23 @@ model ExclusaoDotacao {
   @@index([criadoEm])
   @@index([usuarioId])
 }
+
+/// Linhas do quadro de conciliação Receita x Despesa por UG + Fonte (planilha "BATE FONTE").
+/// A RECEITA e a ordem/blocos são cadastrados aqui; a DESPESA é calculada ao vivo no painel.
+model ConciliacaoFonte {
+  id           String   @id @default(cuid())
+  exercicio    Int      @default(2027)
+  ug           String   @db.VarChar(20)
+  fa           String   @db.VarChar(20)
+  conf         String   @db.VarChar(50)
+  receita      Decimal  @default(0) @db.Decimal(18, 2)
+  bloco        Int
+  ordem        Int
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([exercicio, conf])
+  @@index([exercicio])
+  @@index([bloco])
+  @@index([fa])
+}

@@ -16,13 +16,17 @@ const EXERCICIO = Number(args.find((a) => a.startsWith("--exercicio="))?.split("
 const ARQUIVO = args.find((a) => !a.startsWith("--"));
 const db = new PrismaClient();
 
-const lerLinha = (linha: string) => {
+// O Excel exporta ora com vírgula, ora com ponto e vírgula. Como os valores usam vírgula decimal,
+// o delimitador é decidido pelo cabeçalho: se ele tem ponto e vírgula, é esse o separador.
+const detectarDelimitador = (cabecalho: string) => (cabecalho.includes(";") ? ";" : ",");
+
+const lerLinha = (linha: string, delimitador: string) => {
   const campos: string[] = [];
   let atual = "";
   let aspas = false;
   for (const c of linha) {
     if (c === '"') aspas = !aspas;
-    else if (c === "," && !aspas) { campos.push(atual); atual = ""; }
+    else if (c === delimitador && !aspas) { campos.push(atual); atual = ""; }
     else atual += c;
   }
   campos.push(atual);
@@ -44,10 +48,11 @@ async function main() {
   console.log(`== Receita LOA ${EXERCICIO} a partir de ${path.basename(ARQUIVO)} (${APLICAR ? "APLICANDO" : "SIMULAÇÃO"}) ==\n`);
 
   const linhas = fs.readFileSync(ARQUIVO, "utf8").replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
+  const delimitador = detectarDelimitador(linhas[0] ?? "");
   let totalInformado: number | null = null;
   const registros = [];
   for (let i = 1; i < linhas.length; i++) {
-    const [apelido, vinculo, descricao, valorTexto, ug] = lerLinha(linhas[i]);
+    const [apelido, vinculo, descricao, valorTexto, ug] = lerLinha(linhas[i], delimitador);
     if (!vinculo) {
       // Linha de total geral (sem vínculo).
       if (valorTexto) totalInformado = lerValor(valorTexto);
