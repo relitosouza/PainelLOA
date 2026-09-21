@@ -89,6 +89,12 @@ export function generateAuditoriaReportHtml(data: AuditoriaReportData): string {
   const dataEmissao = data.dataEmissao || dateFormat.format(new Date());
   const activeTab = data.activeTab || "alteracoes";
 
+  const totalValorAnterior = data.alteracoes.reduce((acc, a) => acc + (a.valorAnterior || 0), 0);
+  const totalValorNovo = data.alteracoes.reduce((acc, a) => acc + (a.valorNovo || 0), 0);
+  const totalDiferenca = data.alteracoes.reduce((acc, a) => acc + (a.diferenca || 0), 0);
+
+  const totalExclusoesValor = data.exclusoes.reduce((acc, e) => acc + (e.valorOriginal || 0), 0);
+
   const totalSuplementacoes = data.alteracoes
     .filter((a) => a.diferenca > 0)
     .reduce((acc, a) => acc + a.diferenca, 0);
@@ -362,6 +368,18 @@ export function generateAuditoriaReportHtml(data: AuditoriaReportData): string {
         <tbody class="divide-y divide-outline-variant/30">
           ${rowsAlteracoesHtml}
         </tbody>
+        ${data.alteracoes.length > 0 ? `
+        <tfoot class="bg-surface-container font-bold text-on-surface border-t-2 border-primary/40">
+          <tr>
+            <td colspan="4" class="p-2.5 uppercase tracking-wider text-[11px] text-on-surface">Total Consolidado (${data.alteracoes.length} registros)</td>
+            <td class="p-2.5 text-right font-mono text-xs whitespace-nowrap">${formatTableCell(totalValorAnterior)}</td>
+            <td class="p-2.5 text-right font-mono text-xs whitespace-nowrap text-primary">${formatTableCell(totalValorNovo)}</td>
+            <td class="p-2.5 text-right font-mono text-xs whitespace-nowrap ${totalDiferenca >= 0 ? "text-emerald-700 font-bold" : "text-rose-700 font-bold"}">
+              ${totalDiferenca >= 0 ? "+" : ""}${formatTableCell(totalDiferenca)}
+            </td>
+            <td class="p-2.5 text-xs text-on-surface-variant italic">Impacto líquido confere com o quadro de métricas</td>
+          </tr>
+        </tfoot>` : ""}
       </table>
     </div>
   </div>`
@@ -396,6 +414,14 @@ export function generateAuditoriaReportHtml(data: AuditoriaReportData): string {
         <tbody class="divide-y divide-outline-variant/30">
           ${rowsExclusoesHtml}
         </tbody>
+        ${data.exclusoes.length > 0 ? `
+        <tfoot class="bg-surface-container font-bold text-on-surface border-t-2 border-rose-300">
+          <tr>
+            <td colspan="4" class="p-2.5 uppercase tracking-wider text-[11px] text-on-surface">Total Dotações Excluídas (${data.exclusoes.length} itens)</td>
+            <td class="p-2.5 text-right font-mono text-xs whitespace-nowrap text-rose-800">${formatTableCell(totalExclusoesValor)}</td>
+            <td colspan="2" class="p-2.5 text-xs text-on-surface-variant italic">Memória contábil de despesas retiradas</td>
+          </tr>
+        </tfoot>` : ""}
       </table>
     </div>
   </div>`

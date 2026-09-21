@@ -89,6 +89,26 @@ describe("auditoria-report-template", () => {
     expect(html).toMatch(/\+R\$\s*30\.000,00/);
   });
 
+  it("deve renderizar rodapé tfoot com a soma exata das colunas de auditoria", () => {
+    const data: AuditoriaReportData = {
+      alteracoes: mockAlteracoes,
+      exclusoes: mockExclusoes,
+      activeTab: "todas",
+    };
+
+    const html = generateAuditoriaReportHtml(data);
+    // Total Anterior: 100.000 + 200.000 = 300.000,00
+    expect(html).toMatch(/R\$\s*300\.000,00/);
+    // Total Novo: 150.000 + 180.000 = 330.000,00
+    expect(html).toMatch(/R\$\s*330\.000,00/);
+    // Diferença Total Líquida: +30.000,00
+    expect(html).toMatch(/\+R\$\s*30\.000,00/);
+    // Total Dotações Excluídas: 75.000,00
+    expect(html).toMatch(/R\$\s*75\.000,00/);
+    expect(html).toContain("Total Consolidado (2 registros)");
+    expect(html).toContain("Total Dotações Excluídas (1 itens)");
+  });
+
   it("deve sanitizar contra XSS em justificativas e textos", () => {
     const data: AuditoriaReportData = {
       alteracoes: mockAlteracoes,
