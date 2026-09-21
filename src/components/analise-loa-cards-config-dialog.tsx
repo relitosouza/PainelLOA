@@ -150,7 +150,7 @@ export const KPI_METADATA: Record<string, { label: string; tag: string; descript
   "desp-exec": { label: "Execução Planejamento", tag: "Despesa", description: "% Executado da despesa" },
   "desp-naturezas": { label: "Total de Naturezas", tag: "Despesa", description: "Classificações econômicas" },
   "desp-loa2026": { label: "Valor LOA 2026", tag: "Despesa", description: "Dotação inicial da LOA 2026" },
-  "desp-sugestao-sf": { label: "Sugestão SF", tag: "Despesa", description: "Cortes sugeridos pela SF" },
+  "desp-sugestao-sf": { label: "Ajuste SF", tag: "Despesa", description: "Ajustes sugeridos pela SF" },
   "desp-corte-gp": { label: "Corte GP", tag: "Despesa", description: "Cortes definidos pelo GP" },
   // Resultado
   "res-ldo": { label: "Resultado LDO (Receita - Despesa)", tag: "Resultado", description: "Valor Previsto LDO Receita − Despesa" },

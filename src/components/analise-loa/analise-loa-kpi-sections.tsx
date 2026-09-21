@@ -300,11 +300,11 @@ export const AnaliseLoaDespesaKpis = React.memo(function AnaliseLoaDespesaKpis({
           if (kpiId === "desp-sugestao-sf") {
             return (
               <div key="desp-sugestao-sf" className="glass-card bg-surface p-4 border-t-2 border-t-amber-600 shadow-sm rounded-xl">
-                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Sugestão SF</p>
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Ajuste SF</p>
                 <h3 className="text-lg font-headline font-extrabold text-amber-700">
                   {currency.format(metrics.valorSugestaoSfTotal)}
                 </h3>
-                <p className="text-[10px] text-amber-700 font-semibold mt-1">Cortes sugeridos</p>
+                <p className="text-[10px] text-amber-700 font-semibold mt-1">Ajustes sugeridos</p>
               </div>
             );
           }
@@ -359,7 +359,7 @@ export const AnaliseLoaResultadoKpis = React.memo(function AnaliseLoaResultadoKp
   const isLdoSuperavit = resultadoLdo > 0;
   const isLdoDeficit = resultadoLdo < 0;
 
-  // 2º Card: Valor LOA Receita - Valor LOA Despesa (considera Sugestão SF se ativada)
+  // 2º Card: Valor LOA Receita - Valor LOA Despesa (considera Ajuste SF se ativada)
   const effectiveValLoa = aplicarSugestaoSf
     ? metrics.valLoaTotal + metrics.valorSugestaoSfTotal
     : metrics.valLoaTotal;
@@ -517,8 +517,8 @@ export const AnaliseLoaValorPrevistoCard = React.memo(function AnaliseLoaValorPr
           <button
             type="button"
             onClick={onToggleSugestaoSf}
-            title={aplicarSugestaoSf ? "Restaurar valor original" : "Somar Sugestão SF (+)"}
-            aria-label={aplicarSugestaoSf ? "Restaurar valor original" : "Somar Sugestão SF"}
+            title={aplicarSugestaoSf ? "Restaurar valor original" : "Somar Ajuste SF (+)"}
+            aria-label={aplicarSugestaoSf ? "Restaurar valor original" : "Somar Ajuste SF"}
             className={`inline-flex items-center justify-center h-5 w-5 rounded-full text-xs font-bold transition-all border shadow-xs ${
               aplicarSugestaoSf
                 ? "bg-amber-500 text-white border-amber-600 hover:bg-amber-600 ring-2 ring-amber-400/30"
@@ -542,7 +542,7 @@ export const AnaliseLoaValorPrevistoCard = React.memo(function AnaliseLoaValorPr
               <span className="line-through text-on-surface-variant/70">{currency.format(valLoaTotal)}</span>
             </p>
             <p className="text-on-surface-variant text-[9.5px]">
-              Sugestão SF somada: <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{currency.format(valorSugestaoSfTotal)}</span>
+              Ajuste SF somado: <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{currency.format(valorSugestaoSfTotal)}</span>
             </p>
           </div>
         ) : (
