@@ -167,6 +167,48 @@ export function PresentationDashboard() {
   const [answerText, setAnswerText] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
 
+  type LoaResumoData = {
+    loaDespesaProposta: number | null;
+    loaReceita: number | null;
+    loaReceitaArquivo: string | null;
+    receitaPropria: number;
+    receitaTransferencias: number;
+    receitaCapital: number;
+    entidadesIndiretas: Array<{ codigo: string; nome: string; valor: number }>;
+    totalIndiretas: number;
+    receitaTotalPrefeitura: number;
+    receitaTotalConsolidada: number;
+    resultadoProjetado: number | null;
+    despesaDetalhada?: {
+      total: number;
+      pessoal: number;
+      custeio: number;
+      investimentos: number;
+      amortizacao: number;
+      records: PresentationRecord[];
+    };
+  };
+
+  const [loaResumo, setLoaResumo] = useState<LoaResumoData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/elaboracao-loa/resumo?exercise=2027")
+      .then((res) => {
+        if (!res.ok) throw new Error(`Falha ao carregar resumo da LOA: ${res.status}`);
+        return res.json() as Promise<LoaResumoData>;
+      })
+      .then((data) => {
+        if (!cancelled) setLoaResumo(data);
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar dados consolidados da LOA:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (dataSource !== "real" || dbData) return;
 
@@ -201,6 +243,10 @@ export function PresentationDashboard() {
   }, [dataSource, dbData]);
 
   const realRecords = useMemo((): PresentationRecord[] => {
+    // Se a despesa consolidada da Análise LOA estiver disponível, usa-a prioritariamente
+    if (loaResumo?.despesaDetalhada?.records?.length) {
+      return loaResumo.despesaDetalhada.records;
+    }
     if (!dbData?.records) return [];
     return dbData.records.map((record: BudgetRow) => {
       const isOperating = record.expenseNature.startsWith("3") || record.subelement === "33";
@@ -224,7 +270,7 @@ export function PresentationDashboard() {
         value: record.value,
       };
     });
-  }, [dbData]);
+  }, [dbData, loaResumo]);
 
   const getCurrentRecords = useMemo(() => {
     return (selectedYear: 2026 | 2027): PresentationRecord[] => {
@@ -585,10 +631,31 @@ export function PresentationDashboard() {
     return observations;
   }, [budgetPressure, summary, topFiveShare, topInvestmentAction, topProcess, topProgram]);
 
+  const prioritySaude = useMemo(() => {
+    return summary.functions.find((f) => f.label.toLowerCase().includes("saúde") || f.label.toLowerCase().includes("saude"))?.value ?? 0;
+  }, [summary.functions]);
+
+  const priorityEducacao = useMemo(() => {
+    return summary.functions.find((f) => f.label.toLowerCase().includes("educação") || f.label.toLowerCase().includes("educacao"))?.value ?? 0;
+  }, [summary.functions]);
+
+  const priorityObras = useMemo(() => {
+    return summary.functions.find((f) => f.label.toLowerCase().includes("urbanismo") || f.label.toLowerCase().includes("obras") || f.label.toLowerCase().includes("infraestrutura"))?.value ?? 0;
+  }, [summary.functions]);
+
   const execMetrics = useMemo(() => {
     const records = getCurrentRecords(year).filter((record) => !secretariat || record.secretariat === secretariat);
-    return calculateExecutiveMetrics(records, summary.total);
-  }, [getCurrentRecords, year, secretariat, summary.total]);
+    
+    // Se estiver no ano 2027 e sem filtro de secretaria específica, usar a receita real da LoaReceita
+    const isFullLoa2027 = year === 2027 && !secretariat;
+    const realRevenueOpts = isFullLoa2027 && loaResumo ? {
+      ownRevenue: loaResumo.receitaPropria,
+      transfers: loaResumo.receitaTransferencias + loaResumo.totalIndiretas,
+      capitalRevenue: loaResumo.receitaCapital,
+    } : undefined;
+
+    return calculateExecutiveMetrics(records, summary.total, realRevenueOpts);
+  }, [getCurrentRecords, year, secretariat, summary.total, loaResumo]);
 
   return (
     <div className="relative min-h-screen bg-background font-body text-on-surface antialiased">
@@ -835,60 +902,105 @@ export function PresentationDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-          <div className="p-7 rounded-2xl bg-gradient-to-br from-tertiary to-[#00386b] text-white shadow-xl shadow-tertiary/20 relative overflow-hidden group border border-tertiary/20">
-            <div className="absolute -right-6 -bottom-6 opacity-[0.08] group-hover:scale-110 transition-transform duration-700">
-              <span className="material-symbols-outlined text-[160px]">account_balance</span>
-            </div>
-            <div className="relative z-10">
-              <p className="text-tertiary-fixed font-semibold text-xs tracking-wide mb-2 opacity-90 uppercase">LOA Total {year}</p>
-              <h3 className="text-4xl font-headline font-black mb-3 tracking-tight">{compactCurrency(summary.total)}</h3>
-              <div className="flex items-center gap-1.5 text-xs font-bold bg-white/10 backdrop-blur-sm w-fit px-2.5 py-1 rounded-lg border border-white/10">
-                <span className="material-symbols-outlined text-sm">trending_up</span>
-                <span>{trend >= 0 ? "+" : ""}{percent.format(trend)} vs 2026</span>
+        {/* 4 Cards Principais Executivos */}
+        {(() => {
+          const totalBase = summary.total;
+          const ownRev = execMetrics.ownRevenue;
+          const transRev = execMetrics.transfers;
+          const revTotal = ownRev + transRev;
+          const ownPct = revTotal > 0 ? Math.round((ownRev / revTotal) * 100) : 41;
+          const transPct = revTotal > 0 ? 100 - ownPct : 59;
+
+          // Se tivermos resultado consolidado do backend (Prefeitura + Indiretas - Proposta)
+          // Se filtrado por secretaria, compara proporção ou mantém informação
+          const resultado = (!secretariat && loaResumo?.resultadoProjetado !== undefined && loaResumo.resultadoProjetado !== null)
+            ? loaResumo.resultadoProjetado
+            : (revTotal - totalBase);
+
+          const isDeficit = resultado < -1000;
+          const isSuperavit = resultado > 1000;
+
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+              {/* Card 1: LOA Total */}
+              <div className="p-7 rounded-2xl bg-gradient-to-br from-tertiary to-[#00386b] text-white shadow-xl shadow-tertiary/20 relative overflow-hidden group border border-tertiary/20">
+                <div className="absolute -right-6 -bottom-6 opacity-[0.08] group-hover:scale-110 transition-transform duration-700">
+                  <span className="material-symbols-outlined text-[160px]">account_balance</span>
+                </div>
+                <div className="relative z-10">
+                  <p className="text-tertiary-fixed font-semibold text-xs tracking-wide mb-2 opacity-90 uppercase">
+                    LOA Total {year} {year === 2027 && !secretariat ? "(Valor Previsto)" : ""}
+                  </p>
+                  <h3 className="text-4xl font-headline font-black mb-3 tracking-tight">{compactCurrency(summary.total)}</h3>
+                  <div className="flex items-center gap-1.5 text-xs font-bold bg-white/10 backdrop-blur-sm w-fit px-2.5 py-1 rounded-lg border border-white/10">
+                    <span className="material-symbols-outlined text-sm">trending_up</span>
+                    <span>{trend >= 0 ? "+" : ""}{percent.format(trend)} vs 2026</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Receita Própria */}
+              <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-outline font-bold text-xs uppercase tracking-wider">Receita Própria</p>
+                  <span className="w-9 h-9 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center font-extrabold text-xs">
+                    {ownPct}%
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{compactCurrency(ownRev)}</h3>
+                  <p className="text-xs text-on-surface-variant font-medium">IPTU, ISS, ITBI, Taxas e Contribuições</p>
+                </div>
+              </div>
+
+              {/* Card 3: Transferências */}
+              <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-outline font-bold text-xs uppercase tracking-wider">Transferências</p>
+                  <span className="w-9 h-9 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center font-extrabold text-xs">
+                    {transPct}%
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{compactCurrency(transRev)}</h3>
+                  <p className="text-xs text-on-surface-variant font-medium">ICMS, IPVA, FPM, SUS e FUNDEB</p>
+                </div>
+              </div>
+
+              {/* Card 4: Resultado Projetado */}
+              <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-outline font-bold text-xs uppercase tracking-wider">Resultado Projetado</p>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                    isDeficit
+                      ? "bg-amber-50 text-amber-600"
+                      : isSuperavit
+                      ? "bg-[#e6f4ea] text-[#137333]"
+                      : "bg-blue-50 text-blue-600"
+                  }`}>
+                    <span className="material-symbols-outlined text-lg">
+                      {isDeficit ? "warning" : isSuperavit ? "check_circle" : "balance"}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black text-on-surface mb-1">
+                    {isDeficit ? "Ajuste Necessário" : isSuperavit ? "Superavitário" : "Equilibrado"}
+                  </h3>
+                  <p className={`text-xs font-semibold ${
+                    isDeficit ? "text-amber-700" : isSuperavit ? "text-[#137333]" : "text-blue-700"
+                  }`}>
+                    {isDeficit
+                      ? `Déficit Projetado: ${compactCurrency(Math.abs(resultado))}`
+                      : isSuperavit
+                      ? `Superávit Projetado: ${compactCurrency(resultado)}`
+                      : "Receitas e Despesas em Equilíbrio"}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-
-          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-2">
-              <p className="text-outline font-bold text-xs uppercase tracking-wider">Receita Própria</p>
-              <span className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xs">
-                41%
-              </span>
-            </div>
-            <div>
-              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{compactCurrency(execMetrics.ownRevenue)}</h3>
-              <p className="text-xs text-on-surface-variant font-medium">IPTU, ISS, Taxas e Contribuições</p>
-            </div>
-          </div>
-
-          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-2">
-              <p className="text-outline font-bold text-xs uppercase tracking-wider">Transferências</p>
-              <span className="w-8 h-8 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-xs">
-                59%
-              </span>
-            </div>
-            <div>
-              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">{compactCurrency(execMetrics.transfers)}</h3>
-              <p className="text-xs text-on-surface-variant font-medium">FPM, ICMS, SUS, FUNDEB</p>
-            </div>
-          </div>
-
-          <div className="p-7 rounded-2xl bg-surface border border-outline-variant/40 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-2">
-              <p className="text-outline font-bold text-xs uppercase tracking-wider">Resultado Projetado</p>
-              <div className="w-8 h-8 rounded-full bg-[#e6f4ea] flex items-center justify-center text-[#137333]">
-                <span className="material-symbols-outlined text-lg">check_circle</span>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-3xl font-headline font-black text-on-surface mb-1">Equilibrado</h3>
-              <p className="text-xs font-semibold text-[#137333]">Superávit Projetado: R$ 12 mi</p>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-12">
           <div className="lg:col-span-4">
@@ -1037,7 +1149,7 @@ export function PresentationDashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <LdoDeliveryMatrix totalLoa={summary.total} />
+            <LdoDeliveryMatrix />
             <InsufficientLdoGoalsCard />
             <StrategicProgramsCard />
           </div>

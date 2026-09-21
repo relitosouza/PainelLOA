@@ -51,9 +51,16 @@ export type ExecutiveCalculations = {
   }[];
 };
 
+export type ExecutiveRevenueOptions = {
+  ownRevenue?: number;
+  transfers?: number;
+  capitalRevenue?: number;
+};
+
 export function calculateExecutiveMetrics(
   records: PresentationRecord[],
-  totalOverride?: number
+  totalOverride?: number,
+  revenueOptions?: ExecutiveRevenueOptions
 ): ExecutiveCalculations {
   const total = totalOverride ?? records.reduce((sum, r) => sum + r.value, 0);
   
@@ -83,10 +90,10 @@ export function calculateExecutiveMetrics(
     };
   }
 
-  // 1. Receita e Origem
-  const ownRevenue = total * 0.415; // IPTU, ISS, Taxas
-  const transfers = total * 0.585;  // FPM, ICMS, SUS, FUNDEB
-  const capitalRevenue = 0;
+  // 1. Receita e Origem (Usa valores reais se fornecidos, ou modelagem proporcional padrão)
+  const ownRevenue = revenueOptions?.ownRevenue ?? total * 0.415; // IPTU, ISS, Taxas
+  const transfers = revenueOptions?.transfers ?? total * 0.585;  // FPM, ICMS, SUS, FUNDEB
+  const capitalRevenue = revenueOptions?.capitalRevenue ?? 0;
 
   // 2. Despesas por Natureza Real
   let personnel = 0;
