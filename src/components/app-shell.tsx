@@ -142,7 +142,7 @@ export function AppShell({ view }: { view: string }) {
                 {view === "dashboard" ? "Visão Analítica" : view === "transparente" ? "Orçamento Transparente" : view === "elaboracao-loa" ? "Elaboração da LOA" : view === "assistente-loa" ? "Assistente LOA" : "LOA Orçamentária"}
               </div>
               <div className="text-[10px] text-on-surface-variant font-medium hidden sm:block uppercase tracking-wider">
-                Câmara Municipal de Osasco
+                Prefeitura do Município de Osasco
               </div>
             </div>
           </div>
