@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { SECRETARIAS_NOMES } from "@/lib/secretarias-catalogo";
+import { openAuditoriaReportWindow } from "@/lib/auditoria-report-template";
 
 interface AlteracaoItem {
   id: string;
@@ -138,6 +139,20 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva, o
     }
   };
 
+  const handleImprimir = (modo: "atual" | "todas" = "atual") => {
+    const nomeSec = secretariaFiltro ? SECRETARIAS_NOMES[secretariaFiltro] : undefined;
+    openAuditoriaReportWindow({
+      exercicio: 2027,
+      secretariaFiltro: secretariaFiltro || undefined,
+      secretariaNome: nomeSec,
+      buscaFiltro: busca.trim() || undefined,
+      activeTab: modo === "todas" ? "todas" : activeTab,
+      alteracoes: alteracoesFiltradas,
+      exclusoes: exclusoesFiltradas,
+      autoPrint: true,
+    });
+  };
+
   if (!isOpen) return null;
 
   const alteracoesFiltradas = alteracoes.filter((a) => {
@@ -203,13 +218,25 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva, o
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface cursor-pointer"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleImprimir("atual")}
+              disabled={loading}
+              title={`Imprimir relatório da visualização atual (${activeTab === "alteracoes" ? "Ajustes de Valor" : "Exclusões"})`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface border border-outline-variant hover:bg-surface-container-high text-on-surface transition-colors cursor-pointer shadow-xs active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="material-symbols-outlined text-base text-primary">print</span>
+              <span className="hidden sm:inline">Imprimir Relatório</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Resumo Rápido de Métricas de Auditoria */}
@@ -423,17 +450,40 @@ export function AuditoriaOrcamentariaModal({ isOpen, onClose, secretariaAtiva, o
         </div>
 
         {/* Rodapé */}
-        <div className="p-3 border-t border-outline-variant bg-surface-container flex items-center justify-between text-xs">
+        <div className="p-3 border-t border-outline-variant bg-surface-container flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-on-surface-variant">
             Exibindo registros auditados do exercício <strong className="text-on-surface">2027</strong>
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 font-bold text-xs bg-surface border border-outline-variant hover:bg-surface-container-high rounded-lg text-on-surface transition-colors cursor-pointer"
-          >
-            Fechar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleImprimir("todas")}
+              disabled={loading}
+              title="Imprimir relatório completo consolidando ajustes e exclusões"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 font-semibold text-xs bg-surface border border-outline-variant hover:bg-surface-container-high rounded-lg text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-sm text-on-surface-variant">print_connect</span>
+              <span className="hidden md:inline">Imprimir Completo (Todas as Abas)</span>
+              <span className="md:hidden">Completo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleImprimir("atual")}
+              disabled={loading}
+              title={`Imprimir relatório da aba ativa (${activeTab === "alteracoes" ? "Ajustes de Valor" : "Exclusões"})`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs bg-primary text-on-primary hover:bg-primary/90 rounded-lg transition-colors cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-sm">print</span>
+              <span>Imprimir Relatório</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 font-bold text-xs bg-surface border border-outline-variant hover:bg-surface-container-high rounded-lg text-on-surface transition-colors cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       </div>
     </div>

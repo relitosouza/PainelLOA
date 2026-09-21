@@ -11,3 +11,4 @@
 - [git-merge] Ramo `staging` (com todas as melhorias de relatórios, persistência e auditoria) sincronizado e mesclado com sucesso na branch `main` com 34 testes automatizados validados.
 - [loa-receitas] Modelo de dados para LOA Receitas implementado em Prisma (`LoaReceita`), rotas `/api/receitas/loa/*` (modelo, validar-arquivo, confirmar-importacao), parser resiliente e interface completa em `LoaReceitaImportForm`.
 - [comparativo-secretarias-ldo] Quadro comparativo LOA proposta vs LDO por Secretaria inserido acima de Classificação da Despesa em `AnalyticDashboardLayout`, com popover de filtro de colunas, busca e ordenação.
+- [auditoria-impressao] Botão e gerador de relatório formal de impressão para Auditoria Orçamentária e Rastreabilidade (`src/lib/auditoria-report-template.ts` e `src/components/auditoria-orcamentaria-modal.tsx`), com suporte a filtros ativos, abas individuais e dossiê completo.
