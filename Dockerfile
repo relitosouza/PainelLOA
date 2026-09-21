@@ -22,7 +22,10 @@ RUN npx prisma generate
 RUN npm run build
 
 # Stage 3: Runner
-FROM base AS runner
+# A imagem oficial do PostgreSQL já inclui pg_dump 16, compatível com o banco da VPS.
+# Isso evita depender de apt-get durante o build, cuja saída de rede está bloqueada na VPS.
+FROM postgres:16-bookworm AS runner
+COPY --from=base /usr/local /usr/local
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -32,17 +35,6 @@ ENV HOSTNAME="0.0.0.0"
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
-
-RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g; s|http://security.debian.org|https://security.debian.org|g' /etc/apt/sources.list.d/debian.sources && \
-    printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends curl gnupg bash gzip ca-certificates && \
-    install -d /usr/share/postgresql-common/pgdg && \
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg && \
-    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends postgresql-client-16 && \
-    rm -rf /var/lib/apt/lists/*
 
 # Instala prisma globalmente no runner para permitir comandos como `prisma db push`
 RUN npm install -g prisma@^6.10.0
