@@ -553,6 +553,37 @@ export function AnaliseLoaView() {
   const [layoutConfig, setLayoutConfig] = useState<AnaliseLoaLayoutConfig>(DEFAULT_LAYOUT_CONFIG);
   const [cardsConfigModalOpen, setCardsConfigModalOpen] = useState(false);
 
+  // Linhas cadastradas do quadro de conciliação (receita, ordem e blocos). A despesa não vem do
+  // servidor: é somada abaixo a partir de rawItems, para o quadro seguir as edições sem recarregar.
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/conciliacao-fontes?exercicio=2027");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.linhas) && isMounted) setConciliacaoCadastro(data.linhas);
+        }
+      } catch (err) {
+        console.warn("Falha ao carregar a conciliação de fontes:", err);
+      } finally {
+        if (isMounted) setConciliacaoCarregando(false);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // O quadro é derivado de rawItems, então todo reajuste, aditamento ou sugestão SF digitado no
+  // detalhamento analítico recalcula receita x despesa no mesmo render, sem ida ao servidor.
+  // Usa o universo completo de despesas de propósito: filtrado por secretaria, a diferença contra a
+  // receita total deixaria de significar equilíbrio e mostraria sobra falsa em toda linha.
+  const conciliacao = useMemo(
+    () => montarConciliacao(rawItems, conciliacaoCadastro, budgetScenario),
+    [rawItems, conciliacaoCadastro, budgetScenario]
+  );
+
   // Carregar configuração de cards do Banco de Dados (com fallback no localStorage)
   useEffect(() => {
     let isMounted = true;
