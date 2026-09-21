@@ -14,7 +14,7 @@ services:
     volumes:
       - painel_loa_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-painel_loa}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-painel_loa}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,7 +33,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-local_password}@postgres:5432/${POSTGRES_DB:-painel_loa}?schema=public
+      DATABASE_URL: ${DATABASE_URL}
       AUTO_DB_PUSH: ${AUTO_DB_PUSH:-true}
     ports:
       - "${APP_PORT:-3010}:3000"
@@ -61,4 +61,3 @@ volumes:
 networks:
   painel-loa-net:
     name: painel-loa-net
-
