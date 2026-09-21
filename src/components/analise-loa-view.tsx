@@ -39,6 +39,7 @@ import {
   calculateAnalyticalValues,
   createBancoProjetoValues,
   parseLoa2026InitialWorkbook,
+  parseLoa2026ProgramaticaCsv,
 } from "@/lib/loa-analytical-values";
 
 // --- Tipos de Filtro ---
@@ -199,6 +200,8 @@ export function AnaliseLoaView() {
   const [dataReloadKey, setDataReloadKey] = useState(0);
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
   const [ldoReceitaEntidades, setLdoReceitaEntidades] = useState<Array<{ nome: string; valor: number }>>([]);
+  // Total da LOA 2026 (dotação inicial de todas as dotações do CSV), usado no card como referência fixa.
+  const [loa2026Total, setLoa2026Total] = useState(0);
   const [loaReceitaResumo, setLoaReceitaResumo] = useState<{ total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number }>({ total: 0, maior: null, qtdFontes: 0 });
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
@@ -972,11 +975,16 @@ export function AnaliseLoaView() {
         // aparece apenas até o nível de natureza.
         let baseItems = [...loaMap.values()].map((item) => ({ ...item, valLoa2026: 0 }));
         try {
-          const loa2026Response = await fetch(`/loa_2026.xls?t=${Date.now()}`, { cache: "no-store" });
-          if (loa2026Response.ok) {
-            const loa2026Totals = parseLoa2026InitialWorkbook(await loa2026Response.arrayBuffer());
-            baseItems = allocateLoa2026Initial(baseItems, loa2026Totals);
-          }
+          // Fonte oficial: CSV da SF por programática. O .xls antigo fica como reserva.
+          const loa2026Csv = await fetch(`/loa_2026.csv?t=${Date.now()}`, { cache: "no-store" });
+          const totaisLoa2026 = loa2026Csv.ok
+            ? parseLoa2026ProgramaticaCsv(await loa2026Csv.text())
+            : await (async () => {
+              const loa2026Response = await fetch(`/loa_2026.xls?t=${Date.now()}`, { cache: "no-store" });
+              return loa2026Response.ok ? parseLoa2026InitialWorkbook(await loa2026Response.arrayBuffer()) : new Map<string, number>();
+            })();
+          setLoa2026Total([...totaisLoa2026.values()].reduce((soma, valor) => soma + valor, 0));
+          baseItems = allocateLoa2026Initial(baseItems, totaisLoa2026);
         } catch (loa2026Error) {
           console.warn("Não foi possível carregar a LOA 2026:", loa2026Error);
         }
@@ -3108,6 +3116,7 @@ export function AnaliseLoaView() {
               key="painel-despesa"
               layoutConfig={layoutConfig}
               loaExpectativaTotal={loaExpectativaTotal}
+              loa2026Total={loa2026Total}
               metrics={metrics}
             />
           );

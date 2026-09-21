@@ -4,6 +4,7 @@ import {
   calculateAnalyticalValues,
   createBancoProjetoValues,
   parseLoa2026InitialWorkbook,
+  parseLoa2026ProgramaticaCsv,
 } from "./loa-analytical-values";
 import * as XLSX from "xlsx";
 
@@ -58,5 +59,22 @@ describe("LOA 2026", () => {
     ], new Map([["02.001.04.122.0001.2.011.3.3.90.39.00", 1_000]]));
 
     expect(allocated.map((item) => item.valLoa2026)).toEqual([750, 250, 0]);
+  });
+});
+
+describe("parseLoa2026ProgramaticaCsv", () => {
+  it("soma por programática, retirando o vínculo do fim e ignorando linhas sem valor", () => {
+    const csv = [
+      "PROGRAMÁTICA,VALOR FINAL ARREDONDADO",
+      '02.001.04.122.0001.2.011.3.3.90.30.01.110.0000,"22.500,00 "',
+      '02.001.04.122.0001.2.011.3.3.90.30.01.110.0000,"6.500,00 "',
+      '02.001.04.122.0001.2.011.3.3.90.30.08.110.0000,"1.000,00 "',
+      '02.001.04.122.0001.2.011.3.3.90.39.01.110.0000,"0,00 "',
+      "04.001.04.122.0001.1.0024.4.90.52.01.110.0000,",
+    ].join("\n");
+    const valores = parseLoa2026ProgramaticaCsv(csv);
+    expect(valores.get("02.001.04.122.0001.2.011.3.3.90.30.00")).toBe(30_000);
+    expect(valores.get("02.001.04.122.0001.2.011.3.3.90.39.00")).toBe(0);
+    expect(valores.size).toBe(2);
   });
 });

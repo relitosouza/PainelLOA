@@ -55,6 +55,30 @@ function buildProgrammaticKey(unidade: unknown, classificacao: unknown, natureza
   ].join(".");
 }
 
+/**
+ * LOA 2026 no formato CSV da SF: PROGRAMÁTICA;VALOR FINAL ARREDONDADO, uma linha por dotação.
+ * A programática do CSV termina com o vínculo (ex.: ...3.3.90.30.01.110.0000). A Análise LOA agrupa
+ * por programática sem vínculo (ex.: ...3.3.90.30.00), então o vínculo é retirado e os valores somados.
+ */
+export function parseLoa2026ProgramaticaCsv(texto: string): Map<string, number> {
+  const linhas = texto.replace(/^\uFEFF/, "").split(/\r?\n/).filter((linha) => linha.trim());
+  const valores = new Map<string, number>();
+  linhas.slice(1).forEach((linha) => {
+    const separador = linha.indexOf(",");
+    if (separador < 0) return;
+    const programatica = linha.slice(0, separador).trim();
+    const valorTexto = linha.slice(separador + 1).replace(/"/g, "").trim();
+    if (!valorTexto) return; // linhas sem valor (programáticas incompletas na origem)
+    const valor = Number(valorTexto.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(valor)) return;
+    const partes = programatica.split(".");
+    if (partes.length < 12) return;
+    const chave = `${partes.slice(0, partes.length - 3).join(".")}.00`;
+    valores.set(chave, (valores.get(chave) ?? 0) + valor);
+  });
+  return valores;
+}
+
 export function parseLoa2026InitialWorkbook(buffer: ArrayBuffer | Uint8Array): Map<string, number> {
   const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];

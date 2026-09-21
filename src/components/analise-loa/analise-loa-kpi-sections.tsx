@@ -10,6 +10,8 @@ interface AnaliseLoaKpisProps {
   ldoReceitaEntidades: Array<{ nome: string; valor: number }>;
   loaReceitaResumo: { total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number; entidades: Array<{ nome: string; valor: number }> };
   loaExpectativaTotal: number;
+  /** Total da LOA 2026 (todas as dotações), independente dos filtros do painel. */
+  loa2026Total: number;
   metrics: {
     valLdoTotal: number;
     valLoaTotal: number;
@@ -145,8 +147,9 @@ export const AnaliseLoaReceitaKpis = React.memo(function AnaliseLoaReceitaKpis({
 export const AnaliseLoaDespesaKpis = React.memo(function AnaliseLoaDespesaKpis({
   layoutConfig,
   loaExpectativaTotal,
+  loa2026Total,
   metrics,
-}: Pick<AnaliseLoaKpisProps, "layoutConfig" | "loaExpectativaTotal" | "metrics">) {
+}: Pick<AnaliseLoaKpisProps, "layoutConfig" | "loaExpectativaTotal" | "loa2026Total" | "metrics">) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant uppercase tracking-wider">
@@ -224,9 +227,14 @@ export const AnaliseLoaDespesaKpis = React.memo(function AnaliseLoaDespesaKpis({
               <div key="desp-loa2026" className="glass-card bg-surface p-4 border-t-2 border-t-slate-500 shadow-sm rounded-xl">
                 <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Valor LOA 2026</p>
                 <h3 className="text-lg font-headline font-extrabold text-on-surface">
-                  {currency.format(metrics.valLoa2026Total)}
+                  {currency.format(loa2026Total)}
                 </h3>
-                <p className="text-[10px] text-on-surface-variant font-semibold mt-1">Dotação inicial 2026</p>
+                <p
+                  className="text-[10px] text-on-surface-variant font-semibold mt-1"
+                  title={`Total da LOA 2026, independente dos filtros. Nas linhas de 2027: ${currency.format(metrics.valLoa2026Total)}`}
+                >
+                  Dotação inicial 2026 (total)
+                </p>
               </div>
             );
           }
