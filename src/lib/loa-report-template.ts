@@ -166,29 +166,29 @@ function renderSingleGroupRowsHtml(group: LoaReportGroup): string {
     return `
 <tr class="zebra-row border-b border-outline-variant hover:bg-surface-container-low transition-colors">
   <td class="p-padding-cell-v px-padding-cell-h">
-    <div class="font-semibold text-on-surface text-[13px] leading-snug">${nat}</div>
-    ${showProc ? `<div class="text-[11.5px] text-on-surface-variant font-normal mt-1 leading-snug break-words tracking-tight">${proc}</div>` : ""}
+    <div class="font-semibold text-on-surface text-[10.5px] leading-snug break-words">${nat}</div>
+    ${showProc ? `<div class="text-[9px] text-on-surface-variant font-normal mt-0.5 leading-snug break-words tracking-tight">${proc}</div>` : ""}
   </td>
-  <td class="p-padding-cell-v px-padding-cell-h text-on-surface-variant">${vinc}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right">${iValLoa}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iReajuste}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iAditamento}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iAjusteSf}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iCorteGp}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold">${iTotal}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-on-surface-variant text-[10px] whitespace-nowrap">${vinc}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-mono text-[10px] whitespace-nowrap">${iValLoa}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant font-mono text-[10px] whitespace-nowrap">${iReajuste}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant font-mono text-[10px] whitespace-nowrap">${iAditamento}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant font-mono text-[10px] whitespace-nowrap">${iAjusteSf}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant font-mono text-[10px] whitespace-nowrap">${iCorteGp}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-mono font-bold text-[10px] whitespace-nowrap bg-primary-fixed-dim/5">${iTotal}</td>
 </tr>`;
   }).join("\n");
 
   return `
 <!-- Group: ${groupName} -->
 <tr class="bg-surface-container-highest border-b border-outline-variant">
-  <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold sticky left-0" colspan="2">${groupName}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupValLoa}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupReajuste}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupAditamento}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupAjusteSf}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupCorteGp}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupTotal}</td>
+  <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold text-[10.5px] sticky left-0" colspan="2">${groupName}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupValLoa}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupReajuste}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupAditamento}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupAjusteSf}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupCorteGp}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap bg-primary-fixed-dim/10">${groupTotal}</td>
 </tr>
 ${itemsHtml}`;
 }
@@ -321,12 +321,12 @@ function renderExecutiveCoverPage(data: LoaReportData): string {
         <div class="text-[13.5px] font-bold font-mono text-on-surface leading-tight">${currency.format(desp.ldoTotal)}</div>
         <span class="text-[9px] text-emerald-700 font-semibold block mt-0.5">Planejada LDO</span>
       </div>
-      <!-- Card Desp 2: Valor Solicitado (Soma com Reajuste e Aditamento) -->
+      <!-- Card Desp 2: Valor Solicitado (Soma: Solicitado + Reajuste + Aditamento) -->
       <div class="bg-surface p-2.5 rounded-lg border-t-2 border-t-blue-600 border border-outline-variant/40 shadow-2xs">
         <span class="text-[9.5px] font-bold text-on-surface-variant uppercase block mb-0.5">Valor Solicitado</span>
         <div class="text-[13.5px] font-bold font-mono text-on-surface leading-tight">${currency.format(despSolicitadoTotal)}</div>
-        <span class="text-[8px] text-blue-800 font-medium block mt-0.5 truncate" title="Base: ${currency.format(despBase)} · Reaj: +${currency.format(desp.reajuste)} · Adit: +${currency.format(desp.aditamento)}">
-          Base: ${currency.format(despBase)} · Reaj: +${currency.format(desp.reajuste)} · Adit: +${currency.format(desp.aditamento)}
+        <span class="text-[8px] text-blue-800 font-semibold block mt-0.5 truncate" title="Soma: Solicitado (${currency.format(despBase)}) + Reajuste (${currency.format(desp.reajuste)}) + Aditamento (${currency.format(desp.aditamento)})">
+          Base: ${currency.format(despBase)} + Reaj: ${currency.format(desp.reajuste)} + Adit: ${currency.format(desp.aditamento)}
         </span>
       </div>
       <!-- Card Desp 3 -->
@@ -492,8 +492,8 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
     <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-2.5 flex flex-col justify-center">
       <span class="text-[9.5px] font-bold text-on-surface-variant uppercase mb-0.5">Valor Solicitado</span>
       <span class="text-sm font-bold font-mono text-on-surface leading-tight">${formatTableCell(secSolicitadoTotal)}</span>
-      <span class="text-[8px] text-on-surface-variant font-medium block mt-0.5 truncate" title="Base: ${formatTableCell(secBase)} · Reaj: +${formatTableCell(secReajuste)} · Adit: +${formatTableCell(secAditamento)}">
-        Base: ${formatTableCell(secBase)} · Reaj: +${formatTableCell(secReajuste)} · Adit: +${formatTableCell(secAditamento)}
+      <span class="text-[8px] text-on-surface-variant font-semibold block mt-0.5 truncate" title="Soma: Solicitado (${formatTableCell(secBase)}) + Reajuste (${formatTableCell(secReajuste)}) + Aditamento (${formatTableCell(secAditamento)})">
+        Base: ${formatTableCell(secBase)} + Reaj: ${formatTableCell(secReajuste)} + Adit: ${formatTableCell(secAditamento)}
       </span>
     </div>
     <div class="bg-surface-container-lowest border border-green-200 bg-green-50/20 rounded-lg p-2.5 flex flex-col justify-center">
@@ -559,17 +559,17 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
         </div>
       </div>
       <div class="table-container overflow-x-auto border-x border-b border-outline-variant rounded-b-lg overflow-hidden shadow-xs bg-surface-container-lowest">
-        <table class="w-full text-left border-collapse min-w-[1200px]">
+        <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
           <thead class="bg-primary-container text-on-primary">
             <tr>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant min-w-[320px]">Natureza de despesa</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[120px]">Vínculo</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor Solicitado</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Reajuste</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Aditamento</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Ajuste SF</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Corte GP</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant">Total</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Ajuste SF</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Corte GP</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant w-[12%]">Total</th>
             </tr>
           </thead>
           <tbody class="font-table-data text-table-data text-on-surface">
@@ -586,17 +586,17 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
     const groupsRows = secGroups.map((g) => renderSingleGroupRowsHtml(g)).join("\n");
     tablesHtml = `
     <div class="table-container overflow-x-auto border border-outline-variant rounded-lg overflow-hidden shadow-xs bg-surface-container-lowest mb-6">
-      <table class="w-full text-left border-collapse min-w-[1200px]">
+      <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
         <thead class="bg-primary-container text-on-primary">
           <tr>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant min-w-[320px]">Natureza de despesa</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[120px]">Vínculo</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor Solicitado</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Reajuste</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Aditamento</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Ajuste SF</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Corte GP</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant">Total</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Ajuste SF</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Corte GP</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant w-[12%]">Total</th>
           </tr>
         </thead>
         <tbody class="font-table-data text-table-data text-on-surface">
@@ -734,17 +734,17 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
     </div>
   </div>
   <div class="table-container overflow-x-auto border-x border-b border-outline-variant rounded-b-lg overflow-hidden shadow-xs bg-surface-container-lowest">
-    <table class="w-full text-left border-collapse min-w-[1200px]">
+    <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
       <thead class="bg-primary-container text-on-primary">
         <tr>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant min-w-[320px]">Natureza de despesa</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[120px]">Vínculo</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor Solicitado</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Reajuste</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Aditamento</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Ajuste SF</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Corte GP</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant">Total</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Ajuste SF</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Corte GP</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant w-[12%]">Total</th>
         </tr>
       </thead>
       <tbody class="font-table-data text-table-data text-on-surface">
@@ -839,7 +839,7 @@ ${sectionsHtml}
       <div class="text-right">
         <span class="text-[11px] text-on-surface-variant block uppercase font-bold">Valor Solicitado</span>
         <strong class="font-mono text-sm text-on-surface">${currency.format((data.totals.loa || 0) + (data.totals.reajuste || 0) + (data.totals.aditamento || 0))}</strong>
-        <span class="text-[9px] text-on-surface-variant block mt-0.5 font-medium">Base: ${loaTotalFormatted} · Reaj: +${reajusteFormatted} · Adit: +${aditamentoFormatted}</span>
+        <span class="text-[9px] text-on-surface-variant block mt-0.5 font-semibold">Base: ${loaTotalFormatted} + Reaj: ${reajusteFormatted} + Adit: ${aditamentoFormatted}</span>
       </div>
       <div class="text-right">
         <span class="text-[11px] text-green-700 block uppercase font-bold">Reajustes</span>
@@ -870,17 +870,17 @@ ${sectionsHtml}
       bodyContentHtml = `
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden flex flex-col shadow-sm mb-6">
   <div class="table-container overflow-x-auto">
-    <table class="w-full text-left border-collapse min-w-[1200px]">
+    <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
       <thead class="bg-primary-container text-on-primary">
         <tr>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant min-w-[320px]">Natureza de despesa</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[120px]">Vínculo</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor Solicitado</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Reajuste</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Aditamento</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Ajuste SF</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Corte GP</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant">Total</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Ajuste SF</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Corte GP</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant w-[12%]">Total</th>
         </tr>
       </thead>
       <tbody class="font-table-data text-table-data text-on-surface">
@@ -971,12 +971,12 @@ ${sectionsHtml}
                         "full": "9999px"
                     },
                     "spacing": {
-                        "padding-cell-v": "0.5rem",
-                        "gutter-table": "0.75rem",
-                        "stack-compact": "0.25rem",
-                        "margin-page": "2rem",
-                        "padding-cell-h": "0.75rem",
-                        "stack-default": "1rem"
+                        "padding-cell-v": "0.32rem",
+                        "gutter-table": "0.5rem",
+                        "stack-compact": "0.2rem",
+                        "margin-page": "1.5rem",
+                        "padding-cell-h": "0.4rem",
+                        "stack-default": "0.75rem"
                     },
                     "fontFamily": {
                         "headline-lg-mobile": ["Hanken Grotesk"],
@@ -990,15 +990,15 @@ ${sectionsHtml}
                         "body-md": ["Inter"]
                     },
                     "fontSize": {
-                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
-                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
-                        "table-data-bold": ["13px", { "lineHeight": "18px", "fontWeight": "700" }],
-                        "label-caps": ["11px", { "lineHeight": "14px", "fontWeight": "700" }],
-                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
-                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
-                        "table-data": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
-                        "table-header": ["13px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "600" }],
-                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                        "headline-lg-mobile": ["20px", { "lineHeight": "26px", "fontWeight": "700" }],
+                        "headline-md": ["16px", { "lineHeight": "22px", "fontWeight": "600" }],
+                        "table-data-bold": ["10px", { "lineHeight": "13px", "fontWeight": "700" }],
+                        "label-caps": ["9.5px", { "lineHeight": "12px", "fontWeight": "700" }],
+                        "body-sm": ["10.5px", { "lineHeight": "14px", "fontWeight": "400" }],
+                        "headline-lg": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "table-data": ["10px", { "lineHeight": "13px", "fontWeight": "400" }],
+                        "table-header": ["9.5px", { "lineHeight": "12px", "letterSpacing": "0.02em", "fontWeight": "700" }],
+                        "body-md": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
                     }
                 }
             }
@@ -1193,7 +1193,7 @@ ${
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center">
 <span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Valor Solicitado</span>
 <span class="font-headline-md text-headline-md text-on-surface font-semibold">${currency.format((data.totals.loa || 0) + (data.totals.reajuste || 0) + (data.totals.aditamento || 0))}</span>
-<span class="text-[9px] text-on-surface-variant block mt-1 font-medium truncate" title="Base: ${loaTotalFormatted} · Reaj: +${reajusteFormatted} · Adit: +${aditamentoFormatted}">Base: ${loaTotalFormatted} · Reaj: +${reajusteFormatted} · Adit: +${aditamentoFormatted}</span>
+<span class="text-[9px] text-on-surface-variant block mt-1 font-semibold truncate" title="Soma: Solicitado (${loaTotalFormatted}) + Reajuste (${reajusteFormatted}) + Aditamento (${aditamentoFormatted})">Base: ${loaTotalFormatted} + Reaj: ${reajusteFormatted} + Adit: ${aditamentoFormatted}</span>
 </div>
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center bg-green-50 border-green-200">
 <span class="font-label-caps text-label-caps text-green-700 uppercase mb-1">Reajuste</span>
