@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAnaliseLoaSavedData, buildAnaliseLoaItems, type RawBudgetItem } from "./loa-analise-items";
+import { applyAnaliseLoaSavedData, buildAnaliseLoaItems, resolveAddedExpenses, type RawBudgetItem } from "./loa-analise-items";
 
 const header = ["secretaria", "unidade", "programa", "acao", "natureza", "desc_sub", "processo", "valor", "Peça Orçamentária", "Vínculo"];
 const row = (peca: string, valor: number, sub = "MATERIAL") =>
@@ -28,5 +28,37 @@ describe("applyAnaliseLoaSavedData", () => {
       [a.id, 120, 10, 0],
       ["banco-projeto-1", 0, 0, 500],
     ]);
+  });
+
+  it("não duplica o aditamento de um projeto já normalizado e persistido", () => {
+    const base = buildAnaliseLoaItems([header, row("LOA", 100)], {});
+    const projeto = {
+      ...base[0],
+      id: "banco-projeto-persistido",
+      origem: "Banco de Projetos",
+      valLoa: 500,
+      valorAditamento: 0,
+    } as RawBudgetItem;
+
+    const result = applyAnaliseLoaSavedData(base, {
+      addedExpenses: [projeto],
+      customEdits: { [projeto.id]: 500 },
+      financialEdits: { [projeto.id]: { valorAditamento: 500 } },
+    });
+
+    expect(result.find((item) => item.id === projeto.id)).toMatchObject({
+      valLoa: 0,
+      valorAditamento: 500,
+    });
+  });
+});
+
+describe("resolveAddedExpenses", () => {
+  it("usa a configuração do servidor como fonte autoritativa quando ela foi carregada", () => {
+    const base = buildAnaliseLoaItems([header, row("LOA", 100)], {});
+    const servidor = [{ ...base[0], id: "servidor" }];
+    const local = [{ ...base[0], id: "obsoleto-local" }];
+
+    expect(resolveAddedExpenses(servidor, local, true).map((item) => item.id)).toEqual(["servidor"]);
   });
 });

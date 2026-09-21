@@ -23,6 +23,7 @@ import {
   buildAnaliseLoaItems,
   getActionTypeLabel,
   normalizeBancoProjetoAllocation,
+  resolveAddedExpenses,
   withAddedExpenses,
   withCustomEdits,
   withFinancialEdits,
@@ -989,15 +990,21 @@ export function AnaliseLoaView() {
         // 1. Carregar despesas adicionadas manualmente
         try {
           let apiAddedList: RawBudgetItem[] = [];
+          let apiAddedListLoaded = false;
           const resAdded = await fetch("/api/configuracoes/layout?chave=painel_loa_added_expenses");
           if (resAdded.ok) {
             const data = await resAdded.json();
-            if (data.success && Array.isArray(data.valor)) apiAddedList = data.valor;
+            if (data.success && Array.isArray(data.valor)) {
+              apiAddedList = data.valor;
+              apiAddedListLoaded = true;
+            }
           }
           const savedAddedExpenses = localStorage.getItem(ADDED_EXPENSES_STORAGE_KEY);
           const localAddedList = savedAddedExpenses ? JSON.parse(savedAddedExpenses) as RawBudgetItem[] : [];
-          const addedById = new Map([...apiAddedList, ...localAddedList].map((item) => [item.id, item]));
-          const addedList = [...addedById.values()];
+          const addedList = resolveAddedExpenses(apiAddedList, localAddedList, apiAddedListLoaded);
+          if (apiAddedListLoaded) {
+            localStorage.setItem(ADDED_EXPENSES_STORAGE_KEY, JSON.stringify(apiAddedList));
+          }
           if (addedList.length) {
             itemsArray = withAddedExpenses(itemsArray, addedList);
           }

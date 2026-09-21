@@ -42,10 +42,15 @@ export interface RawBudgetItem {
 export const normalizeBancoProjetoAllocation = (item: RawBudgetItem): RawBudgetItem => {
   const isBancoProjeto = item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey);
   if (!isBancoProjeto || item.valLoa === 0) return item;
+  const persistedAditamento = Number(item.valorAditamento) || 0;
   return {
     ...item,
     valLoa: 0,
-    valorAditamento: (item.valorAditamento ?? 0) + item.valLoa,
+    // Projetos são alocados integralmente como aditamento. Depois de uma
+    // importação, o mesmo valor pode existir tanto no cadastro original
+    // (valLoa) quanto na edição financeira persistida; nesse caso, somá-los
+    // novamente faria o orçamento crescer a cada recarga.
+    valorAditamento: persistedAditamento === 0 ? item.valLoa : persistedAditamento,
     valLoa2026: 0,
   };
 };
@@ -223,6 +228,12 @@ export const withAddedExpenses = (items: RawBudgetItem[], added: RawBudgetItem[]
   added.length
     ? [...items, ...added.map((item) => ({ ...item, valLoa2026: item.valLoa2026 ?? 0, tipoAcao: item.tipoAcao || getActionTypeLabel(item.acao) }))]
     : items;
+
+export const resolveAddedExpenses = (
+  serverItems: RawBudgetItem[],
+  localItems: RawBudgetItem[],
+  serverLoaded: boolean,
+) => serverLoaded ? serverItems : localItems;
 
 export const withoutRemoved = (items: RawBudgetItem[], removedIds: string[]) => {
   if (!removedIds.length) return items;
