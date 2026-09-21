@@ -35,13 +35,15 @@ async function main() {
   const registros: Array<{ exercicio: number; ug: string; fa: string; conf: string; receita: number; bloco: number; ordem: number }> = [];
   const corrigidos: string[] = [];
   const vistos = new Set<string>();
+  const subtotaisCsv = new Map<number, number>();
+  const diferencasPorBloco = new Map<number, number>();
   let bloco = 1;
   let ordem = 0;
   let cabecalhoVisto = false;
 
   for (let i = 0; i < linhas.length; i++) {
     const campos = (linhas[i] ?? "").split(";").map((c) => c.trim());
-    const [ug, fa, confCsv, receitaTexto] = campos;
+    const [ug, fa, confCsv, receitaTexto, , diferencaTexto, diferencasTexto] = campos;
 
     // O cabeçalho ("UG;F.A;CONF;...") vem depois das linhas de título e total.
     if (!cabecalhoVisto) {
@@ -49,13 +51,15 @@ async function main() {
       continue;
     }
 
-    // Linha sem UG/F.A é o separador de bloco da planilha.
-    if (!ug || !fa) {
-      if (registros.length > 0 && ordem > 0) {
-        bloco++;
-        ordem = 0;
-      }
-      continue;
+    // As linhas em branco são só respiro visual: um bloco pode conter mais de um grupo separado por elas.
+    if (!ug || !fa) continue;
+
+    // O que delimita um bloco é a coluna DIFERENÇAS: ela só é preenchida na primeira linha de cada
+    // subtotal. É assim que o duodécimo da Câmara fica no mesmo bloco da fonte da PMO que o cobre.
+    if (diferencasTexto) {
+      if (ordem > 0) bloco++;
+      ordem = 0;
+      subtotaisCsv.set(bloco, lerValor(diferencasTexto));
     }
 
     // "93.100.02901" tem um zero a mais no último grupo; o CONF da própria planilha ("PMO.93.100.2901")
@@ -69,13 +73,15 @@ async function main() {
 
     // O CONF do CSV tem erros de digitação (um repetido da linha de cima, um com dígito a mais).
     // A chave verdadeira é UG + F.A, então recalculamos e registramos a correção.
-    const conf = `${ug}.${fa}`;
+    const conf = `${ug}.${faNormalizada}`;
     if (confCsv && confCsv !== conf) corrigidos.push(`linha ${i + 1}: "${confCsv}" -> "${conf}"`);
 
     if (vistos.has(conf)) throw new Error(`Linha ${i + 1}: CONF repetido no CSV: ${conf}`);
     vistos.add(conf);
 
-    registros.push({ exercicio: EXERCICIO, ug, fa, conf, receita: lerValor(receitaTexto ?? ""), bloco, ordem: ++ordem });
+    registros.push({ exercicio: EXERCICIO, ug, fa: faNormalizada, conf, receita: lerValor(receitaTexto ?? ""), bloco, ordem: ++ordem });
+    // Guarda a DIFERENÇA da planilha para conferir, adiante, se a leitura dos blocos está certa.
+    diferencasPorBloco.set(bloco, (diferencasPorBloco.get(bloco) ?? 0) + Math.round(lerValor(diferencaTexto ?? "") * 100));
   }
 
   const totalReceita = registros.reduce((soma, r) => soma + Math.round(r.receita * 100), 0) / 100;
@@ -84,6 +90,17 @@ async function main() {
   console.log(`Receita cadastrada: R$ ${formatar(totalReceita)}`);
   console.log(`Por UG: ${[...new Set(registros.map((r) => r.ug))].map((ug) => `${ug}=${registros.filter((r) => r.ug === ug).length}`).join(" · ")}`);
   if (corrigidos.length > 0) console.log(`\nCONF corrigidos (${corrigidos.length}):\n  ${corrigidos.join("\n  ")}`);
+
+  // Se a soma das DIFERENÇA de cada bloco bate com o DIFERENÇAS informado, os blocos foram lidos certo.
+  const blocosDivergentes: string[] = [];
+  for (const [numero, subtotal] of subtotaisCsv) {
+    const somado = (diferencasPorBloco.get(numero) ?? 0) / 100;
+    if (Math.abs(somado - subtotal) > 0.005) blocosDivergentes.push(`bloco ${numero}: somado R$ ${formatar(somado)} vs planilha R$ ${formatar(subtotal)}`);
+  }
+  if (blocosDivergentes.length > 0) {
+    throw new Error(`Os blocos não conferem com a coluna DIFERENÇAS da planilha. Nada foi gravado.\n  ${blocosDivergentes.join("\n  ")}`);
+  }
+  console.log(`✓ Os ${subtotaisCsv.size} subtotais de bloco conferem com a coluna DIFERENÇAS da planilha.`);
 
   const existentes = await db.conciliacaoFonte.count({ where: { exercicio: EXERCICIO } });
   console.log(`\nJá cadastrado no banco: ${existentes} linhas (serão substituídas).`);
