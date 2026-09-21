@@ -35,6 +35,23 @@ describe("calculateAnalyticalValues", () => {
       valorAditamento: 750_000,
     });
   });
+
+  it("aceita valores negativos em sugestaoSf e corteGp preservando os sinais", () => {
+    expect(calculateAnalyticalValues({
+      valLoa: 100_000,
+      valorSugestaoSf: -25_000,
+      valorCorteGp: -10_000,
+    })).toEqual({
+      loa2026: 0,
+      vigente: 100_000,
+      reajuste: 0,
+      vigenteComReajuste: 100_000,
+      aditamento: 0,
+      loa2027: 100_000,
+      sugestaoSf: -25_000,
+      corteGp: -10_000,
+    });
+  });
 });
 
 describe("LOA 2026", () => {

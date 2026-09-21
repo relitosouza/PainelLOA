@@ -288,7 +288,18 @@ export function processDetalhamentoWorkbook(
       findRowValue(row, ["Valor Aditamento (R$)", "Valor Aditamento", "Aditamento (R$)", "Aditamento"])
     );
     const excelSugestaoSf = parseExcelNumberOrUndefined(
-      findRowValue(row, ["Valor Sugestão SF (R$)", "Valor Sugestão SF", "Valor Sugestao SF", "Sugestão SF (R$)", "Sugestão SF", "Sugestao SF"])
+      findRowValue(row, [
+        "Valor Ajuste SF (R$)",
+        "Valor Ajuste SF",
+        "Ajuste SF (R$)",
+        "Ajuste SF",
+        "Valor Sugestão SF (R$)",
+        "Valor Sugestão SF",
+        "Valor Sugestao SF",
+        "Sugestão SF (R$)",
+        "Sugestão SF",
+        "Sugestao SF",
+      ])
     );
     const excelCorteGp = parseExcelNumberOrUndefined(
       findRowValue(row, ["Valor Corte GP (R$)", "Valor Corte GP", "Corte GP (R$)", "Corte GP"])

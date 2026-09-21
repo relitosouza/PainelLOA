@@ -124,7 +124,7 @@ const ANALYTICAL_COLUMNS: Array<{ key: AnalyticalColumn; label: string; required
   { key: "valorReajuste", label: "Reajuste" },
   { key: "vigenteReajuste", label: "Vigente + Reajuste" },
   { key: "valorAditamento", label: "Aditamento" },
-  { key: "valorSugestaoSf", label: "Sugestão SF" },
+  { key: "valorSugestaoSf", label: "Ajuste SF" },
   { key: "valorCorteGp", label: "Corte GP" },
   { key: "diff", label: "Diferença" },
   { key: "status", label: "Status" },
@@ -843,6 +843,17 @@ export function AnaliseLoaView() {
     const cleanStr = text.replace(/\./g, "").replace(",", ".");
     const val = parseFloat(cleanStr);
     return Number.isFinite(val) ? Math.max(0, val) : 0;
+  };
+
+  const parseSignedBr = (text: string) => {
+    if (!text) return 0;
+    const trimmed = text.trim();
+    if (trimmed === "" || trimmed === "-") return 0;
+    const isNegative = trimmed.startsWith("-");
+    const cleanStr = trimmed.replace(/-/g, "").replace(/\./g, "").replace(",", ".");
+    const val = parseFloat(cleanStr);
+    if (!Number.isFinite(val)) return 0;
+    return isNegative ? -val : val;
   };
 
   // Carregar dados de ambos os cenários e consolidar
@@ -3773,7 +3784,7 @@ export function AnaliseLoaView() {
                         valorReajuste: (visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorReajuste", "Reajuste", "text-right")}</th>),
                         vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("vigenteReajuste", "Vigente + Reajuste", "text-right")}</th>),
                         valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorAditamento", "Aditamento", "text-right")}</th>),
-                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorSugestaoSf", "Sugestão SF", "text-right")}</th>),
+                        valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorSugestaoSf", "Ajuste SF", "text-right")}</th>),
                         valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("valorCorteGp", "Corte GP", "text-right")}</th>),
                         diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-right">{renderSortHeader("diff", "Diferença", "text-right")}</th>),
                         status: (visibleTableColumns.has("status") && <th className="col-band-gray p-2.5 border-b border-sky-100 dark:border-sky-900/50 text-center">{renderSortHeader("status", "Status", "text-center")}</th>),
@@ -4259,7 +4270,7 @@ export function AnaliseLoaView() {
                                   valorReajuste: (visibleTableColumns.has("valorReajuste") && <th className="col-band-gray p-2 text-right">Reajuste</th>),
                                   vigenteReajuste: (visibleTableColumns.has("vigenteReajuste") && <th className="col-band-white p-2 text-right">Vigente + Reajuste</th>),
                                   valorAditamento: (visibleTableColumns.has("valorAditamento") && <th className="col-band-gray p-2 text-right">Aditamento</th>),
-                                  valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2 text-right">Sugestão SF</th>),
+                                  valorSugestaoSf: (visibleTableColumns.has("valorSugestaoSf") && <th className="col-band-white p-2 text-right">Ajuste SF</th>),
                                   valorCorteGp: (visibleTableColumns.has("valorCorteGp") && <th className="col-band-gray p-2 text-right">Corte GP</th>),
                                   diff: (visibleTableColumns.has("diff") && <th className="col-band-white p-2 text-right">
                                   <button
@@ -4612,9 +4623,12 @@ export function AnaliseLoaView() {
                                                 setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
-                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                const rawVal = event.target.value;
+                                                const isNegative = rawVal.trim().startsWith("-");
+                                                const sanitizedDigits = rawVal.replace(/-/g, "");
+                                                const sanitizedValue = isNegative ? `-${sanitizedDigits}` : sanitizedDigits;
                                                 setTempInputValue(sanitizedValue);
-                                                const value = parseBr(sanitizedValue);
+                                                const value = parseSignedBr(sanitizedValue);
                                                 setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
                                                 setHasChanges(true);
                                               }}
@@ -4631,9 +4645,12 @@ export function AnaliseLoaView() {
                                                 setTempInputValue((entry.valorCorteGp ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
-                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                const rawVal = event.target.value;
+                                                const isNegative = rawVal.trim().startsWith("-");
+                                                const sanitizedDigits = rawVal.replace(/-/g, "");
+                                                const sanitizedValue = isNegative ? `-${sanitizedDigits}` : sanitizedDigits;
                                                 setTempInputValue(sanitizedValue);
-                                                const value = parseBr(sanitizedValue);
+                                                const value = parseSignedBr(sanitizedValue);
                                                 setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorCorteGp: value } : row));
                                                 setHasChanges(true);
                                               }}
@@ -4768,9 +4785,12 @@ export function AnaliseLoaView() {
                                                 setTempInputValue((entry.valorSugestaoSf ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
-                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                const rawVal = event.target.value;
+                                                const isNegative = rawVal.trim().startsWith("-");
+                                                const sanitizedDigits = rawVal.replace(/-/g, "");
+                                                const sanitizedValue = isNegative ? `-${sanitizedDigits}` : sanitizedDigits;
                                                 setTempInputValue(sanitizedValue);
-                                                const value = parseBr(sanitizedValue);
+                                                const value = parseSignedBr(sanitizedValue);
                                                 setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorSugestaoSf: value } : row));
                                                 setHasChanges(true);
                                               }}
@@ -4787,9 +4807,12 @@ export function AnaliseLoaView() {
                                                 setTempInputValue((entry.valorCorteGp ?? 0).toFixed(2).replace(".", ","));
                                               }}
                                               onChange={(event) => {
-                                                const sanitizedValue = event.target.value.replace(/-/g, "");
+                                                const rawVal = event.target.value;
+                                                const isNegative = rawVal.trim().startsWith("-");
+                                                const sanitizedDigits = rawVal.replace(/-/g, "");
+                                                const sanitizedValue = isNegative ? `-${sanitizedDigits}` : sanitizedDigits;
                                                 setTempInputValue(sanitizedValue);
-                                                const value = parseBr(sanitizedValue);
+                                                const value = parseSignedBr(sanitizedValue);
                                                 setRawItems((previous) => previous.map((row) => row.id === entry.id ? { ...row, valorCorteGp: value } : row));
                                                 setHasChanges(true);
                                               }}
