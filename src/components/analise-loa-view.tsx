@@ -13,12 +13,14 @@ import {
 } from "./analise-loa-cards-config-dialog";
 import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
 import { ImportarDetalhamentoModal } from "./importar-detalhamento-modal";
+import { RelatorioContratosModal, type ContratosReportConfig } from "./relatorio-contratos-modal";
 import type { ImportDetalhamentoResult } from "@/lib/import-detalhamento-excel";
 import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
 import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis, AnaliseLoaResultadoKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
 import { openLoaReportWindow, shouldExcludeReportVinculo, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
+import { aggregateContractReportGroups } from "@/lib/contratos-report-aggregation";
 import {
   buildAnaliseLoaItems,
   getActionTypeLabel,
@@ -237,6 +239,7 @@ export function AnaliseLoaView() {
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [scopeTab, setScopeTab] = useState<"todos" | "contratos" | "demais">("todos");
   const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+  const [contratosModalOpen, setContratosModalOpen] = useState(false);
   const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
   const [visibleTableColumns, setVisibleTableColumns] = useState<Set<AnalyticalColumn>>(
     () => new Set(ANALYTICAL_COLUMNS.map((column) => column.key))
@@ -2686,11 +2689,15 @@ export function AnaliseLoaView() {
         procParts.push(obsText.toLowerCase().startsWith("obs") ? obsText : `Obs: ${obsText}`);
       }
       const processoObs = procParts.join(" | ");
+      const isContratoItem = isItemContrato(item);
 
       g.items.push({
         natureza: item.natureza || item.elemento || "—",
         vinculo,
         processoObs,
+        processo: (item.processo || "").trim() || undefined,
+        observacao: obsText || undefined,
+        isContrato: isContratoItem,
         valLdo: item.valLdo,
         valLoa: item.valLoa,
         valorReajuste: item.valorReajuste ?? 0,
@@ -2955,6 +2962,162 @@ export function AnaliseLoaView() {
 
       openLoaReportWindow(reportData, true);
     }
+  };
+
+  const gerarRelatorioContratosPersonalizado = (config: ContratosReportConfig) => {
+    // Filtrar itens com contrato
+    const contratoItems = rawItems.filter((i) => {
+      const ini = String(i.projetoIniciado || i.contrato || "").trim().toUpperCase();
+      const isContrato = ini === "SIM" || ini === "S" || ini === "TRUE" || ini === "1";
+      if (!isContrato) return false;
+
+      // Filtro de secretaria
+      if (config.secretariasSelecionadas.length > 0 && !config.secretariasSelecionadas.includes(i.secretaria)) {
+        return false;
+      }
+
+      // Filtro de ações orçamentárias selecionadas
+      if (config.acoesSelecionadas && config.acoesSelecionadas.length > 0 && !config.acoesSelecionadas.includes(i.acao)) {
+        return false;
+      }
+
+      // Filtro de naturezas de despesa selecionadas
+      if (config.naturezasSelecionadas && config.naturezasSelecionadas.length > 0 && !config.naturezasSelecionadas.includes(i.natureza)) {
+        return false;
+      }
+
+      // Filtro opcional: somente com processo
+      if (config.somenteComProcesso) {
+        const proc = (i.processo || "").trim();
+        if (!proc || proc === "—") return false;
+      }
+
+      return true;
+    });
+
+    if (contratoItems.length === 0) {
+      alert("Nenhum contrato encontrado para os filtros selecionados.");
+      return;
+    }
+
+    const secretariats = [...new Set(contratoItems.map((item) => item.secretaria).filter(Boolean))];
+    const isAllSecs = config.secretariasSelecionadas.length === 0 || secretariats.length > 3;
+    const reportSecretariat = config.secretariasSelecionadas.length === 1
+      ? config.secretariasSelecionadas[0]
+      : secretariats.length === 1
+        ? secretariats[0]
+        : "Relatório de Contratos & Projetos Iniciados";
+
+    // Mapear os grupos aplicando as preferências de personalização da linha
+    const groupMap = new Map<string, LoaReportGroup>();
+
+    contratoItems.forEach((item) => {
+      const key = `${item.secretaria || "SEM_SEC"}|${item.acao || "SEM_ACAO"}`;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          groupCode: item.acao,
+          groupTitle: item.acao || "Ação não informada",
+          secretaria: item.secretaria || "Secretaria não identificada",
+          valLdo: 0,
+          valLoa: 0,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorAjusteSf: 0,
+          valorCorteGp: 0,
+          valorTotal: 0,
+          items: [],
+        });
+      }
+
+      const g = groupMap.get(key)!;
+      const itemAjusteSf = item.valorSugestaoSf ?? 0;
+      const itemCorteGp = item.valorCorteGp ?? 0;
+      const itemTotalCalculado =
+        item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0) + itemAjusteSf + itemCorteGp;
+
+      g.valLoa += item.valLoa;
+      g.valorReajuste += item.valorReajuste ?? 0;
+      g.valorAditamento += item.valorAditamento ?? 0;
+      g.valorAjusteSf = (g.valorAjusteSf ?? 0) + itemAjusteSf;
+      g.valorCorteGp = (g.valorCorteGp ?? 0) + itemCorteGp;
+      g.valorTotal += itemTotalCalculado;
+
+      const vinculo = item.codigoAplicacao
+        ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
+        : item.fonteVinculo || "—";
+
+      // Linha personalizada com processo e observação
+      const procParts: string[] = [];
+      if (config.incluirSubelemento && item.subelemento && item.subelemento !== "—" && item.subelemento !== item.natureza) {
+        procParts.push(item.subelemento.trim());
+      }
+      if (config.incluirProcesso && item.processo && item.processo !== "—" && item.processo.trim() !== "") {
+        const p = item.processo.trim();
+        procParts.push(p.toLowerCase().startsWith("proc") ? p : `Proc: ${p}`);
+      }
+      const obsText = (item.observacao || "").trim() || (justifications[item.id] || "").trim();
+      if (config.incluirObservacao && obsText && obsText !== "—" && obsText !== "") {
+        procParts.push(obsText.toLowerCase().startsWith("obs") ? obsText : `Obs: ${obsText}`);
+      }
+      const processoObs = procParts.join(" | ");
+
+      g.items.push({
+        natureza: item.natureza || item.elemento || "—",
+        vinculo,
+        processoObs,
+        processo: config.incluirProcesso ? (item.processo || "").trim() || undefined : undefined,
+        observacao: config.incluirObservacao ? obsText || undefined : undefined,
+        isContrato: true,
+        valLdo: item.valLdo,
+        valLoa: item.valLoa,
+        valorReajuste: item.valorReajuste ?? 0,
+        valorAditamento: item.valorAditamento ?? 0,
+        valorAjusteSf: itemAjusteSf,
+        valorCorteGp: itemCorteGp,
+        valorTotal: itemTotalCalculado,
+      });
+    });
+
+    const reportGroups = aggregateContractReportGroups(Array.from(groupMap.values()), config);
+    reportGroups.sort((a, b) => {
+      const secA = a.secretaria || "";
+      const secB = b.secretaria || "";
+      if (secA !== secB) return secA.localeCompare(secB, "pt-BR");
+      return (a.groupTitle || "").localeCompare(b.groupTitle || "", "pt-BR");
+    });
+
+    const totLoa = contratoItems.reduce((acc, i) => acc + i.valLoa, 0);
+    const totReajuste = contratoItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
+    const totAditamento = contratoItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
+    const totAjusteSf = contratoItems.reduce((acc, i) => acc + (i.valorSugestaoSf ?? 0), 0);
+    const totCorteGp = contratoItems.reduce((acc, i) => acc + (i.valorCorteGp ?? 0), 0);
+
+    const reportData: LoaReportData = {
+      tituloSecretaria: reportSecretariat,
+      unidadeOrcamentaria: "Despesas com Contratos e Projetos Iniciados",
+      orgao: "01 - PREFEITURA DO MUNICÍPIO DE OSASCO",
+      exercicio: "2027",
+      hasAdjustments: true,
+      reportScopeTitle: "Relatório de Contratos · Processos & Observações",
+      isAllSecretariats: isAllSecs,
+      hideInitialCards: true,
+      ocultarNatureza: config.ocultarNatureza,
+      ocultarAcao: config.ocultarAcao,
+      ocultarVinculo: config.ocultarVinculo,
+      secretariasList: secretariats,
+      totals: {
+        ldo: 0,
+        loa: totLoa,
+        reajuste: totReajuste,
+        aditamento: totAditamento,
+        ajusteSf: totAjusteSf,
+        corteGp: totCorteGp,
+        total: totLoa + totReajuste + totAditamento + totAjusteSf + totCorteGp,
+      },
+      groups: reportGroups,
+    };
+
+    openLoaReportWindow(reportData, true);
   };
 
 
@@ -3815,6 +3978,22 @@ export function AnaliseLoaView() {
                                 </div>
                                 <span className="text-[10px] text-on-surface-variant pl-5">Projetos alocados na LOA</span>
                               </button>
+                              <div className="border-t border-outline-variant/60 my-1 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPdfMenuOpen(false);
+                                    setContratosModalOpen(true);
+                                  }}
+                                  className="w-full text-left p-2 rounded-lg text-xs bg-amber-50/60 hover:bg-amber-100/70 border border-amber-300/60 flex flex-col gap-0.5 transition-colors cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                                    <span className="material-symbols-outlined text-sm text-amber-700">receipt_long</span>
+                                    <span>Relatório Personalizável de Contratos</span>
+                                  </div>
+                                  <span className="text-[10px] text-amber-800/80 pl-5">Filtrar secretarias, processos e observações contratuais</span>
+                                </button>
+                              </div>
                             </div>
                           </>
                         )}
@@ -5885,6 +6064,15 @@ export function AnaliseLoaView() {
         currentValidatedRows={validatedRows}
         currentJustifications={justifications}
         onApplyImport={handleApplyImport}
+      />
+
+      {/* 11. POPUP MODAL: Relatório Personalizável de Contratos & Processos */}
+      <RelatorioContratosModal
+        isOpen={contratosModalOpen}
+        onClose={() => setContratosModalOpen(false)}
+        items={rawItems}
+        todasSecretarias={filterOptions.secretaria || []}
+        onGerarRelatorio={gerarRelatorioContratosPersonalizado}
       />
     </div>
   );

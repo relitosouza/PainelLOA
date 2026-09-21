@@ -4,6 +4,9 @@ export interface LoaReportItem {
   natureza: string;
   vinculo?: string;
   processoObs?: string;
+  processo?: string;
+  observacao?: string;
+  isContrato?: boolean;
   valLdo?: number;
   valLoa?: number;
   valorReajuste?: number;
@@ -96,6 +99,10 @@ export interface LoaReportData {
   autoPrint?: boolean;
   reportScopeTitle?: string;
   isAllSecretariats?: boolean;
+  hideInitialCards?: boolean;
+  ocultarNatureza?: boolean;
+  ocultarAcao?: boolean;
+  ocultarVinculo?: boolean;
   secretariasList?: string[];
   unidadesList?: string[];
   executiveDashboard?: LoaExecutiveDashboardData;
@@ -127,7 +134,7 @@ function escapeHtml(str?: string): string {
     .replace(/'/g, "&#039;");
 }
 
-function renderSingleGroupRowsHtml(group: LoaReportGroup): string {
+function renderSingleGroupRowsHtml(group: LoaReportGroup, ocultarNatureza = false, ocultarAcao = false, ocultarVinculo = false): string {
   const groupName = escapeHtml(group.groupTitle || "Grupo de Despesa");
   const groupValLoa = formatTableCell(group.valLoa);
   const groupReajuste = formatTableCell(group.valorReajuste);
@@ -146,9 +153,37 @@ function renderSingleGroupRowsHtml(group: LoaReportGroup): string {
   const itemsHtml = group.items.map((item) => {
     const nat = escapeHtml(item.natureza || "—");
     const vinc = escapeHtml(item.vinculo || "—");
-    const rawProc = (item.processoObs || "").trim();
-    const proc = escapeHtml(rawProc);
-    const showProc = rawProc !== "" && rawProc !== "—";
+
+    // Construção rica da linha com Nº do Processo e Descrição da Observação
+    let detailsHtml = "";
+    if (item.processo || item.observacao) {
+      const parts: string[] = [];
+      if (item.processo && item.processo.trim() !== "" && item.processo !== "—") {
+        const procClean = escapeHtml(item.processo.trim());
+        parts.push(`<span class="inline-flex items-center gap-1 font-semibold text-primary"><span class="material-symbols-outlined text-[11px]">description</span>Proc: ${procClean}</span>`);
+      }
+      if (item.observacao && item.observacao.trim() !== "" && item.observacao !== "—") {
+        const obsClean = escapeHtml(item.observacao.trim());
+        parts.push(`<span class="text-on-surface-variant font-normal italic">Obs: ${obsClean}</span>`);
+      }
+      if (parts.length > 0) {
+        detailsHtml = `<div class="text-[9px] text-on-surface-variant mt-0.5 leading-snug break-words flex flex-wrap items-center gap-1.5">${parts.join(`<span class="text-outline-variant font-bold">·</span>`)}</div>`;
+      }
+    } else {
+      const rawProc = (item.processoObs || "").trim();
+      if (rawProc !== "" && rawProc !== "—") {
+        detailsHtml = `<div class="text-[9px] text-on-surface-variant font-normal mt-0.5 leading-snug break-words tracking-tight">${escapeHtml(rawProc)}</div>`;
+      }
+    }
+
+    const firstCellContent = ocultarNatureza
+      ? (detailsHtml || `<div class="text-on-surface-variant text-[10px]">—</div>`)
+      : `<div class="font-semibold text-on-surface text-[10.5px] leading-snug break-words">${nat}</div>${detailsHtml}`;
+
+    const vincTd = ocultarVinculo
+      ? ""
+      : `<td class="p-padding-cell-v px-padding-cell-h text-on-surface-variant text-[10px] whitespace-nowrap">${vinc}</td>`;
+
     const iValLoa = formatTableCell(item.valLoa);
     const iReajuste = formatTableCell(item.valorReajuste);
     const iAditamento = formatTableCell(item.valorAditamento);
@@ -166,10 +201,9 @@ function renderSingleGroupRowsHtml(group: LoaReportGroup): string {
     return `
 <tr class="zebra-row border-b border-outline-variant hover:bg-surface-container-low transition-colors">
   <td class="p-padding-cell-v px-padding-cell-h">
-    <div class="font-semibold text-on-surface text-[10.5px] leading-snug break-words">${nat}</div>
-    ${showProc ? `<div class="text-[9px] text-on-surface-variant font-normal mt-0.5 leading-snug break-words tracking-tight">${proc}</div>` : ""}
+    ${firstCellContent}
   </td>
-  <td class="p-padding-cell-v px-padding-cell-h text-on-surface-variant text-[10px] whitespace-nowrap">${vinc}</td>
+  ${vincTd}
   <td class="p-padding-cell-v px-padding-cell-h text-right font-mono text-[10px] whitespace-nowrap">${iValLoa}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant font-mono text-[10px] whitespace-nowrap">${iReajuste}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant font-mono text-[10px] whitespace-nowrap">${iAditamento}</td>
@@ -179,10 +213,16 @@ function renderSingleGroupRowsHtml(group: LoaReportGroup): string {
 </tr>`;
   }).join("\n");
 
+  if (ocultarAcao) {
+    return itemsHtml;
+  }
+
+  const groupColspan = ocultarVinculo ? 1 : 2;
+
   return `
 <!-- Group: ${groupName} -->
 <tr class="bg-surface-container-highest border-b border-outline-variant">
-  <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold text-[10.5px] sticky left-0" colspan="2">${groupName}</td>
+  <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold text-[10.5px] sticky left-0" colspan="${groupColspan}">${groupName}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupValLoa}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupReajuste}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-[10.5px] font-mono whitespace-nowrap">${groupAditamento}</td>
@@ -487,6 +527,10 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
     </div>
   </div>
 
+  ${
+    data.hideInitialCards
+      ? ""
+      : `
   <!-- Cards de Indicadores da Secretaria -->
   <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
     <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-2.5 flex flex-col justify-center">
@@ -523,7 +567,8 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
         Proposta: ${formatTableCell(secSolicitadoTotal)} · SF: ${formatTableCell(secAjusteSf)} · GP: ${formatTableCell(secCorteGp)}
       </span>
     </div>
-  </div>`;
+  </div>`
+  }`;
 
   // Renderizar tabelas das seções para esta secretaria
   let tablesHtml = "";
@@ -544,7 +589,8 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
           0
         );
 
-        const groupsRows = secGroups.map((g) => renderSingleGroupRowsHtml(g)).join("\n");
+        const groupsRows = secGroups.map((g) => renderSingleGroupRowsHtml(g, data.ocultarNatureza, data.ocultarAcao, data.ocultarVinculo)).join("\n");
+        const colTitle = data.ocultarNatureza ? "Detalhamento / Processo" : "Natureza de despesa";
         secSectionsHtml.push(`
     <div class="mb-6">
       <div class="flex items-center justify-between bg-surface-container-high px-3.5 py-2 rounded-t-lg border-t border-x border-outline-variant">
@@ -562,8 +608,8 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
         <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
           <thead class="bg-primary-container text-on-primary">
             <tr>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
-              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+              <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">${colTitle}</th>
+              ${data.ocultarVinculo ? "" : '<th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>'}
               <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
               <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
               <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
@@ -583,14 +629,15 @@ function renderSecretariaReportBlockHtml(secName: string, secIndex: number, data
     tablesHtml = secSectionsHtml.join("\n");
   } else {
     const secGroups = (data.groups || []).filter((g) => (g.secretaria || "").trim() === secName.trim());
-    const groupsRows = secGroups.map((g) => renderSingleGroupRowsHtml(g)).join("\n");
+    const groupsRows = secGroups.map((g) => renderSingleGroupRowsHtml(g, data.ocultarNatureza, data.ocultarAcao, data.ocultarVinculo)).join("\n");
+    const colTitle = data.ocultarNatureza ? "Detalhamento / Processo" : "Natureza de despesa";
     tablesHtml = `
     <div class="table-container overflow-x-auto border border-outline-variant rounded-lg overflow-hidden shadow-xs bg-surface-container-lowest mb-6">
       <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
         <thead class="bg-primary-container text-on-primary">
           <tr>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
-            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+            <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">${colTitle}</th>
+            ${data.ocultarVinculo ? "" : '<th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>'}
             <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
             <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
             <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
@@ -630,7 +677,7 @@ function renderAllSecretariasPaginatedHtml(data: LoaReportData): string {
   const sortedSecretarias = Array.from(secSet).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   if (sortedSecretarias.length === 0) {
-    return renderGroupListHtml(data.groups || []);
+    return renderGroupListHtml(data.groups || [], data.ocultarNatureza, data.ocultarAcao, data.ocultarVinculo);
   }
 
   return sortedSecretarias
@@ -639,7 +686,7 @@ function renderAllSecretariasPaginatedHtml(data: LoaReportData): string {
     .join("\n");
 }
 
-function renderGroupListHtml(groups: LoaReportGroup[]): string {
+function renderGroupListHtml(groups: LoaReportGroup[], ocultarNatureza = false, ocultarAcao = false, ocultarVinculo = false): string {
   // Verificar se há distinção de secretarias entre os grupos
   const secretarias = [...new Set(groups.map((g) => g.secretaria).filter(Boolean))] as string[];
 
@@ -679,7 +726,7 @@ function renderGroupListHtml(groups: LoaReportGroup[]): string {
       const secHeaderHtml = `
 <!-- Header Secretaria: ${escapeHtml(secName)} -->
 <tr class="sec-header-row bg-[#003f87]/20 border-t-2 border-b-2 border-primary">
-  <td colspan="2" class="p-3 px-3.5 font-bold text-primary text-xs uppercase tracking-wider">
+  <td colspan="${ocultarVinculo ? 1 : 2}" class="p-3 px-3.5 font-bold text-primary text-xs uppercase tracking-wider">
     <div class="flex items-center gap-2">
       <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-primary text-white text-[11.5px] font-bold shadow-xs">${secIndex}</span>
       <span class="material-symbols-outlined text-[19px] text-primary">apartment</span>
@@ -694,7 +741,7 @@ function renderGroupListHtml(groups: LoaReportGroup[]): string {
   <td class="p-3 px-3.5 text-right font-bold text-primary text-[13px] bg-primary/15">${formatTableCell(secTotal)}</td>
 </tr>`;
 
-      const secGroupsHtml = secGroups.map((g) => renderSingleGroupRowsHtml(g)).join("\n");
+      const secGroupsHtml = secGroups.map((g) => renderSingleGroupRowsHtml(g, ocultarNatureza, ocultarAcao, ocultarVinculo)).join("\n");
       parts.push(secHeaderHtml + "\n" + secGroupsHtml);
       secIndex++;
     }
@@ -702,10 +749,10 @@ function renderGroupListHtml(groups: LoaReportGroup[]): string {
     return parts.join("\n");
   }
 
-  return groups.map((group) => renderSingleGroupRowsHtml(group)).join("\n");
+  return groups.map((group) => renderSingleGroupRowsHtml(group, ocultarNatureza, ocultarAcao, ocultarVinculo)).join("\n");
 }
 
-function renderSectionBlockHtml(section: LoaReportSection): string {
+function renderSectionBlockHtml(section: LoaReportSection, ocultarNatureza = false, ocultarAcao = false, ocultarVinculo = false): string {
   const sectionTitle = escapeHtml(section.sectionTitle);
   const sectionBadge = escapeHtml(section.sectionBadge || "");
   const sectionIcon = section.sectionIcon || "assignment";
@@ -717,7 +764,8 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
         (section.totals.ajusteSf || 0) +
         (section.totals.corteGp || 0))
   );
-  const groupsHtml = renderGroupListHtml(section.groups);
+  const groupsHtml = renderGroupListHtml(section.groups, ocultarNatureza, ocultarAcao, ocultarVinculo);
+  const colTitle = ocultarNatureza ? "Detalhamento / Processo" : "Natureza de despesa";
 
   return `
 <!-- Section: ${sectionTitle} -->
@@ -737,8 +785,8 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
     <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
       <thead class="bg-primary-container text-on-primary">
         <tr>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">${colTitle}</th>
+          ${ocultarVinculo ? "" : '<th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>'}
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
@@ -814,13 +862,13 @@ export function generateLoaReportHtml(data: LoaReportData): string {
 
   if (isMultipleSecretarias) {
     // OPÇÃO A: Capa Executiva Geral (Página 1) + Páginas Seguintes por Secretaria com seus próprios cards
-    coverPageHtml = renderExecutiveCoverPage(data);
+    coverPageHtml = data.hideInitialCards ? "" : renderExecutiveCoverPage(data);
     bodyContentHtml = renderAllSecretariasPaginatedHtml(data);
   } else {
     // Relatório de uma única secretaria
-    showSingleSecCards = true;
+    showSingleSecCards = !data.hideInitialCards;
     if (data.sections && data.sections.length > 0) {
-      const sectionsHtml = data.sections.map((sec) => renderSectionBlockHtml(sec)).join("\n");
+      const sectionsHtml = data.sections.map((sec) => renderSectionBlockHtml(sec, data.ocultarNatureza, data.ocultarAcao, data.ocultarVinculo)).join("\n");
       bodyContentHtml = `
 ${sectionsHtml}
 
@@ -866,15 +914,16 @@ ${sectionsHtml}
   </div>
 </div>`;
     } else {
-      const groupsHtml = renderGroupListHtml(data.groups || []);
+      const groupsHtml = renderGroupListHtml(data.groups || [], data.ocultarNatureza, data.ocultarAcao, data.ocultarVinculo);
+      const colTitle = data.ocultarNatureza ? "Detalhamento / Processo" : "Natureza de despesa";
       bodyContentHtml = `
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden flex flex-col shadow-sm mb-6">
   <div class="table-container overflow-x-auto">
     <table class="w-full text-left border-collapse table-fixed min-w-[960px] max-w-full">
       <thead class="bg-primary-container text-on-primary">
         <tr>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">Natureza de despesa</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[28%]">${colTitle}</th>
+          ${data.ocultarVinculo ? "" : '<th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[9%]">Vínculo</th>'}
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[11%]">Valor Solicitado</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Reajuste</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right w-[10%]">Aditamento</th>
@@ -888,7 +937,7 @@ ${sectionsHtml}
       </tbody>
       <tfoot class="bg-surface-container-high border-t-2 border-outline-variant sticky bottom-0">
         <tr>
-          <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold sticky left-0 bg-surface-container-high" colspan="2">Total Geral</td>
+          <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold sticky left-0 bg-surface-container-high" colspan="${data.ocultarVinculo ? 1 : 2}">Total Geral</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-primary">${totalGeralLoa}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralReajuste}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralAditamento}</td>
@@ -1151,8 +1200,8 @@ ${sectionsHtml}
 <main class="flex-1 flex flex-col w-full overflow-hidden relative">
 <div class="flex-1 overflow-y-auto a4-preview-workspace">
 ${
-  coverPageHtml
-    ? `${coverPageHtml}\n${bodyContentHtml}`
+  isMultipleSecretarias
+    ? `${coverPageHtml ? `${coverPageHtml}\n` : ""}${bodyContentHtml}`
     : `<div class="page-sheet-landscape secretaria-report-block">
 <!-- Page Header & Context (Secretaria Única) -->
 <div class="mb-6 flex flex-col md:flex-row md:justify-between md:items-start gap-4 pb-4 border-b border-outline-variant/60">
@@ -1184,7 +1233,9 @@ ${
     </div>
   </div>
 </div>
-<!-- Financial Summary Cards (Secretaria Única) -->
+${
+  showSingleSecCards
+    ? `<!-- Financial Summary Cards (Secretaria Única) -->
 <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-gutter-table mb-6">
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center">
 <span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Valor LDO</span>
@@ -1216,7 +1267,9 @@ ${
 <span class="font-headline-md text-headline-md text-primary font-bold">${totalFormatted}</span>
 <span class="text-[9px] text-primary/90 block mt-1 font-bold truncate" title="Proposta: ${currency.format((data.totals.loa || 0) + (data.totals.reajuste || 0) + (data.totals.aditamento || 0))} · SF: ${ajusteSfFormatted} · GP: ${corteGpFormatted}">Proposta: ${currency.format((data.totals.loa || 0) + (data.totals.reajuste || 0) + (data.totals.aditamento || 0))} · SF: ${ajusteSfFormatted} · GP: ${corteGpFormatted}</span>
 </div>
-</div>
+</div>`
+    : ""
+}
 <!-- Main Report Tables (Sectioned or Single) -->
 ${bodyContentHtml}
 </div>`

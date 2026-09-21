@@ -405,5 +405,203 @@ describe("LoaReportTemplate", () => {
     expect(html).toContain("Ação Obras 01");
     expect(html).toContain("Ação Educação 01");
   });
-});
 
+  it("deve exibir Nº do Processo e descrição da Observação na linha que compõe os valores das despesas com contrato", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "Secretaria de Obras e Serviços",
+      isAllSecretariats: false,
+      totals: {
+        ldo: 0,
+        loa: 1200000,
+        reajuste: 60000,
+        aditamento: 40000,
+        total: 1300000,
+      },
+      groups: [
+        {
+          groupTitle: "2.320 - Manutenção e Pavimentação Asfáltica",
+          secretaria: "Secretaria de Obras",
+          valLdo: 0,
+          valLoa: 1200000,
+          valorReajuste: 60000,
+          valorAditamento: 40000,
+          valorTotal: 1300000,
+          items: [
+            {
+              natureza: "3.3.90.39.16 - Manutenção de Vias Públicas",
+              vinculo: "01.110.0000",
+              processo: "PMS-2024-00432",
+              observacao: "Contrato 089/2023 vigente - empresa pavimentadora",
+              isContrato: true,
+              valLoa: 1200000,
+              valorReajuste: 60000,
+              valorAditamento: 40000,
+              valorTotal: 1300000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    expect(html).toContain("3.3.90.39.16 - Manutenção de Vias Públicas");
+    expect(html).toContain("Proc: PMS-2024-00432");
+    expect(html).toContain("Obs: Contrato 089/2023 vigente - empresa pavimentadora");
+  });
+
+  it("deve ocultar cards iniciais e capa executiva quando hideInitialCards for true", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "Secretaria de Obras e Serviços",
+      isAllSecretariats: true,
+      hideInitialCards: true,
+      totals: {
+        ldo: 0,
+        loa: 100000,
+        reajuste: 0,
+        aditamento: 0,
+        total: 100000,
+      },
+      groups: [
+        {
+          groupTitle: "Ação de Teste",
+          secretaria: "Secretaria de Obras",
+          valLdo: 0,
+          valLoa: 100000,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 100000,
+          items: [
+            {
+              natureza: "3.3.90.39.00",
+              valLoa: 100000,
+              valorTotal: 100000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    // Não deve conter a capa executiva de 3 painéis (Painel da Receita, Despesa e Resultado)
+    expect(html).not.toContain("Painel Executivo Orçamentário · Exercício 2027");
+    expect(html).not.toContain("1. Painel da Receita Orçamentária");
+    // Não deve conter os cards de indicadores de secretaria
+    expect(html).not.toContain("Total Pasta LOA");
+    expect(html).not.toContain("Financial Summary Cards");
+    // Mas deve conter a tabela com as despesas
+    expect(html).toContain("3.3.90.39.00");
+  });
+
+  it("deve ocultar a coluna/código de Natureza de Despesa quando ocultarNatureza for true", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "Secretaria de Obras",
+      unidadeOrcamentaria: "Gabinete",
+      orgao: "Órgão 01",
+      exercicio: "2027",
+      hasAdjustments: true,
+      ocultarNatureza: true,
+      totals: {
+        ldo: 0,
+        loa: 100000,
+        reajuste: 0,
+        aditamento: 0,
+        total: 100000,
+      },
+      groups: [
+        {
+          groupTitle: "Ação de Teste",
+          secretaria: "Secretaria de Obras",
+          valLdo: 0,
+          valLoa: 100000,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 100000,
+          items: [
+            {
+              natureza: "3.3.90.39.00",
+              processo: "PMS-1234/2026",
+              observacao: "Reforma Geral de Escola",
+              valLoa: 100000,
+              valorTotal: 100000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    // Cabeçalho da coluna deve ser Detalhamento / Processo em vez de Natureza de despesa
+    expect(html).toContain("Detalhamento / Processo");
+    // O código "3.3.90.39.00" não deve constar na célula de descrição
+    expect(html).not.toContain("3.3.90.39.00");
+    // Mas o processo e a observação devem estar visíveis
+    expect(html).toContain("Proc: PMS-1234/2026");
+    expect(html).toContain("Obs: Reforma Geral de Escola");
+  });
+
+  it("deve ocultar a coluna Vínculo quando ocultarVinculo for true", () => {
+    const html = generateLoaReportHtml({
+      tituloSecretaria: "Secretaria de Obras",
+      exercicio: "2027",
+      ocultarVinculo: true,
+      totals: { ldo: 0, loa: 100, reajuste: 0, aditamento: 0, total: 100 },
+      groups: [{
+        groupTitle: "Ação de Teste",
+        secretaria: "Secretaria de Obras",
+        valLdo: 0,
+        valLoa: 100,
+        valorReajuste: 0,
+        valorAditamento: 0,
+        valorTotal: 100,
+        items: [{ natureza: "3.3.90.39.00", vinculo: "01.110.0000", valLoa: 100, valorTotal: 100 }],
+      }],
+    });
+
+    expect(html).not.toContain(">Vínculo<");
+    expect(html).not.toContain("01.110.0000");
+    expect(html).toContain("3.3.90.39.00");
+  });
+
+  it("deve ocultar o cabeçalho/barra da Ação quando ocultarAcao for true", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "Secretaria de Obras",
+      unidadeOrcamentaria: "Gabinete",
+      orgao: "Órgão 01",
+      exercicio: "2027",
+      hasAdjustments: true,
+      ocultarAcao: true,
+      totals: {
+        ldo: 0,
+        loa: 100000,
+        reajuste: 0,
+        aditamento: 0,
+        total: 100000,
+      },
+      groups: [
+        {
+          groupTitle: "2042 - MANUTENCAO DAS ATIVIDADES DA SECRETARIA",
+          secretaria: "Secretaria de Obras",
+          valLdo: 0,
+          valLoa: 100000,
+          valorReajuste: 0,
+          valorAditamento: 0,
+          valorTotal: 100000,
+          items: [
+            {
+              natureza: "3.3.90.39.00",
+              processo: "PMS-1234/2026",
+              valLoa: 100000,
+              valorTotal: 100000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+    // Não deve conter a linha/barra de agrupamento da ação
+    expect(html).not.toContain("2042 - MANUTENCAO DAS ATIVIDADES DA SECRETARIA");
+    // Mas deve conter a linha do item
+    expect(html).toContain("3.3.90.39.00");
+  });
+});
