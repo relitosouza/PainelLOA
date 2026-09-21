@@ -47,14 +47,23 @@ CLEAN_DATABASE_URL=$(echo "$DATABASE_URL" | sed -E 's/\?schema=[^&]+//g; s/\&sch
 DUMP_SUCCESS=false
 ERROR_MSG=""
 
-# Tentativa 1: Via container Docker do banco (método mais confiável na VPS)
-if command -v docker &> /dev/null; then
+# Tentativa 1: Via container Docker do banco (método mais confiável na VPS e no Windows/WSL)
+DOCKER_BIN=""
+if [ -f "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe" ]; then
+  DOCKER_BIN="/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
+elif command -v docker &> /dev/null; then
+  DOCKER_BIN="$(command -v docker)"
+elif command -v docker.exe &> /dev/null; then
+  DOCKER_BIN="$(command -v docker.exe)"
+fi
+
+if [ -n "$DOCKER_BIN" ]; then
   DB_CONTAINER="painel-loa-db"
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${DB_CONTAINER}$"; then
+  if "$DOCKER_BIN" ps --format '{{.Names}}' 2>/dev/null | grep -q "^${DB_CONTAINER}$"; then
     echo "🐳 Executando pg_dump via container Docker '${DB_CONTAINER}'..."
     POSTGRES_USER_VAL="${POSTGRES_USER:-postgres}"
     POSTGRES_DB_VAL="${POSTGRES_DB:-painel_loa}"
-    if docker exec "${DB_CONTAINER}" pg_dump -U "${POSTGRES_USER_VAL}" -d "${POSTGRES_DB_VAL}" > "${BACKUP_FILE}" 2>/tmp/pg_dump_err.log; then
+    if "$DOCKER_BIN" exec "${DB_CONTAINER}" pg_dump -U "${POSTGRES_USER_VAL}" -d "${POSTGRES_DB_VAL}" > "${BACKUP_FILE}" 2>/tmp/pg_dump_err.log; then
       if [ -s "${BACKUP_FILE}" ]; then
         DUMP_SUCCESS=true
       fi
