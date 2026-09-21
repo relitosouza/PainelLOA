@@ -1,6 +1,8 @@
 # Base image
-FROM node:22-alpine AS base
-RUN apk add --no-cache libc6-compat openssl
+FROM node:22-slim AS base
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates openssl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Stage 1: Dependencies
 FROM base AS deps
@@ -34,7 +36,9 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-RUN apk add --no-cache postgresql-client bash gzip
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends postgresql-client bash gzip ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Instala prisma globalmente no runner para permitir comandos como `prisma db push`
 RUN npm install -g prisma@^6.10.0
