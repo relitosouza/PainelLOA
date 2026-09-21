@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { currency, integer } from "@/lib/format";
 import { BANCO_PROJETOS_DETALHES, BANCO_PROJETOS_SECRETARIAS, getSecretariasSugeridas } from "@/lib/banco-projetos-data";
 import { BancoProjetoFormDialog, BancoProjetoFormData } from "./banco-projeto-form-dialog";
+import { openBancoProjetosReportWindow, BancoProjetosReportGroup } from "@/lib/banco-projetos-report-template";
 import * as XLSX from "xlsx";
 
 export type BancoProjetoLinha = {
@@ -45,6 +46,84 @@ export function BancoProjetosCard({
   // Estado do Modal de CRUD
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<BancoProjetoFormData | null>(null);
+
+  // Estado do Menu de Impressão
+  const [printMenuOpen, setPrintMenuOpen] = useState(false);
+  const [selectedSecForReport, setSelectedSecForReport] = useState<string>("todas");
+
+  // Handler de Geração do Relatório para Impressão
+  const handlePrintReport = (scope: "alocados" | "nao_alocados" | "geral", secTarget?: string) => {
+    setPrintMenuOpen(false);
+
+    // Identificador conjunto para teste de alocação
+    const isAlloc = (p: BancoProjetoLinha) =>
+      allocatedKeys.includes([p.secretaria, p.objeto, p.natureza, p.valor].join("|"));
+
+    // Base: linhas filtradas pela busca atual, ou todas as linhas
+    let baseList = linhas;
+    if (filters?.natureza?.length) {
+      baseList = baseList.filter((l) => filters.natureza.includes(l.natureza));
+    }
+    if (filters?.search?.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      baseList = baseList.filter((l) =>
+        `${l.secretaria} ${l.objeto} ${l.natureza} ${l.edital}`.toLowerCase().includes(q)
+      );
+    }
+
+    // Filtrar por escopo
+    let filteredByScope: (BancoProjetoLinha & { isAllocated?: boolean })[] = [];
+    let scopeTitle = "";
+
+    if (scope === "alocados") {
+      filteredByScope = baseList.filter((p) => isAlloc(p)).map((p) => ({ ...p, isAllocated: true }));
+      scopeTitle = "Projetos Alocados na LOA";
+    } else if (scope === "nao_alocados") {
+      filteredByScope = baseList.filter((p) => !isAlloc(p)).map((p) => ({ ...p, isAllocated: false }));
+      scopeTitle = "Projetos Disponíveis (Não Alocados)";
+    } else {
+      filteredByScope = baseList.map((p) => ({ ...p, isAllocated: isAlloc(p) }));
+      scopeTitle = "Carteira Geral de Projetos";
+    }
+
+    // Filtrar por secretaria se especificada
+    const targetSecretaria = secTarget || selectedSecForReport;
+    if (targetSecretaria && targetSecretaria !== "todas") {
+      filteredByScope = filteredByScope.filter((p) => p.secretaria === targetSecretaria);
+    }
+
+    // Agrupar por secretaria
+    const groupsMap = new Map<string, (BancoProjetoLinha & { isAllocated?: boolean })[]>();
+    filteredByScope.forEach((p) => {
+      const sec = p.secretaria || "Outras Secretarias";
+      groupsMap.set(sec, [...(groupsMap.get(sec) ?? []), p]);
+    });
+
+    const groups: BancoProjetosReportGroup[] = Array.from(groupsMap.entries())
+      .map(([sec, projs]) => ({
+        secretaria: sec,
+        projetos: projs,
+        totalValor: projs.reduce((acc, curr) => acc + (curr.valor || 0), 0),
+        totalQtd: projs.length,
+      }))
+      .sort((a, b) => a.secretaria.localeCompare(b.secretaria));
+
+    const totalGeralValor = filteredByScope.reduce((acc, curr) => acc + (curr.valor || 0), 0);
+    const totalGeralQtd = filteredByScope.length;
+
+    openBancoProjetosReportWindow(
+      {
+        scope,
+        scopeTitle,
+        secretariaFiltro: targetSecretaria !== "todas" ? targetSecretaria : undefined,
+        exercicio: "2027",
+        groups,
+        totalGeralValor,
+        totalGeralQtd,
+      },
+      true
+    );
+  };
 
   // Sincronizar e salvar alterações no LocalStorage e no Banco de Dados.
   // A gravação no localStorage é apenas rascunho: enquanto o servidor não confirmar, o
@@ -314,6 +393,98 @@ export function BancoProjetosCard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Botão de Impressão do Banco de Projetos */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPrintMenuOpen((prev) => !prev)}
+              title="Opções de impressão do Banco de Projetos"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant bg-surface px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors cursor-pointer shadow-xs"
+            >
+              <span className="material-symbols-outlined text-sm text-primary">print</span>
+              <span>Imprimir</span>
+              <span className="material-symbols-outlined text-xs">arrow_drop_down</span>
+            </button>
+
+            {printMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setPrintMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-72 rounded-xl border border-outline-variant bg-surface-container-lowest p-2 shadow-xl animate-fade-in flex flex-col gap-1">
+                  <div className="px-2 py-1.5 border-b border-outline-variant/50">
+                    <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
+                      Relatório Banco de Projetos
+                    </span>
+                  </div>
+
+                  {/* Opção 1: Projetos Alocados */}
+                  <button
+                    type="button"
+                    onClick={() => handlePrintReport("alocados")}
+                    className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                      <span className="material-symbols-outlined text-sm text-emerald-700">check_circle</span>
+                      <span>Projetos Alocados na LOA</span>
+                    </div>
+                    <span className="text-[10.5px] text-on-surface-variant pl-5">
+                      Apenas projetos já inseridos nas despesas ({projetosAlocados.length})
+                    </span>
+                  </button>
+
+                  {/* Opção 2: Projetos Não Alocados (com seletor de secretaria ou todos) */}
+                  <div className="p-2 rounded-lg bg-surface-container-low/60 flex flex-col gap-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-on-surface">
+                      <span className="material-symbols-outlined text-sm text-amber-700">pending_actions</span>
+                      <span>Não Alocados (Disponíveis)</span>
+                    </div>
+                    <label className="text-[10px] text-on-surface-variant font-medium">
+                      Filtrar por Secretaria:
+                    </label>
+                    <select
+                      value={selectedSecForReport}
+                      onChange={(e) => setSelectedSecForReport(e.target.value)}
+                      className="w-full text-xs rounded-lg border border-outline-variant bg-surface px-2 py-1 text-on-surface focus:ring-1 focus:ring-primary focus:outline-none"
+                    >
+                      <option value="todas">Todas as Secretarias (Geral Disponível)</option>
+                      {Array.from(linhasPorSecretaria.keys())
+                        .sort()
+                        .map((sec) => (
+                          <option key={sec} value={sec}>
+                            {sec}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handlePrintReport("nao_alocados", selectedSecForReport)}
+                      className="mt-1 w-full text-center py-1.5 px-2 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-[11px] rounded-md transition-colors cursor-pointer"
+                    >
+                      Imprimir Não Alocados
+                    </button>
+                  </div>
+
+                  {/* Opção 3: Imprimir Geral (Completo) */}
+                  <button
+                    type="button"
+                    onClick={() => handlePrintReport("geral")}
+                    className="w-full text-left p-2 rounded-lg text-xs hover:bg-surface-container flex flex-col gap-0.5 transition-colors cursor-pointer border-t border-outline-variant/40 mt-0.5"
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-on-surface">
+                      <span className="material-symbols-outlined text-sm text-primary">menu_book</span>
+                      <span>Imprimir Geral (Todos os Projetos)</span>
+                    </div>
+                    <span className="text-[10.5px] text-on-surface-variant pl-5">
+                      Carteira completa (alocados e disponíveis)
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={handleResetToDefault}

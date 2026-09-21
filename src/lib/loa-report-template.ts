@@ -208,17 +208,7 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
       <tbody class="font-table-data text-table-data text-on-surface">
         ${groupsHtml}
       </tbody>
-      <tfoot class="bg-surface-container-high border-t-2 border-outline-variant">
-        <tr class="font-table-data-bold text-table-data-bold">
-          <td class="p-padding-cell-v px-padding-cell-h sticky left-0 bg-surface-container-high" colspan="2">Subtotal · ${sectionTitle}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-primary">${subtotalLoa}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalReajuste}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalAditamento}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalAjusteSf}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalCorteGp}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-primary bg-primary-fixed-dim/20">${subtotalTotal}</td>
-        </tr>
-      </tfoot>
+
     </table>
   </div>
 </div>`;
