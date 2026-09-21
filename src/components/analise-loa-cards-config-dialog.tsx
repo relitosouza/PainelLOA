@@ -14,6 +14,7 @@ export interface AnaliseLoaLayoutConfig {
   sectionsOrder: string[]; // IDs das seções principais em ordem
   receitaKpisOrder: string[]; // IDs dos KPIs de receita em ordem
   despesaKpisOrder: string[]; // IDs dos KPIs de despesa em ordem
+  resultadoKpisOrder?: string[]; // IDs dos KPIs de resultado em ordem
   visibility: Record<string, boolean>; // Mapa id -> boolean
 }
 
@@ -27,6 +28,7 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
   sectionsOrder: [
     "painel-receita",
     "painel-despesa",
+    "painel-resultado",
     "filtros-avancados",
     "estrutura-hierarquica",
     "detalhamento-analitico",
@@ -52,10 +54,15 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
     "desp-sugestao-sf",
     "desp-corte-gp",
   ],
+  resultadoKpisOrder: [
+    "res-ldo",
+    "res-loa",
+  ],
   visibility: {
     // Seções
     "painel-receita": true,
     "painel-despesa": true,
+    "painel-resultado": true,
     "filtros-avancados": true,
     "estrutura-hierarquica": true,
     "detalhamento-analitico": true,
@@ -78,6 +85,9 @@ export const DEFAULT_LAYOUT_CONFIG: AnaliseLoaLayoutConfig = {
     "desp-loa2026": true,
     "desp-sugestao-sf": true,
     "desp-corte-gp": true,
+    // KPIs Resultado
+    "res-ldo": true,
+    "res-loa": true,
   },
 };
 
@@ -91,6 +101,11 @@ export const SECTION_METADATA: Record<string, { label: string; icon: string; des
     label: "Painel da Despesa Orçamentária",
     icon: "payments",
     description: "Camada de cards indicadores de Despesa (LDO, LOA, Diferença, Naturezas).",
+  },
+  "painel-resultado": {
+    label: "Painel de Resultado",
+    icon: "balance",
+    description: "Equilíbrio fiscal e resultado entre Receita e Despesa (LDO e LOA).",
   },
   "filtros-avancados": {
     label: "Filtros Avançados Orçamentários",
@@ -137,6 +152,9 @@ export const KPI_METADATA: Record<string, { label: string; tag: string; descript
   "desp-loa2026": { label: "Valor LOA 2026", tag: "Despesa", description: "Dotação inicial da LOA 2026" },
   "desp-sugestao-sf": { label: "Sugestão SF", tag: "Despesa", description: "Cortes sugeridos pela SF" },
   "desp-corte-gp": { label: "Corte GP", tag: "Despesa", description: "Cortes definidos pelo GP" },
+  // Resultado
+  "res-ldo": { label: "Resultado LDO (Receita - Despesa)", tag: "Resultado", description: "Valor Previsto LDO Receita − Despesa" },
+  "res-loa": { label: "Resultado LOA (Receita - Despesa)", tag: "Resultado", description: "Valor LOA Receita − Despesa" },
 };
 
 interface AnaliseLoaCardsConfigDialogProps {
@@ -288,7 +306,7 @@ export function AnaliseLoaCardsConfigDialog({
             }`}
           >
             <span className="material-symbols-outlined text-sm">grid_view</span>
-            Cards de Indicadores (KPIs) (12)
+            Cards de Indicadores (KPIs) ({localConfig.receitaKpisOrder.length + localConfig.despesaKpisOrder.length + (localConfig.resultadoKpisOrder?.length ?? DEFAULT_LAYOUT_CONFIG.resultadoKpisOrder?.length ?? 2)})
           </button>
         </div>
 
@@ -517,6 +535,81 @@ export function AnaliseLoaCardsConfigDialog({
                               setLocalConfig((prev) => ({
                                 ...prev,
                                 despesaKpisOrder: moveItem(prev.despesaKpisOrder, index, "down"),
+                              }))
+                            }
+                            title="Mover para a direita"
+                            className="p-1 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-sm">arrow_downward</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* KPIs de Resultado */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">balance</span>
+                  Cards de Indicadores de Resultado (Receita − Despesa)
+                </h4>
+                <div className="space-y-1.5">
+                  {(localConfig.resultadoKpisOrder || DEFAULT_LAYOUT_CONFIG.resultadoKpisOrder || []).map((kpiId, index, arr) => {
+                    const meta = KPI_METADATA[kpiId] || { label: kpiId, tag: "Resultado", description: "" };
+                    const isVisible = localConfig.visibility[kpiId] !== false;
+
+                    return (
+                      <div
+                        key={kpiId}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                          isVisible
+                            ? "bg-surface border-outline-variant shadow-sm"
+                            : "bg-surface-container/30 border-dashed border-outline-variant/60 opacity-60"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            id={`kpi-${kpiId}`}
+                            checked={isVisible}
+                            onChange={() => toggleVisibility(kpiId)}
+                            className="rounded border-outline-variant text-teal-600 focus:ring-teal-500 h-4 w-4 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <label
+                              htmlFor={`kpi-${kpiId}`}
+                              className="text-xs font-bold text-on-surface cursor-pointer block truncate"
+                            >
+                              {meta.label}
+                            </label>
+                            <p className="text-[10px] text-on-surface-variant truncate">{meta.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() =>
+                              setLocalConfig((prev) => ({
+                                ...prev,
+                                resultadoKpisOrder: moveItem(prev.resultadoKpisOrder || DEFAULT_LAYOUT_CONFIG.resultadoKpisOrder || [], index, "up"),
+                              }))
+                            }
+                            title="Mover para a esquerda"
+                            className="p-1 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-sm">arrow_upward</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === arr.length - 1}
+                            onClick={() =>
+                              setLocalConfig((prev) => ({
+                                ...prev,
+                                resultadoKpisOrder: moveItem(prev.resultadoKpisOrder || DEFAULT_LAYOUT_CONFIG.resultadoKpisOrder || [], index, "down"),
                               }))
                             }
                             title="Mover para a direita"

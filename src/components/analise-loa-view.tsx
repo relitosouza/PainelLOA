@@ -15,7 +15,7 @@ import { AuditoriaOrcamentariaModal } from "./auditoria-orcamentaria-modal";
 import { ImportarDetalhamentoModal } from "./importar-detalhamento-modal";
 import type { ImportDetalhamentoResult } from "@/lib/import-detalhamento-excel";
 import { AnaliseLoaAdvancedFilters } from "./analise-loa/analise-loa-advanced-filters";
-import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis } from "./analise-loa/analise-loa-kpi-sections";
+import { AnaliseLoaReceitaKpis, AnaliseLoaDespesaKpis, AnaliseLoaResultadoKpis } from "./analise-loa/analise-loa-kpi-sections";
 import { LOA_EXPECTATIVA, LOA_EXPECTATIVA_TOTAL, normalizeLoaExpectativaSecretaria } from "@/lib/loa-expectativa";
 import { getActiveUser, DEFAULT_USER, type ActiveUser } from "@/lib/user-session";
 import { openLoaReportWindow, shouldExcludeReportVinculo, type LoaReportData, type LoaReportGroup, type LoaReportSection } from "@/lib/loa-report-template";
@@ -200,9 +200,11 @@ export function AnaliseLoaView() {
   const [dataReloadKey, setDataReloadKey] = useState(0);
   const [ldoReceitaTotal, setLdoReceitaTotal] = useState<number>(5868871609.9);
   const [ldoReceitaEntidades, setLdoReceitaEntidades] = useState<Array<{ nome: string; valor: number }>>([]);
+  const [receitaLoaIndiretas, setReceitaLoaIndiretas] = useState<Array<{ nome: string; valor: number }>>([]);
   // Total da LOA 2026 (dotação inicial de todas as dotações do CSV), usado no card como referência fixa.
   const [loa2026Total, setLoa2026Total] = useState(0);
-  const [loaReceitaResumo, setLoaReceitaResumo] = useState<{ total: number; maior: { natureza: string; valor: number } | null; qtdFontes: number }>({ total: 0, maior: null, qtdFontes: 0 });
+  const [loaReceitaResumo, setLoaReceitaResumo] = useState<{ total: number; prefeitura: number; maior: { natureza: string; valor: number } | null; qtdFontes: number }>({ total: 0, prefeitura: 0, maior: null, qtdFontes: 0 });
+  const [aplicarSugestaoSf, setAplicarSugestaoSf] = useState(false);
   const [filters, setFilters] = useState<TechnicalFilterState>(INITIAL_FILTERS);
 
   const loaExpectativaTotal = useMemo(() => {
@@ -273,22 +275,8 @@ export function AnaliseLoaView() {
   const [addElementContext, setAddElementContext] = useState<{ group: EditableGroup; natureza: string } | null>(null);
   const [newExpenseNatureza, setNewExpenseNatureza] = useState("");
   const [newExpenseSubelemento, setNewExpenseSubelemento] = useState("");
-  // Administração indireta (IPMO, IPMO-RC e FITO) não está na receita da Prefeitura (LoaReceita, UG 201).
-  // A receita LOA delas entra no card pelo valor da LOA 2027 de cada entidade na planilha base.
-  // A CMO fica de fora: é custeada pelo duodécimo repassado pela Prefeitura, já contido na receita da Prefeitura.
-  const receitaLoaEntidades = useMemo(() => {
-    const entidades = [
-      { codigo: "21", nome: "IPMO" },
-      { codigo: "77", nome: "IPMO - RC" },
-      { codigo: "22", nome: "FITO" },
-    ];
-    return entidades.map(({ codigo, nome }) => ({
-      nome,
-      valor: Math.round(originalRawItems
-        .filter((item) => item.secretaria.match(/^(\d+)\s*-/)?.[1] === codigo)
-        .reduce((sum, item) => sum + item.valLoa, 0) * 100) / 100,
-    }));
-  }, [originalRawItems]);
+  // A divisão direta/indiretas do card sai da coluna UG da própria importação da receita
+  // (PMO = administração direta; CMO, FITO e IPMO = indiretas), carregada em receitaLoaIndiretas.
 
   const originalValuesById = useMemo(() => new Map(originalRawItems.map((item) => [item.id, item.valLoa])), [originalRawItems]);
   const [newExpenseVinculo, setNewExpenseVinculo] = useState("01");
@@ -557,11 +545,10 @@ export function AnaliseLoaView() {
           if (data.success && data.valor && isMounted) {
             const parsed = data.valor;
             setLayoutConfig({
-              sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-                ? parsed.sectionsOrder
-                : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+              sectionsOrder: withNewKpis(parsed.sectionsOrder, DEFAULT_LAYOUT_CONFIG.sectionsOrder),
               receitaKpisOrder: withNewKpis(parsed.receitaKpisOrder, DEFAULT_LAYOUT_CONFIG.receitaKpisOrder),
               despesaKpisOrder: withNewKpis(parsed.despesaKpisOrder, DEFAULT_LAYOUT_CONFIG.despesaKpisOrder),
+              resultadoKpisOrder: withNewKpis(parsed.resultadoKpisOrder, DEFAULT_LAYOUT_CONFIG.resultadoKpisOrder || []),
               visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
             });
             return;
@@ -577,11 +564,10 @@ export function AnaliseLoaView() {
         if (savedLayout && isMounted) {
           const parsed = JSON.parse(savedLayout);
           setLayoutConfig({
-            sectionsOrder: Array.isArray(parsed.sectionsOrder) && parsed.sectionsOrder.length > 0
-              ? parsed.sectionsOrder
-              : DEFAULT_LAYOUT_CONFIG.sectionsOrder,
+            sectionsOrder: withNewKpis(parsed.sectionsOrder, DEFAULT_LAYOUT_CONFIG.sectionsOrder),
             receitaKpisOrder: withNewKpis(parsed.receitaKpisOrder, DEFAULT_LAYOUT_CONFIG.receitaKpisOrder),
             despesaKpisOrder: withNewKpis(parsed.despesaKpisOrder, DEFAULT_LAYOUT_CONFIG.despesaKpisOrder),
+            resultadoKpisOrder: withNewKpis(parsed.resultadoKpisOrder, DEFAULT_LAYOUT_CONFIG.resultadoKpisOrder || []),
             visibility: { ...DEFAULT_LAYOUT_CONFIG.visibility, ...(parsed.visibility || {}) },
           });
         }
@@ -1120,8 +1106,12 @@ export function AnaliseLoaView() {
               setLdoReceitaTotal(Number(apiData.totais.totalReceitaLdo) || 0);
             }
             if (Array.isArray(apiData?.totais?.ldoEntidades)) setLdoReceitaEntidades(apiData.totais.ldoEntidades);
+            const totalLoaReceitas = Number(apiData?.totais?.totalLoaReceitas) || 0;
+            const porUg = apiData?.totais?.loaReceitaPorUg;
+            setReceitaLoaIndiretas(Array.isArray(porUg?.indiretas) ? porUg.indiretas : []);
             setLoaReceitaResumo({
-              total: Number(apiData?.totais?.totalLoaReceitas) || 0,
+              total: totalLoaReceitas,
+              prefeitura: Number(porUg?.prefeitura) || totalLoaReceitas,
               maior: apiData?.totais?.maiorReceitaLoa ?? null,
               qtdFontes: Number(apiData?.totais?.qtdFontesLoaReceita) || 0,
             });
@@ -3104,7 +3094,7 @@ export function AnaliseLoaView() {
               layoutConfig={layoutConfig}
               ldoReceitaTotal={ldoReceitaTotal}
               ldoReceitaEntidades={ldoReceitaEntidades}
-              loaReceitaResumo={{ ...loaReceitaResumo, entidades: receitaLoaEntidades }}
+              loaReceitaResumo={{ ...loaReceitaResumo, entidades: receitaLoaIndiretas }}
             />
           );
         }
@@ -3118,6 +3108,22 @@ export function AnaliseLoaView() {
               loaExpectativaTotal={loaExpectativaTotal}
               loa2026Total={loa2026Total}
               metrics={metrics}
+              aplicarSugestaoSf={aplicarSugestaoSf}
+              onToggleSugestaoSf={() => setAplicarSugestaoSf((prev) => !prev)}
+            />
+          );
+        }
+
+        // Seção: Painel de Resultado (Receita − Despesa)
+        if (sectionId === "painel-resultado") {
+          return (
+            <AnaliseLoaResultadoKpis
+              key="painel-resultado"
+              layoutConfig={layoutConfig}
+              ldoReceitaTotal={ldoReceitaTotal}
+              loaReceitaResumo={{ ...loaReceitaResumo, entidades: receitaLoaIndiretas }}
+              metrics={metrics}
+              aplicarSugestaoSf={aplicarSugestaoSf}
             />
           );
         }

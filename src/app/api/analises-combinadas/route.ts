@@ -190,6 +190,22 @@ export async function GET(req: NextRequest) {
       where: exercicio ? { exercicio } : {},
       _sum: { valor: true },
     });
+    // Rateio da receita LOA pela UG da importação: direta (PMO) e indiretas (CMO, FITO, IPMO).
+    // As linhas da Prefeitura vêm com a UG numérica (201); as indiretas, com a sigla.
+    const loaReceitaPorUgRaw = await db.loaReceita.groupBy({
+      by: ["orgaoUnidade"],
+      where: exercicio ? { exercicio } : {},
+      _sum: { valor: true },
+    });
+    const ehPrefeitura = (ug: string | null) => !ug || /^\d+$/.test(ug) || ug.toUpperCase() === "PMO";
+    const loaReceitaPorUg = {
+      prefeitura: Math.round(loaReceitaPorUgRaw.filter((r) => ehPrefeitura(r.orgaoUnidade)).reduce((s, r) => s + Number(r._sum.valor || 0), 0) * 100) / 100,
+      indiretas: loaReceitaPorUgRaw
+        .filter((r) => !ehPrefeitura(r.orgaoUnidade))
+        .map((r) => ({ nome: String(r.orgaoUnidade), valor: Math.round(Number(r._sum.valor || 0) * 100) / 100 }))
+        .sort((a, b) => b.valor - a.valor || a.nome.localeCompare(b.nome)),
+    };
+
     const maiorReceitaLoa = loaReceitaPorNatureza
       .map((r) => ({ natureza: r.naturezaReceita, valor: Number(r._sum.valor || 0) }))
       .sort((a, b) => b.valor - a.valor)[0] ?? null;
@@ -213,6 +229,7 @@ export async function GET(req: NextRequest) {
         totalReceitaLdo,
         ldoEntidades,
         totalLoaReceitas,
+        loaReceitaPorUg,
         maiorReceitaLoa,
         qtdFontesLoaReceita: fontesLoaReceita.length,
         totalReceitaArrecadada: arrecadadaTotal,
