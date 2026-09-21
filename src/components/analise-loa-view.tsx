@@ -2622,15 +2622,24 @@ export function AnaliseLoaView() {
           valLoa: 0,
           valorReajuste: 0,
           valorAditamento: 0,
+          valorAjusteSf: 0,
+          valorCorteGp: 0,
           valorTotal: 0,
           items: [],
         });
       }
       const g = groupMap.get(groupKey)!;
+      const itemAjusteSf = item.valorSugestaoSf ?? 0;
+      const itemCorteGp = item.valorCorteGp ?? 0;
+      const itemTotalCalculado =
+        item.valLoa + (item.valorReajuste ?? 0) + (item.valorAditamento ?? 0) + itemAjusteSf + itemCorteGp;
+
       g.valLoa += item.valLoa;
       g.valorReajuste += item.valorReajuste ?? 0;
       g.valorAditamento += item.valorAditamento ?? 0;
-      g.valorTotal += getItemLoaTotal(item);
+      g.valorAjusteSf = (g.valorAjusteSf ?? 0) + itemAjusteSf;
+      g.valorCorteGp = (g.valorCorteGp ?? 0) + itemCorteGp;
+      g.valorTotal += itemTotalCalculado;
 
       const vinculo = item.codigoAplicacao
         ? `${item.fonteVinculo || ""}.${item.codigoAplicacao}`
@@ -2661,7 +2670,9 @@ export function AnaliseLoaView() {
         valLoa: item.valLoa,
         valorReajuste: item.valorReajuste ?? 0,
         valorAditamento: item.valorAditamento ?? 0,
-        valorTotal: getItemLoaTotal(item),
+        valorAjusteSf: itemAjusteSf,
+        valorCorteGp: itemCorteGp,
+        valorTotal: itemTotalCalculado,
       });
     });
 
@@ -2709,7 +2720,13 @@ export function AnaliseLoaView() {
 
     const hasAnyAdjustment = reportEligibleItems.some((item) => {
       const original = originalValuesById.get(item.id) ?? item.valLdo;
-      return Math.abs(item.valLoa - original) > 0.001 || (item.valorReajuste ?? 0) > 0 || (item.valorAditamento ?? 0) > 0;
+      return (
+        Math.abs(item.valLoa - original) > 0.001 ||
+        (item.valorReajuste ?? 0) > 0 ||
+        (item.valorAditamento ?? 0) > 0 ||
+        (item.valorSugestaoSf ?? 0) !== 0 ||
+        (item.valorCorteGp ?? 0) !== 0
+      );
     });
 
     // Totalizadores globais do relatório recalculados sobre os itens elegíveis
@@ -2717,7 +2734,9 @@ export function AnaliseLoaView() {
     const totalLoa = reportEligibleItems.reduce((acc, i) => acc + i.valLoa, 0);
     const totalReajuste = reportEligibleItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
     const totalAditamento = reportEligibleItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
-    const totalGeral = reportEligibleItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0);
+    const totalAjusteSf = reportEligibleItems.reduce((acc, i) => acc + (i.valorSugestaoSf ?? 0), 0);
+    const totalCorteGp = reportEligibleItems.reduce((acc, i) => acc + (i.valorCorteGp ?? 0), 0);
+    const totalGeral = totalLoa + totalReajuste + totalAditamento + totalAjusteSf + totalCorteGp;
 
     if (selectedScope === "todos") {
       // Relatório Completo dividido em 3 Seções Visuais com Subtotais:
@@ -2730,13 +2749,22 @@ export function AnaliseLoaView() {
       const demaisGroups = buildReportGroupsFromItems(demaisItems);
       const bpGroups = buildReportGroupsFromItems(bpItems);
 
-      const calcTotals = (items: RawBudgetItem[], ldoVal = 0) => ({
-        ldo: ldoVal,
-        loa: items.reduce((acc, i) => acc + i.valLoa, 0),
-        reajuste: items.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
-        aditamento: items.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
-        total: items.reduce((acc, i) => acc + getItemLoaTotal(i), 0),
-      });
+      const calcTotals = (items: RawBudgetItem[], ldoVal = 0) => {
+        const loa = items.reduce((acc, i) => acc + i.valLoa, 0);
+        const reajuste = items.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
+        const aditamento = items.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
+        const ajusteSf = items.reduce((acc, i) => acc + (i.valorSugestaoSf ?? 0), 0);
+        const corteGp = items.reduce((acc, i) => acc + (i.valorCorteGp ?? 0), 0);
+        return {
+          ldo: ldoVal,
+          loa,
+          reajuste,
+          aditamento,
+          ajusteSf,
+          corteGp,
+          total: loa + reajuste + aditamento + ajusteSf + corteGp,
+        };
+      };
 
       const sections: LoaReportSection[] = [];
 
@@ -2785,6 +2813,8 @@ export function AnaliseLoaView() {
           loa: totalLoa,
           reajuste: totalReajuste,
           aditamento: totalAditamento,
+          ajusteSf: totalAjusteSf,
+          corteGp: totalCorteGp,
           total: totalGeral,
         },
         sections,
@@ -2807,13 +2837,21 @@ export function AnaliseLoaView() {
         scopeTitle = "Demais Despesas Orçamentárias";
       }
 
+      const targetLoa = targetItems.reduce((acc, i) => acc + i.valLoa, 0);
+      const targetReajuste = targetItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0);
+      const targetAditamento = targetItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0);
+      const targetAjusteSf = targetItems.reduce((acc, i) => acc + (i.valorSugestaoSf ?? 0), 0);
+      const targetCorteGp = targetItems.reduce((acc, i) => acc + (i.valorCorteGp ?? 0), 0);
+
       const reportGroups = buildReportGroupsFromItems(targetItems);
       const scopeTotals = {
         ldo: selectedScope === "demais" ? totalLdo : 0,
-        loa: targetItems.reduce((acc, i) => acc + i.valLoa, 0),
-        reajuste: targetItems.reduce((acc, i) => acc + (i.valorReajuste ?? 0), 0),
-        aditamento: targetItems.reduce((acc, i) => acc + (i.valorAditamento ?? 0), 0),
-        total: targetItems.reduce((acc, i) => acc + getItemLoaTotal(i), 0),
+        loa: targetLoa,
+        reajuste: targetReajuste,
+        aditamento: targetAditamento,
+        ajusteSf: targetAjusteSf,
+        corteGp: targetCorteGp,
+        total: targetLoa + targetReajuste + targetAditamento + targetAjusteSf + targetCorteGp,
       };
 
       const reportData: LoaReportData = {

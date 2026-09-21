@@ -41,6 +41,8 @@ async function exportPdf(rows: Row[]) {
       valLoa: groupTotal,
       valorReajuste: 0,
       valorAditamento: 0,
+      valorAjusteSf: 0,
+      valorCorteGp: 0,
       valorTotal: groupTotal,
       items: items.map((i) => ({
         natureza: i.expenseNature || "—",
@@ -50,6 +52,8 @@ async function exportPdf(rows: Row[]) {
         valLoa: i.value || 0,
         valorReajuste: 0,
         valorAditamento: 0,
+        valorAjusteSf: 0,
+        valorCorteGp: 0,
         valorTotal: i.value || 0,
       })),
     };
@@ -66,6 +70,8 @@ async function exportPdf(rows: Row[]) {
       loa: totalValue,
       reajuste: 0,
       aditamento: 0,
+      ajusteSf: 0,
+      corteGp: 0,
       total: totalValue,
     },
     groups,

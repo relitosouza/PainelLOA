@@ -99,7 +99,72 @@ describe("LoaReportTemplate", () => {
     expect(html).toContain("Operacional / Demais");
     expect(html).toContain("Total Geral Consolidado (Secretaria)");
     expect(html).toContain("Somatório integrado de Contratos, Demais Despesas e Banco de Projetos");
-    expect(html).toContain("0,00"); // coluna LDO na linha zerada
+    expect(html).toContain("Valor Solicitado");
+    expect(html).toContain("Ajuste SF");
+    expect(html).toContain("Corte GP");
+    // O card LDO deve permanecer no cabeçalho financeiro
+    expect(html).toContain("Valor LDO");
+    // Mas não deve haver coluna Valor LDO no thead da tabela
+    expect(html).not.toContain("<th class=\"font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right\">Valor LDO</th>");
+  });
+
+  it("deve remover a coluna Valor LDO da tabela, manter o card, renomear LOA para Valor Solicitado e calcular total com Ajuste SF e Corte GP", () => {
+    const reportData: LoaReportData = {
+      tituloSecretaria: "11 - SECRETARIA DE SERVIÇOS E OBRAS",
+      exercicio: "2027",
+      totals: {
+        ldo: 100000,
+        loa: 50000,
+        reajuste: 5000,
+        aditamento: 2000,
+        ajusteSf: 3000,
+        corteGp: -1000,
+        total: 59000, // 50000 + 5000 + 2000 + 3000 + (-1000)
+      },
+      groups: [
+        {
+          groupTitle: "Ação de Teste",
+          valLdo: 100000,
+          valLoa: 50000,
+          valorReajuste: 5000,
+          valorAditamento: 2000,
+          valorAjusteSf: 3000,
+          valorCorteGp: -1000,
+          valorTotal: 59000,
+          items: [
+            {
+              natureza: "3.3.90.39.00",
+              vinculo: "01.110.0000",
+              valLoa: 50000,
+              valorReajuste: 5000,
+              valorAditamento: 2000,
+              valorAjusteSf: 3000,
+              valorCorteGp: -1000,
+              valorTotal: 59000,
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = generateLoaReportHtml(reportData);
+
+    // Card LDO preservado
+    expect(html).toContain("Valor LDO");
+    expect(html).toMatch(/R\$\s*100\.000,00/);
+
+    // Coluna LOA renomeada para Valor Solicitado
+    expect(html).toContain("Valor Solicitado");
+
+    // Colunas Ajuste SF e Corte GP presentes
+    expect(html).toContain("Ajuste SF");
+    expect(html).toContain("Corte GP");
+
+    // Total correspondente a Valor LOA + Reajuste + Aditamento + Ajuste SF + Corte GP = 59.000,00
+    expect(html).toContain("59.000,00");
+
+    // Sem a coluna Valor LDO no thead
+    expect(html).not.toMatch(/<th[^>]*>Valor LDO<\/th>/);
   });
 
   it("deve gerar relatório com 3 seções segregadas incluindo Banco de Projetos Alocados", () => {

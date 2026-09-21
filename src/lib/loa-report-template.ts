@@ -8,6 +8,8 @@ export interface LoaReportItem {
   valLoa?: number;
   valorReajuste?: number;
   valorAditamento?: number;
+  valorAjusteSf?: number;
+  valorCorteGp?: number;
   valorTotal?: number;
 }
 
@@ -29,6 +31,8 @@ export interface LoaReportGroup {
   valLoa: number;
   valorReajuste: number;
   valorAditamento: number;
+  valorAjusteSf?: number;
+  valorCorteGp?: number;
   valorTotal: number;
   items: LoaReportItem[];
 }
@@ -43,6 +47,8 @@ export interface LoaReportSection {
     loa: number;
     reajuste: number;
     aditamento: number;
+    ajusteSf?: number;
+    corteGp?: number;
     total: number;
   };
   groups: LoaReportGroup[];
@@ -61,6 +67,8 @@ export interface LoaReportData {
     loa: number;
     reajuste: number;
     aditamento: number;
+    ajusteSf?: number;
+    corteGp?: number;
     total: number;
   };
   groups?: LoaReportGroup[];
@@ -85,11 +93,19 @@ function escapeHtml(str?: string): string {
 function renderGroupListHtml(groups: LoaReportGroup[]): string {
   return groups.map((group) => {
     const groupName = escapeHtml(group.groupTitle || "Grupo de Despesa");
-    const groupValLdo = formatTableCell(group.valLdo);
     const groupValLoa = formatTableCell(group.valLoa);
     const groupReajuste = formatTableCell(group.valorReajuste);
     const groupAditamento = formatTableCell(group.valorAditamento);
-    const groupTotal = formatTableCell(group.valorTotal);
+    const groupAjusteSf = formatTableCell(group.valorAjusteSf);
+    const groupCorteGp = formatTableCell(group.valorCorteGp);
+    const groupTotal = formatTableCell(
+      group.valorTotal ??
+        ((group.valLoa || 0) +
+          (group.valorReajuste || 0) +
+          (group.valorAditamento || 0) +
+          (group.valorAjusteSf || 0) +
+          (group.valorCorteGp || 0))
+    );
 
     const itemsHtml = group.items.map((item) => {
       const nat = escapeHtml(item.natureza || "—");
@@ -100,7 +116,16 @@ function renderGroupListHtml(groups: LoaReportGroup[]): string {
       const iValLoa = formatTableCell(item.valLoa);
       const iReajuste = formatTableCell(item.valorReajuste);
       const iAditamento = formatTableCell(item.valorAditamento);
-      const iTotal = formatTableCell(item.valorTotal ?? ((item.valLoa || 0) + (item.valorReajuste || 0) + (item.valorAditamento || 0)));
+      const iAjusteSf = formatTableCell(item.valorAjusteSf);
+      const iCorteGp = formatTableCell(item.valorCorteGp);
+      const iTotal = formatTableCell(
+        item.valorTotal ??
+          ((item.valLoa || 0) +
+            (item.valorReajuste || 0) +
+            (item.valorAditamento || 0) +
+            (item.valorAjusteSf || 0) +
+            (item.valorCorteGp || 0))
+      );
 
       return `
 <tr class="zebra-row border-b border-outline-variant hover:bg-surface-container-low transition-colors">
@@ -109,10 +134,11 @@ function renderGroupListHtml(groups: LoaReportGroup[]): string {
     ${showProc ? `<div class="text-[11.5px] text-on-surface-variant font-normal mt-1 leading-snug break-words tracking-tight">${proc}</div>` : ""}
   </td>
   <td class="p-padding-cell-v px-padding-cell-h text-on-surface-variant">${vinc}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant/40 font-mono text-[12px]">0,00</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right">${iValLoa}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iReajuste}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iAditamento}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iAjusteSf}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${iCorteGp}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold">${iTotal}</td>
 </tr>`;
     }).join("\n");
@@ -121,10 +147,11 @@ function renderGroupListHtml(groups: LoaReportGroup[]): string {
 <!-- Group: ${groupName} -->
 <tr class="bg-surface-container-highest border-b border-outline-variant">
   <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold sticky left-0" colspan="2">${groupName}</td>
-  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupValLdo}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupValLoa}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupReajuste}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupAditamento}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupAjusteSf}</td>
+  <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupCorteGp}</td>
   <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold">${groupTotal}</td>
 </tr>
 ${itemsHtml}`;
@@ -135,11 +162,19 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
   const sectionTitle = escapeHtml(section.sectionTitle);
   const sectionBadge = escapeHtml(section.sectionBadge || "");
   const sectionIcon = section.sectionIcon || "assignment";
-  const subtotalLdo = formatTableCell(section.totals.ldo);
   const subtotalLoa = formatTableCell(section.totals.loa);
   const subtotalReajuste = formatTableCell(section.totals.reajuste);
   const subtotalAditamento = formatTableCell(section.totals.aditamento);
-  const subtotalTotal = formatTableCell(section.totals.total);
+  const subtotalAjusteSf = formatTableCell(section.totals.ajusteSf);
+  const subtotalCorteGp = formatTableCell(section.totals.corteGp);
+  const subtotalTotal = formatTableCell(
+    section.totals.total ??
+      ((section.totals.loa || 0) +
+        (section.totals.reajuste || 0) +
+        (section.totals.aditamento || 0) +
+        (section.totals.ajusteSf || 0) +
+        (section.totals.corteGp || 0))
+  );
   const groupsHtml = renderGroupListHtml(section.groups);
 
   return `
@@ -162,10 +197,11 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
         <tr>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant min-w-[320px]">Natureza de despesa</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[120px]">Vínculo</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor LDO</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor LOA</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor Solicitado</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Reajuste</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Aditamento</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Ajuste SF</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Corte GP</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant">Total</th>
         </tr>
       </thead>
@@ -175,10 +211,11 @@ function renderSectionBlockHtml(section: LoaReportSection): string {
       <tfoot class="bg-surface-container-high border-t-2 border-outline-variant">
         <tr class="font-table-data-bold text-table-data-bold">
           <td class="p-padding-cell-v px-padding-cell-h sticky left-0 bg-surface-container-high" colspan="2">Subtotal · ${sectionTitle}</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalLdo}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right text-primary">${subtotalLoa}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalReajuste}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalAditamento}</td>
+          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalAjusteSf}</td>
+          <td class="p-padding-cell-v px-padding-cell-h text-right text-on-surface-variant">${subtotalCorteGp}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right text-primary bg-primary-fixed-dim/20">${subtotalTotal}</td>
         </tr>
       </tfoot>
@@ -200,13 +237,24 @@ export function generateLoaReportHtml(data: LoaReportData): string {
   const reajusteVal = data.totals.reajuste || 0;
   const reajusteFormatted = reajusteVal > 0 ? `+${currency.format(reajusteVal)}` : currency.format(reajusteVal);
   const aditamentoFormatted = currency.format(data.totals.aditamento || 0);
-  const totalFormatted = currency.format(data.totals.total || 0);
+  const ajusteSfFormatted = currency.format(data.totals.ajusteSf || 0);
+  const corteGpFormatted = currency.format(data.totals.corteGp || 0);
+  
+  const totalCalculado =
+    data.totals.total ??
+    ((data.totals.loa || 0) +
+      (data.totals.reajuste || 0) +
+      (data.totals.aditamento || 0) +
+      (data.totals.ajusteSf || 0) +
+      (data.totals.corteGp || 0));
+  const totalFormatted = currency.format(totalCalculado);
 
-  const totalGeralLdo = formatTableCell(data.totals.ldo);
   const totalGeralLoa = formatTableCell(data.totals.loa);
   const totalGeralReajuste = formatTableCell(data.totals.reajuste);
   const totalGeralAditamento = formatTableCell(data.totals.aditamento);
-  const totalGeralTotal = formatTableCell(data.totals.total);
+  const totalGeralAjusteSf = formatTableCell(data.totals.ajusteSf);
+  const totalGeralCorteGp = formatTableCell(data.totals.corteGp);
+  const totalGeralTotal = formatTableCell(totalCalculado);
 
   let bodyContentHtml = "";
 
@@ -228,7 +276,7 @@ ${sectionsHtml}
         <strong class="font-mono text-sm text-on-surface">${ldoTotalFormatted}</strong>
       </div>
       <div class="text-right">
-        <span class="text-[11px] text-on-surface-variant block uppercase font-bold">LOA Inicial</span>
+        <span class="text-[11px] text-on-surface-variant block uppercase font-bold">Valor Solicitado</span>
         <strong class="font-mono text-sm text-on-surface">${loaTotalFormatted}</strong>
       </div>
       <div class="text-right">
@@ -238,6 +286,14 @@ ${sectionsHtml}
       <div class="text-right">
         <span class="text-[11px] text-on-surface-variant block uppercase font-bold">Aditamentos</span>
         <strong class="font-mono text-sm text-on-surface">${aditamentoFormatted}</strong>
+      </div>
+      <div class="text-right">
+        <span class="text-[11px] text-on-surface-variant block uppercase font-bold">Ajuste SF</span>
+        <strong class="font-mono text-sm text-on-surface">${ajusteSfFormatted}</strong>
+      </div>
+      <div class="text-right">
+        <span class="text-[11px] text-on-surface-variant block uppercase font-bold">Corte GP</span>
+        <strong class="font-mono text-sm text-on-surface">${corteGpFormatted}</strong>
       </div>
       <div class="text-right pl-4 border-l border-outline-variant">
         <span class="text-[11px] text-primary block uppercase font-bold">Total Final LOA</span>
@@ -256,10 +312,11 @@ ${sectionsHtml}
         <tr>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant min-w-[320px]">Natureza de despesa</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant w-[120px]">Vínculo</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor LDO</th>
-          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor LOA</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Valor Solicitado</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Reajuste</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Aditamento</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Ajuste SF</th>
+          <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right">Corte GP</th>
           <th class="font-table-header text-table-header uppercase p-padding-cell-v px-padding-cell-h border-b border-outline-variant text-right bg-on-primary-fixed-variant">Total</th>
         </tr>
       </thead>
@@ -269,10 +326,11 @@ ${sectionsHtml}
       <tfoot class="bg-surface-container-high border-t-2 border-outline-variant sticky bottom-0">
         <tr>
           <td class="p-padding-cell-v px-padding-cell-h font-table-data-bold text-table-data-bold sticky left-0 bg-surface-container-high" colspan="2">Total Geral</td>
-          <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralLdo}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-primary">${totalGeralLoa}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralReajuste}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralAditamento}</td>
+          <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralAjusteSf}</td>
+          <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-on-surface-variant">${totalGeralCorteGp}</td>
           <td class="p-padding-cell-v px-padding-cell-h text-right font-table-data-bold text-table-data-bold text-primary bg-primary-fixed-dim/20">${totalGeralTotal}</td>
         </tr>
       </tfoot>
@@ -477,13 +535,13 @@ ${scopeTitle ? `<span class="text-outline-variant">•</span><span class="font-b
 </div>
 </div>
 <!-- Financial Summary Cards -->
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-gutter-table mb-6">
+<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-gutter-table mb-6">
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center">
 <span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Valor LDO</span>
 <span class="font-headline-md text-headline-md text-on-surface font-semibold">${ldoTotalFormatted}</span>
 </div>
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center">
-<span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Valor LOA</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Valor Solicitado</span>
 <span class="font-headline-md text-headline-md text-on-surface font-semibold">${loaTotalFormatted}</span>
 </div>
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center bg-green-50 border-green-200">
@@ -494,7 +552,15 @@ ${scopeTitle ? `<span class="text-outline-variant">•</span><span class="font-b
 <span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Aditamento</span>
 <span class="font-headline-md text-headline-md text-on-surface font-semibold">${aditamentoFormatted}</span>
 </div>
-<div class="bg-surface-container-lowest border-2 border-primary rounded-lg p-4 flex flex-col justify-center lg:col-start-5 shadow-sm">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Ajuste SF</span>
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">${ajusteSfFormatted}</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Corte GP</span>
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">${corteGpFormatted}</span>
+</div>
+<div class="bg-surface-container-lowest border-2 border-primary rounded-lg p-4 flex flex-col justify-center shadow-sm">
 <span class="font-label-caps text-label-caps text-primary uppercase mb-1">Total</span>
 <span class="font-headline-md text-headline-md text-primary font-bold">${totalFormatted}</span>
 </div>
