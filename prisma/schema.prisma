@@ -496,3 +496,60 @@ model ExclusaoDotacao {
   @@index([criadoEm])
   @@index([usuarioId])
 }
+
+model TransparenteConfig {
+  id                 String   @id @default("default")
+  exercicio          String   @default("2027")
+  totalGeral         Decimal  @default(0) @db.Decimal(18, 2)
+  totalInvestimentos Decimal  @default(0) @db.Decimal(18, 2)
+  totalSecretarias   Int      @default(0)
+  tituloHero         String?
+  subtituloHero      String?
+  notaInformativa    String?
+  atualizadoEm       DateTime @default(now())
+}
+
+model TransparenteArea {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  label      String
+  valor      Decimal  @default(0) @db.Decimal(18, 2)
+  percentual Decimal  @default(0) @db.Decimal(6, 2)
+  icone      String   @default("category")
+  corTexto   String   @default("text-primary")
+  corFundo   String   @default("bg-primary-100")
+  corBarra   String   @default("#3B82F6")
+  destaque   Boolean  @default(false)
+  ordem      Int      @default(0)
+  tags       Json?
+  criadoEm   DateTime @default(now())
+  atualizado DateTime @updatedAt
+
+  @@index([ordem])
+}
+
+model TransparenteInvestimento {
+  id         String   @id @default(cuid())
+  titulo     String
+  secretaria String
+  valor      Decimal  @default(0) @db.Decimal(18, 2)
+  ordem      Int      @default(0)
+  destaque   Boolean  @default(true)
+  criadoEm   DateTime @default(now())
+  atualizado DateTime @updatedAt
+
+  @@index([ordem])
+}
+
+model TransparenteSecretaria {
+  id         String   @id @default(cuid())
+  codigo     String   @unique
+  nome       String
+  valor      Decimal  @default(0) @db.Decimal(18, 2)
+  percentual Decimal  @default(0) @db.Decimal(6, 2)
+  ordem      Int      @default(0)
+  criadoEm   DateTime @default(now())
+  atualizado DateTime @updatedAt
+
+  @@index([ordem])
+}

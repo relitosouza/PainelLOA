@@ -24,6 +24,7 @@ import { aggregateContractReportGroups } from "@/lib/contratos-report-aggregatio
 import {
   buildAnaliseLoaItems,
   getActionTypeLabel,
+  mergeImportedLoaValues,
   normalizeBancoProjetoAllocation,
   resolveAddedExpenses,
   withAddedExpenses,
@@ -885,78 +886,14 @@ export function AnaliseLoaView() {
 
         setNaturezaOptions(Object.entries(nomMap).map(([codigo, nome]) => ({ codigo, nome })).sort((left, right) => left.codigo.localeCompare(right.codigo, "pt-BR", { numeric: true })));
         const loaMap = new Map<string, RawBudgetItem>();
+        let importedLoaRecords: Array<{ organ?: string; budgetUnit?: string; functionName?: string; subfunction?: string; program?: string; action?: string; expenseNature?: string; subelement?: string; administrativeProcess?: string; fonteRecurso?: string | null; value?: number }> = [];
 
         // Tentar carregar registros reais atualizados via API /api/loa?all=true
         try {
           const apiLoaRes = await fetch("/api/loa?all=true");
           if (apiLoaRes.ok) {
             const apiLoaData = await apiLoaRes.json();
-            if (false && apiLoaData && Array.isArray(apiLoaData.records) && apiLoaData.records.length > 0) {
-              apiLoaData.records.forEach((r: { id?: string; organ?: string; budgetUnit?: string; program?: string; action?: string; expenseNature?: string; subelement?: string; administrativeProcess?: string; value?: number }) => {
-                const organStr = String(r.organ || "").trim();
-                const unitStr = String(r.budgetUnit || "").trim();
-                const programStr = normalizeProgramLabel(String(r.program || ""));
-                const actionStr = normalizeActionLabel(String(r.action || ""));
-                let natureStr = String(r.expenseNature || "").trim();
-                const subelemStr = String(r.subelement || "").trim();
-                const processStr = String(r.administrativeProcess || "").trim();
-                const valor = Number(r.value) || 0;
-                const vinculo = "Tesouro / Próprio";
-
-                const natCodeClean = natureStr.split("-")[0].trim();
-                const natCodeRaw = natCodeClean.replace(/\D/g, "");
-                const officialDesc = nomMap[natCodeClean] || nomMap[natCodeRaw];
-                if (officialDesc) {
-                  natureStr = `${natCodeClean} - ${officialDesc}`;
-                }
-
-                const parts = natCodeClean.split(".");
-                const catDespesaMap: Record<string, string> = {
-                  "3": "3 — DESPESAS CORRENTES",
-                  "4": "4 — DESPESAS DE CAPITAL",
-                  "9": "9 — RESERVA DE CONTINGÊNCIA",
-                };
-                const catEcon = parts[0] ? (catDespesaMap[parts[0]] || `${parts[0]} — Despesa`) : "Outras";
-                const grupoDespesaMap: Record<string, string> = {
-                  "0": "RESTOS A PAGAR",
-                  "1": "PESSOAL E ENCARGOS SOCIAIS",
-                  "2": "JUROS E ENCARGOS DA DÍVIDA",
-                  "3": "OUTRAS DESPESAS CORRENTES",
-                  "4": "INVESTIMENTOS",
-                  "5": "INVERSÕES FINANCEIRAS",
-                  "6": "AMORTIZAÇÃO DA DÍVIDA",
-                  "8": "EXTRAORÇAMENTÁRIA",
-                  "9": "RESERVA DE CONTINGÊNCIA",
-                };
-                const grupoNome = parts[1] ? grupoDespesaMap[parts[1]] : undefined;
-                const grpNat = parts[1]
-                  ? (grupoNome ? `${parts[0]}.${parts[1]} — ${grupoNome}` : `${parts[0]}.${parts[1]} — Grupo`)
-                  : "Outros";
-                const elem = parts.length >= 4 ? parts.slice(0, 4).join(".") : parts[2] ? `${parts[0]}.${parts[1]}.${parts[2]}` : "Outros";
-
-                const groupKey = `${organStr}|${programStr}|${actionStr}|${natureStr}|${vinculo}|${processStr}|${subelemStr}`;
-
-                loaMap.set(groupKey, {
-                  id: groupKey,
-                  progKey: programStr || groupKey,
-                  secretaria: organStr,
-                  orgao: organStr,
-                  unidade: normalizeUnidadeOrcamentaria(organStr, unitStr, programStr || groupKey),
-                  programa: programStr,
-                  tipoAcao: getActionTypeLabel(actionStr),
-                  acao: actionStr,
-                  natureza: natureStr,
-                  fonteVinculo: vinculo,
-                  categoriaEconomica: catEcon,
-                  grupoNatureza: grpNat,
-                  elemento: elem,
-                  subelemento: subelemStr,
-                  processo: processStr || "—",
-                  valLdo: 0,
-                  valLoa: valor,
-                });
-              });
-            }
+            if (apiLoaData && Array.isArray(apiLoaData.records) && apiLoaData.records.length > 0) importedLoaRecords = apiLoaData.records;
           }
         } catch (apiError) {
           console.warn("Não foi possível carregar registros via API:", apiError);
@@ -973,7 +910,11 @@ export function AnaliseLoaView() {
         const wb = XLSX.read(buffer, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-        buildAnaliseLoaItems(rows as unknown[][], nomMap).forEach((item) => loaMap.set(item.id, item));
+        const staticItems = buildAnaliseLoaItems(rows as unknown[][], nomMap);
+        const baseItemsFromSource = importedLoaRecords.length
+          ? mergeImportedLoaValues(staticItems, importedLoaRecords, nomMap)
+          : staticItems;
+        baseItemsFromSource.forEach((item) => loaMap.set(item.id, item));
 
         // A LOA 2026 é publicada por natureza de despesa, sem subelemento/processo. O valor Inicial é
         // distribuído entre os subelementos só para que os totais por natureza fechem; na tela ele
@@ -1878,7 +1819,7 @@ export function AnaliseLoaView() {
     const groups = new Map<string, EditableGroup>();
 
     tableItems.forEach((item) => {
-      const groupKey = [item.programa, item.acao].join("|");
+      const groupKey = [item.secretaria, item.programa, item.acao].join("|");
       const group = groups.get(groupKey) ?? {
         id: `edit-group-${groupKey}`,
         secretaria: item.secretaria,

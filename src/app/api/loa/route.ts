@@ -216,7 +216,7 @@ export async function GET(request: Request) {
       db.budgetRecord.aggregate({ where: baseWhere, _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: withExpensePrefix(where, "3"), _sum: { value: true } }),
       db.budgetRecord.aggregate({ where: withExpensePrefix(where, "4"), _sum: { value: true } }),
-      db.budgetRecord.findMany({ where, select: { id: true, ...select, value: true }, orderBy: { [sort]: direction }, skip: (page - 1) * pageSize, take: pageSize }),
+      db.budgetRecord.findMany({ where, select: { id: true, ...select, value: true, fonteRecurso: true }, orderBy: { [sort]: direction }, skip: (page - 1) * pageSize, take: pageSize }),
       Promise.all(FIELDS.map((field) => db.budgetRecord.groupBy({ by: [field], where: baseWhere }))),
       Promise.all(FIELDS.map((field) => groupBy(field, where))),
       groupBy("organ", secretariatWhere),

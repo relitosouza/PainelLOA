@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAnaliseLoaSavedData, buildAnaliseLoaItems, resolveAddedExpenses, type RawBudgetItem } from "./loa-analise-items";
+import { applyAnaliseLoaSavedData, buildAnaliseLoaItems, mergeImportedLoaValues, resolveAddedExpenses, type RawBudgetItem } from "./loa-analise-items";
 
 const header = ["secretaria", "unidade", "programa", "acao", "natureza", "desc_sub", "processo", "valor", "Peça Orçamentária", "Vínculo"];
 const row = (peca: string, valor: number, sub = "MATERIAL") =>
@@ -50,6 +50,46 @@ describe("applyAnaliseLoaSavedData", () => {
       valLoa: 0,
       valorAditamento: 500,
     });
+  });
+});
+
+describe("mergeImportedLoaValues", () => {
+  it("substitui a LOA antiga pelos valores da importação e mantém a LDO", () => {
+    const base = buildAnaliseLoaItems([header, row("LOA", 100), row("LDO", 80)], {});
+    const merged = mergeImportedLoaValues(base, [{
+      organ: "08 - SECRETARIA DE EDUCAÇÃO",
+      budgetUnit: "001",
+      program: "0001",
+      action: "2.001 - Ação",
+      expenseNature: "3.3.90.30.00",
+      subelement: "MATERIAL",
+      fonteRecurso: "01.200.0000",
+      administrativeProcess: "—",
+      value: 250,
+    }], {});
+
+    expect(merged.reduce((sum, item) => sum + item.valLoa, 0)).toBe(250);
+    expect(merged.reduce((sum, item) => sum + item.valLdo, 0)).toBe(80);
+  });
+
+  it("mescla registros importados com traço ou vazio ('—', '') no mesmo item base e assume descrição canônica do programa", () => {
+    const base = buildAnaliseLoaItems([header, row("LDO", 15000, "")], {});
+    const merged = mergeImportedLoaValues(base, [{
+      organ: "08 - SECRETARIA DE EDUCAÇÃO",
+      budgetUnit: "001",
+      program: "0001",
+      action: "2.001",
+      expenseNature: "3.3.90.30.00",
+      subelement: "—",
+      fonteRecurso: "01.200.0000",
+      administrativeProcess: "—",
+      value: 12000,
+    }], {});
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].valLdo).toBe(15000);
+    expect(merged[0].valLoa).toBe(12000);
+    expect(merged[0].programa).toBe("0001 - Administração e Coordenação Geral");
   });
 });
 

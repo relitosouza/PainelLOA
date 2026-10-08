@@ -12,6 +12,10 @@ const PUBLIC_PATHS = [
   "/api/receitas/loa/modelo",
   "/api/orcamento/comparativo-secretarias",
   "/api/elaboracao-loa/resumo",
+  "/transparente",
+  "/api/transparente/resumo",
+  "/api/transparente/admin",
+  "/api/transparente/snapshot",
 ];
 
 export async function proxy(request: NextRequest) {

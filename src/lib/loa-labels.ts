@@ -74,10 +74,39 @@ export function normalizeActionLabel(value: string) {
   return clean.replace(/^(\d+[\.\d]*)\s*[-—–]+\s*/, "$1 - ").replace(/\s+/g, " ");
 }
 
+export const PROGRAM_CANONICAL_MAP: Record<string, string> = {
+  "0001": "0001 - Administração e Coordenação Geral",
+  "0002": "0002 - Governo Inteligente, Aberto e Inovador",
+  "0003": "0003 - Atividades Legislativas",
+  "0004": "0004 - Planejamento e Gestão de Políticas Públicas",
+  "0005": "0005 - Resiliência Urbana",
+  "0006": "0006 - Segurança Pública e Fiscalização Inteligente",
+  "0007": "0007 - Meio Ambiente, Sustentabilidade e Bem-Estar Animal",
+  "0008": "0008 - Empreendedorismo, Negócios e Turismo",
+  "0009": "0009 - Cultura, Economia Criativa e Patrimônio Histórico",
+  "0010": "0010 - Esporte, Lazer e Bem-Estar",
+  "0011": "0011 - Zeladoria Urbana e Cuidados com a Cidade",
+  "0012": "0012 - Moradia Digna",
+  "0013": "0013 - Mobilidade Urbana e Infraestrutura Viária",
+  "0014": "0014 - Gestão em Saúde",
+  "0015": "0015 - Atenção e Cuidado em Saúde",
+  "0016": "0016 - Escola para Todos",
+  "0017": "0017 - Trabalho, Emprego e Renda",
+  "0018": "0018 - Proteção Social e Garantia de Direitos",
+  "0019": "0019 - Segurança Alimentar e Combate à Pobreza",
+  "0020": "0020 - Benefícios da Previdência Social",
+  "0021": "0021 - Encargos Especiais",
+  "9999": "9999 - Reserva de Contingência",
+};
+
 export function normalizeProgramLabel(value: string) {
   if (!value) return value;
   const program = value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
-  if (program === "0021" || program.startsWith("0021")) return "0021 - Encargos Especiais";
+  const match = program.match(/^(\d+)/);
+  const code = match ? match[1].padStart(4, "0") : null;
+  if (code && PROGRAM_CANONICAL_MAP[code]) {
+    return PROGRAM_CANONICAL_MAP[code];
+  }
   return program.replace(/^(\d+)\s*[-—–]*\s*/, "$1 - ").replace(/\s+/g, " ");
 }
 

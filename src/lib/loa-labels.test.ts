@@ -46,3 +46,22 @@ describe("normalizeSecretariaLabel", () => {
     expect(normalize("Secretaria sem código")).toBe("Secretaria sem código");
   });
 });
+
+describe("normalizeProgramLabel", () => {
+  it("adota a descrição canônica oficial quando só o código numérico é informado", async () => {
+    const { normalizeProgramLabel } = await import("./loa-labels");
+    expect(normalizeProgramLabel("0002")).toBe("0002 - Governo Inteligente, Aberto e Inovador");
+    expect(normalizeProgramLabel("0002 -")).toBe("0002 - Governo Inteligente, Aberto e Inovador");
+    expect(normalizeProgramLabel("0002 —")).toBe("0002 - Governo Inteligente, Aberto e Inovador");
+    expect(normalizeProgramLabel("0017")).toBe("0017 - Trabalho, Emprego e Renda");
+    expect(normalizeProgramLabel("0017 -")).toBe("0017 - Trabalho, Emprego e Renda");
+    expect(normalizeProgramLabel("0021")).toBe("0021 - Encargos Especiais");
+  });
+
+  it("completa a descrição canônica quando o texto após o código é um prefixo da descrição oficial", async () => {
+    const { normalizeProgramLabel } = await import("./loa-labels");
+    expect(normalizeProgramLabel("0002 - GOVERNO INTELIGENT")).toBe("0002 - Governo Inteligente, Aberto e Inovador");
+    expect(normalizeProgramLabel("0017 - TRABALHO, EMPREGO")).toBe("0017 - Trabalho, Emprego e Renda");
+  });
+});
+

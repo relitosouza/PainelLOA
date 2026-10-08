@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
-import { applyAnaliseLoaSavedData, buildAnaliseLoaItems, type AnaliseLoaSavedData, type RawBudgetItem } from "@/lib/loa-analise-items";
+import { applyAnaliseLoaSavedData, buildAnaliseLoaItems, mergeImportedLoaValues, type AnaliseLoaSavedData, type RawBudgetItem } from "@/lib/loa-analise-items";
 import { buildNomenclaturaMap } from "@/lib/nomenclatura-map";
 
 /**
@@ -39,5 +39,29 @@ export async function loadAnaliseLoaItems(): Promise<RawBudgetItem[]> {
     financialEdits: asRecord<NonNullable<AnaliseLoaSavedData["financialEdits"]>>(valor("painel_loa_reajustes_aditamentos")),
   };
 
-  return applyAnaliseLoaSavedData(buildAnaliseLoaItems(rows, buildNomenclaturaMap(nomenclaturas)), saved);
+  const imported = await db.loaImport.findFirst({ orderBy: { createdAt: "desc" } });
+  const importedRecords = imported
+    ? await db.budgetRecord.findMany({
+        where: { importId: imported.id },
+        select: {
+          organ: true,
+          budgetUnit: true,
+          functionName: true,
+          subfunction: true,
+          program: true,
+          action: true,
+          expenseNature: true,
+          subelement: true,
+          administrativeProcess: true,
+          fonteRecurso: true,
+          value: true,
+        },
+      })
+    : [];
+  const nomenclaturaMap = buildNomenclaturaMap(nomenclaturas);
+  const baseItems = buildAnaliseLoaItems(rows, nomenclaturaMap);
+  const items = importedRecords.length
+    ? mergeImportedLoaValues(baseItems, importedRecords.map((record) => ({ ...record, value: record.value.toNumber() })), nomenclaturaMap)
+    : baseItems;
+  return applyAnaliseLoaSavedData(items, saved);
 }

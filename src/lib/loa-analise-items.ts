@@ -39,6 +39,131 @@ export interface RawBudgetItem {
   vinculoParentId?: string;
 }
 
+export type ImportedLoaRecord = {
+  organ?: string;
+  budgetUnit?: string;
+  functionName?: string;
+  subfunction?: string;
+  program?: string;
+  action?: string;
+  expenseNature?: string;
+  subelement?: string;
+  administrativeProcess?: string;
+  fonteRecurso?: string | null;
+  value?: number;
+};
+
+function leadingCode(value: string) {
+  return value.trim().match(/^\d+(?:\.\d+)+|^\d+/)?.[0] ?? value.trim().toLocaleUpperCase("pt-BR");
+}
+
+function sourceCode(value: string, application?: string) {
+  const source = value.trim();
+  const app = application?.trim();
+  if (source && app && /^\d/.test(source)) return `${source}.${app}`;
+  return source;
+}
+
+function normalizeKeyField(val: string | null | undefined): string {
+  const s = String(val ?? "").trim().toLocaleUpperCase("pt-BR");
+  if (!s || s === "—" || s === "-" || s === "--") return "";
+  return s;
+}
+
+function itemImportKey(item: Pick<RawBudgetItem, "secretaria" | "programa" | "acao" | "natureza" | "fonteVinculo" | "codigoAplicacao" | "processo" | "subelemento">) {
+  return [
+    leadingCode(item.secretaria),
+    leadingCode(item.programa),
+    leadingCode(item.acao),
+    leadingCode(item.natureza),
+    sourceCode(item.fonteVinculo, item.codigoAplicacao),
+    normalizeKeyField(item.processo),
+    normalizeKeyField(item.subelemento),
+  ].join("|");
+}
+
+function importedRecordKey(record: ImportedLoaRecord) {
+  return [
+    leadingCode(String(record.organ ?? "")),
+    leadingCode(String(record.program ?? "")),
+    leadingCode(String(record.action ?? "")),
+    leadingCode(String(record.expenseNature ?? "")),
+    String(record.fonteRecurso ?? "").trim(),
+    normalizeKeyField(record.administrativeProcess),
+    normalizeKeyField(record.subelement),
+  ].join("|");
+}
+
+/** Substitui somente os valores LOA da base estática pelos registros da importação ativa. */
+export function mergeImportedLoaValues(items: RawBudgetItem[], records: ImportedLoaRecord[], nomMap: Record<string, string>) {
+  const importedByKey = new Map<string, ImportedLoaRecord & { totalValue: number }>();
+  for (const record of records) {
+    const key = importedRecordKey(record);
+    const current = importedByKey.get(key);
+    if (current) current.totalValue += Number(record.value) || 0;
+    else importedByKey.set(key, { ...record, totalValue: Number(record.value) || 0 });
+  }
+
+  const matched = new Set<string>();
+  const merged: RawBudgetItem[] = [];
+  for (const item of items) {
+    const key = itemImportKey(item);
+    const imported = importedByKey.get(key);
+    if (imported) {
+      matched.add(key);
+      // IDs baseados na importação impedem que edições salvas da planilha antiga
+      // sobrescrevam os valores da nova LOA.
+      merged.push({ ...item, id: `import-${key}`, valLoa: imported.totalValue });
+      continue;
+    }
+    // Linhas que existem apenas na planilha antiga não podem continuar como
+    // LOA, mas o valor LDO delas ainda precisa permanecer para os comparativos.
+    if (item.valLdo !== 0) merged.push({ ...item, id: `ldo-${item.id}`, valLoa: 0 });
+    else if (item.valLoa === 0) merged.push(item);
+  }
+
+  for (const [key, record] of importedByKey) {
+    if (matched.has(key)) continue;
+    const organ = String(record.organ ?? "").trim();
+    const unit = String(record.budgetUnit ?? "").trim();
+    const program = normalizeProgramLabel(String(record.program ?? "").trim());
+    const action = normalizeActionLabel(String(record.action ?? "").trim());
+    const rawNature = String(record.expenseNature ?? "").trim();
+    const natureCode = rawNature.split("-")[0].trim();
+    const nature = nomMap[natureCode] ? `${natureCode} - ${nomMap[natureCode]}` : rawNature;
+    const parts = natureCode.split(".");
+    const source = String(record.fonteRecurso ?? "").trim();
+    const sourceParts = source.split(".");
+    const fonte = sourceParts.length > 1 ? sourceParts[0] : source;
+    const application = sourceParts.length > 1 ? sourceParts.slice(1).join(".") : undefined;
+    const category = parts[0] === "3" ? "3 — DESPESAS CORRENTES" : parts[0] === "4" ? "4 — DESPESAS DE CAPITAL" : parts[0] === "9" ? "9 — RESERVA DE CONTINGÊNCIA" : `${parts[0] || "Outras"} — Despesa`;
+    const group = parts[1] ? `${parts[0]}.${parts[1]} — Grupo` : "Outros";
+    merged.push({
+      id: `import-${key}`,
+      progKey: program || key,
+      secretaria: organ,
+      orgao: organ,
+      unidade: normalizeUnidadeOrcamentaria(organ, unit, program || key),
+      funcao: String(record.functionName ?? "").trim(),
+      subfuncao: String(record.subfunction ?? "").trim(),
+      programa: program,
+      tipoAcao: getActionTypeLabel(action),
+      acao: action,
+      natureza: nature,
+      fonteVinculo: fonte,
+      codigoAplicacao: application,
+      categoriaEconomica: category,
+      grupoNatureza: group,
+      elemento: parts.length >= 4 ? parts.slice(0, 4).join(".") : "Outros",
+      subelemento: String(record.subelement ?? "").trim(),
+      processo: String(record.administrativeProcess ?? "").trim() || "—",
+      valLdo: 0,
+      valLoa: record.totalValue,
+    });
+  }
+  return merged;
+}
+
 export const normalizeBancoProjetoAllocation = (item: RawBudgetItem): RawBudgetItem => {
   const isBancoProjeto = item.origem === "Banco de Projetos" || item.id.startsWith("banco-projeto-") || Boolean(item.bancoProjetoKey);
   if (!isBancoProjeto || item.valLoa === 0) return item;

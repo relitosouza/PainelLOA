@@ -2,10 +2,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { currency, integer } from "@/lib/format";
 import { AREAS_TRANSPARENTE } from "@/lib/transparente-areas";
-import { getTransparenteResumo, type TransparenteResumo } from "@/lib/transparente-resumo.server";
+import { getTransparenteDados, type TransparenteResumo } from "@/lib/transparente-dados.server";
 import { ScrollReveal } from "./scroll-reveal";
-
-const EXERCICIO = "2027";
 
 function formatCompact(valor: number) {
   if (valor >= 1e9) return `R$ ${(valor / 1e9).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} Bi`;
@@ -20,11 +18,12 @@ function formatPercent(valor: number) {
 export default async function TransparentePage() {
   let carregado: TransparenteResumo | null = null;
   try {
-    carregado = await getTransparenteResumo();
+    carregado = await getTransparenteDados();
   } catch (error) {
     console.error("Não foi possível carregar o resumo do Orçamento Transparente:", error);
   }
   const resumo = carregado;
+  const EXERCICIO = resumo?.exercicio || "2027";
 
   const areas = resumo
     ? AREAS_TRANSPARENTE.map((area) => ({
@@ -64,9 +63,16 @@ export default async function TransparentePage() {
         <header className="bg-surface-container-lowest sticky top-0 z-50 shadow-sm">
           <nav className="flex justify-between items-center w-full px-margin-desktop max-w-container-max mx-auto h-20">
             <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">Orçamento Transparente</Link>
-            <div className="hidden md:flex items-center space-x-8 font-body-md text-body-md">
+            <div className="hidden md:flex items-center space-x-6 font-body-md text-body-md">
               <Link href="/" className="text-on-surface-variant hover:text-primary transition-colors">
                 Visão Analítica
+              </Link>
+              <Link
+                href="/transparente/admin"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-outline-variant/60 bg-surface-container-low text-on-surface hover:border-primary hover:text-primary transition-all shadow-2xs"
+              >
+                <span className="material-symbols-outlined text-sm">tune</span>
+                Gestão de Dados
               </Link>
             </div>
           </nav>
