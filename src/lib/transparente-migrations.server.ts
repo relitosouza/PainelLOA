@@ -59,6 +59,22 @@ const DDL_COMMANDS = [
   )`,
 
   `CREATE INDEX IF NOT EXISTS "TransparenteSecretaria_ordem_idx" ON "TransparenteSecretaria"("ordem")`,
+
+  `CREATE TABLE IF NOT EXISTS "TransparenteSugestao" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "nome" TEXT NOT NULL,
+    "email" TEXT,
+    "bairro" TEXT,
+    "area" TEXT NOT NULL,
+    "titulo" TEXT NOT NULL,
+    "descricao" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'PENDENTE',
+    "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS "TransparenteSugestao_area_idx" ON "TransparenteSugestao"("area")`,
+  `CREATE INDEX IF NOT EXISTS "TransparenteSugestao_status_idx" ON "TransparenteSugestao"("status")`,
+  `CREATE INDEX IF NOT EXISTS "TransparenteSugestao_criadoEm_idx" ON "TransparenteSugestao"("criadoEm")`,
 ];
 
 /**

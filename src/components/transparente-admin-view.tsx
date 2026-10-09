@@ -25,6 +25,18 @@ type InvestimentoItem = {
   destaque?: boolean;
 };
 
+type SugestaoItem = {
+  id: string;
+  nome: string;
+  email?: string | null;
+  bairro?: string | null;
+  area: string;
+  titulo: string;
+  descricao: string;
+  status: string;
+  criadoEm: string;
+};
+
 type ConfigData = {
   exercicio: string;
   totalGeral: number;
@@ -42,7 +54,7 @@ export function TransparenteAdminView() {
   const [sincronizando, setSincronizando] = useState(false);
   const [mensagem, setMensagem] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"geral" | "areas" | "investimentos">("geral");
+  const [activeTab, setActiveTab] = useState<"geral" | "areas" | "investimentos" | "sugestoes">("geral");
 
   const [config, setConfig] = useState<ConfigData>({
     exercicio: "2027",
@@ -57,6 +69,7 @@ export function TransparenteAdminView() {
 
   const [areas, setAreas] = useState<AreaItem[]>([]);
   const [investimentos, setInvestimentos] = useState<InvestimentoItem[]>([]);
+  const [sugestoes, setSugestoes] = useState<SugestaoItem[]>([]);
 
   // Novo Investimento form
   const [novoInvTitulo, setNovoInvTitulo] = useState("");
@@ -87,6 +100,13 @@ export function TransparenteAdminView() {
         });
         setAreas(data.porArea || []);
         setInvestimentos(data.topInvestimentos || []);
+      }
+
+      // Carregar sugestões dos cidadãos
+      const resSug = await fetch("/api/transparente/sugestoes");
+      const dataSug = await resSug.json();
+      if (dataSug.success) {
+        setSugestoes(dataSug.sugestoes || []);
       }
     } catch {
       setMensagem({ tipo: "erro", texto: "Falha ao carregar dados do orçamento." });
@@ -303,6 +323,17 @@ export function TransparenteAdminView() {
         >
           <span className="material-symbols-outlined text-base">star</span>
           Maiores Investimentos ({investimentos.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("sugestoes")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === "sugestoes"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <span className="material-symbols-outlined text-base">campaign</span>
+          Sugestões de Cidadãos ({sugestoes.length})
         </button>
       </div>
 
@@ -671,6 +702,75 @@ export function TransparenteAdminView() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: SUGESTÕES DE CIDADÃOS */}
+      {activeTab === "sugestoes" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2">
+            <div>
+              <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">campaign</span>
+                Propostas Enviadas pela População
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Ideias e prioridades de investimentos enviadas diretamente pelo botão &quot;Sugerir Investimento&quot; do portal.
+              </p>
+            </div>
+            <span className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-bold">
+              {sugestoes.length} {sugestoes.length === 1 ? "proposta" : "propostas"}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {sugestoes.map((sug) => (
+              <div
+                key={sug.id}
+                className="bg-card p-5 rounded-xl border border-border shadow-2xs space-y-3"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-foreground">{sug.titulo}</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary/15 text-secondary font-semibold">
+                        {sug.area}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span><strong>Cidadão:</strong> {sug.nome}</span>
+                      {sug.email && <span><strong>E-mail:</strong> {sug.email}</span>}
+                      {sug.bairro && <span><strong>Bairro:</strong> {sug.bairro}</span>}
+                    </div>
+                  </div>
+
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                    {new Date(sug.criadoEm).toLocaleDateString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+
+                <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                  {sug.descricao}
+                </p>
+              </div>
+            ))}
+
+            {sugestoes.length === 0 && (
+              <div className="bg-card p-12 rounded-xl border border-border text-center space-y-2">
+                <span className="material-symbols-outlined text-4xl text-muted-foreground">inbox</span>
+                <h4 className="text-sm font-semibold text-foreground">Nenhuma sugestão recebida ainda</h4>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  Assim que os cidadãos enviarem sugestões pelo portal, elas aparecerão listadas aqui para triagem da equipe.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

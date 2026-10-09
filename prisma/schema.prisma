@@ -553,3 +553,19 @@ model TransparenteSecretaria {
 
   @@index([ordem])
 }
+
+model TransparenteSugestao {
+  id         String   @id @default(cuid())
+  nome       String
+  email      String?
+  bairro     String?
+  area       String
+  titulo     String
+  descricao  String
+  status     String   @default("PENDENTE")
+  criadoEm   DateTime @default(now())
+
+  @@index([area])
+  @@index([status])
+  @@index([criadoEm])
+}

@@ -18,6 +18,7 @@ const PUBLIC_PATHS = [
   "/api/transparente/resumo",
   "/api/transparente/admin",
   "/api/transparente/snapshot",
+  "/api/transparente/sugestoes",
 ];
 
 export async function proxy(request: NextRequest) {

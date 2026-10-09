@@ -4,6 +4,7 @@ import { currency, integer } from "@/lib/format";
 import { AREAS_TRANSPARENTE } from "@/lib/transparente-areas";
 import { getTransparenteDados, type TransparenteResumo } from "@/lib/transparente-dados.server";
 import { ScrollReveal } from "./scroll-reveal";
+import { SugerirInvestimentoButton } from "@/components/sugerir-investimento-button";
 
 function formatCompact(valor: number) {
   if (valor >= 1e9) return `R$ ${(valor / 1e9).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} Bi`;
@@ -331,14 +332,16 @@ export default async function TransparentePage() {
                   <h2 className="font-display-lg text-display-lg text-primary mb-6">Sua voz faz a diferença</h2>
                   <p className="font-body-lg text-body-lg text-on-surface-variant mb-12">A transparência só é completa com a participação cidadã. Ajude-nos a priorizar os investimentos que Osasco realmente precisa.</p>
                   <div className="flex flex-col sm:flex-row gap-gutter justify-center">
-                    <button className="flex items-center justify-center gap-3 bg-secondary text-on-secondary px-10 py-5 rounded-2xl font-label-md text-lg hover:scale-105 transition-soft shadow-lg">
-                      <span className="material-symbols-outlined">add_circle</span>
-                      Sugerir Investimento
-                    </button>
-                    <button className="flex items-center justify-center gap-3 border-2 border-outline-variant text-on-surface px-10 py-5 rounded-2xl font-label-md text-lg hover:bg-surface-container-low transition-soft">
+                    <SugerirInvestimentoButton
+                      areasDisponiveis={areas.map((a) => ({ key: a.key, label: a.label }))}
+                    />
+                    <a
+                      href="mailto:transparencia@osasco.sp.gov.br?subject=Reportar%20Problema%20-%20Or%C3%A7amento%20Transparente"
+                      className="flex items-center justify-center gap-3 border-2 border-outline-variant text-on-surface px-10 py-5 rounded-2xl font-label-md text-lg hover:bg-surface-container-low transition-soft"
+                    >
                       <span className="material-symbols-outlined">report</span>
                       Reportar Problema
-                    </button>
+                    </a>
                   </div>
                 </div>
               </section>
