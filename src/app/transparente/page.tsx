@@ -65,6 +65,15 @@ export default async function TransparentePage() {
             <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">
               Orçamento Transparente
             </Link>
+            <div className="flex items-center space-x-4">
+              <Link
+                href="/transparente/admin"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-outline-variant/60 bg-surface-container-low text-on-surface hover:border-primary hover:text-primary transition-all shadow-2xs"
+              >
+                <span className="material-symbols-outlined text-sm">tune</span>
+                Gestão de Dados
+              </Link>
+            </div>
           </nav>
         </header>
 
