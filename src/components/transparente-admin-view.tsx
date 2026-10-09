@@ -548,13 +548,67 @@ export function TransparenteAdminView() {
                   <label className="block text-[11px] font-medium text-foreground mb-1">Formato Visual</label>
                   <select
                     value={novoCardFormato}
-                    onChange={(e) => setNovoCardFormato(e.target.value as "compact" | "currency" | "integer")}
+                    onChange={(e) => setNovoCardFormato(e.target.value as "compacto" | "moeda" | "inteiro")}
                     className="w-full px-2.5 py-1.5 text-xs rounded-md border border-input bg-background focus:ring-1 focus:ring-primary"
                   >
-                    <option value="compact">Compacto (ex: R$ 85,0 mi)</option>
-                    <option value="currency">Moeda cheia (ex: R$ 85.000.000,00)</option>
-                    <option value="integer">Número inteiro</option>
+                    <option value="compacto">Compacto (ex: R$ 85,0 mi)</option>
+                    <option value="moeda">Moeda cheia (ex: R$ 85.000.000,00)</option>
+                    <option value="inteiro">Número inteiro</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Seletor do Ícone do Card */}
+              <div className="pt-2 border-t border-border/60">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-medium text-foreground">Ícone do Card:</span>
+                    <div className="flex items-center gap-1.5 bg-background border border-border px-2 py-1 rounded-md">
+                      <span className="material-symbols-outlined text-primary text-base">
+                        {novoCardIcone || "payments"}
+                      </span>
+                      <input
+                        type="text"
+                        value={novoCardIcone}
+                        onChange={(e) => setNovoCardIcone(e.target.value.trim().toLowerCase())}
+                        placeholder="nome do icone"
+                        className="text-xs bg-transparent border-none outline-none w-36 font-mono"
+                        title="Digite o nome de qualquer ícone do Google Material Symbols"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ícones Rápidos Recomendados */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground mr-1">Sugestões:</span>
+                    {[
+                      { icon: "account_balance_wallet", label: "Carteira" },
+                      { icon: "receipt_long", label: "Custeio" },
+                      { icon: "payments", label: "Pagamentos" },
+                      { icon: "savings", label: "Poupança" },
+                      { icon: "badge", label: "Pessoal" },
+                      { icon: "trending_up", label: "Crescimento" },
+                      { icon: "analytics", label: "Análise" },
+                      { icon: "domain", label: "Prédios" },
+                      { icon: "construction", label: "Obras" },
+                      { icon: "health_and_safety", label: "Saúde" },
+                      { icon: "school", label: "Educação" },
+                    ].map((sug) => (
+                      <button
+                        key={sug.icon}
+                        type="button"
+                        onClick={() => setNovoCardIcone(sug.icon)}
+                        title={sug.label}
+                        className={`p-1 rounded text-xs inline-flex items-center justify-center transition-colors ${
+                          novoCardIcone === sug.icon
+                            ? "bg-primary text-primary-foreground font-bold shadow-2xs"
+                            : "bg-background border border-border text-foreground hover:bg-muted"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">{sug.icon}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -566,7 +620,7 @@ export function TransparenteAdminView() {
                       setNovoCardTitulo("Despesas Correntes");
                       setNovoCardLegenda("Custeio e Manutenção");
                       setNovoCardIcone("receipt_long");
-                      setNovoCardFormato("compact");
+                      setNovoCardFormato("compacto");
                     }}
                     className="text-[11px] text-primary hover:underline font-medium inline-flex items-center gap-1"
                   >
