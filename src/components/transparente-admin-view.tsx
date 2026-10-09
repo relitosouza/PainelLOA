@@ -25,6 +25,18 @@ type InvestimentoItem = {
   destaque?: boolean;
 };
 
+type CardDestaqueItem = {
+  id: string;
+  titulo: string;
+  valor: number | string;
+  legenda?: string;
+  icone: string;
+  tipoFormato?: "compacto" | "moeda" | "inteiro" | "texto";
+  corIcone?: string;
+  corFundoIcone?: string;
+  ordem?: number;
+};
+
 type SugestaoItem = {
   id: string;
   nome: string;
@@ -42,6 +54,7 @@ type ConfigData = {
   totalGeral: number;
   totalInvestimentos: number;
   totalSecretarias: number;
+  cardsDestaque?: CardDestaqueItem[];
   tituloHero: string;
   subtituloHero: string;
   notaInformativa: string;
@@ -82,6 +95,13 @@ export function TransparenteAdminView() {
   const [novaAreaValor, setNovaAreaValor] = useState<number | "">("");
   const [novaAreaIcone, setNovaAreaIcone] = useState("category");
 
+  // Novo Card Extra de Totais form
+  const [novoCardTitulo, setNovoCardTitulo] = useState("Despesas Correntes");
+  const [novoCardValor, setNovoCardValor] = useState<number | "">("");
+  const [novoCardLegenda, setNovoCardLegenda] = useState("Custeio e Manutenção");
+  const [novoCardIcone, setNovoCardIcone] = useState("account_balance_wallet");
+  const [novoCardFormato, setNovoCardFormato] = useState<"compacto" | "moeda" | "inteiro">("compacto");
+
   const carregarDados = async () => {
     try {
       setLoading(true);
@@ -93,6 +113,7 @@ export function TransparenteAdminView() {
           totalGeral: data.total || 0,
           totalInvestimentos: data.totalInvestimentos || 0,
           totalSecretarias: data.totalSecretarias || 0,
+          cardsDestaque: Array.isArray(data.cardsDestaque) ? data.cardsDestaque : [],
           tituloHero: data.tituloHero || "",
           subtituloHero: data.subtituloHero || "",
           notaInformativa: data.notaInformativa || "",
@@ -213,6 +234,31 @@ export function TransparenteAdminView() {
 
   const handleRemoveArea = (idx: number) => {
     setAreas(areas.filter((_, i) => i !== idx));
+  };
+
+  const handleAddCardDestaque = () => {
+    if (!novoCardTitulo.trim() || novoCardValor === "") return;
+    const novoCard: CardDestaqueItem = {
+      id: "card-" + Date.now(),
+      titulo: novoCardTitulo.trim(),
+      valor: Number(novoCardValor),
+      legenda: novoCardLegenda.trim() || undefined,
+      icone: novoCardIcone.trim() || "payments",
+      tipoFormato: novoCardFormato,
+      corIcone: "text-amber-600",
+      corFundoIcone: "bg-amber-100 dark:bg-amber-950/40",
+      ordem: (config.cardsDestaque?.length || 0) + 1,
+    };
+    const lista = [...(config.cardsDestaque || []), novoCard];
+    setConfig({ ...config, cardsDestaque: lista });
+    setNovoCardTitulo("");
+    setNovoCardValor("");
+    setNovoCardLegenda("");
+  };
+
+  const handleRemoveCardDestaque = (id: string) => {
+    const lista = (config.cardsDestaque || []).filter((c) => c.id !== id);
+    setConfig({ ...config, cardsDestaque: lista });
   };
 
   if (loading) {
@@ -442,6 +488,146 @@ export function TransparenteAdminView() {
               Última atualização registrada no banco:{" "}
               <strong>{config.atualizadoEm ? new Date(config.atualizadoEm).toLocaleString("pt-BR") : "—"}</strong>
             </div>
+          </div>
+
+          {/* Seção: Cards Extras em Destaque (Totais Globais) */}
+          <div className="md:col-span-2 bg-card p-6 rounded-xl border border-border shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+              <div>
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">view_carousel</span>
+                  Cards Extras em Destaque (Totais Globais)
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Adicione cards adicionais no topo da página de Transparência (ex: Despesas Correntes, Custeio e Manutenção, Pessoal, etc.).
+                </p>
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded bg-muted text-muted-foreground">
+                {(config.cardsDestaque || []).length} card(s) extra(s)
+              </span>
+            </div>
+
+            {/* Form de Inserção de Novo Card */}
+            <div className="bg-muted/40 p-4 rounded-lg border border-border/80 space-y-3">
+              <span className="text-xs font-semibold text-foreground block">
+                + Adicionar Novo Card aos Totais Globais
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="lg:col-span-2">
+                  <label className="block text-[11px] font-medium text-foreground mb-1">Título do Card *</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Despesas Correntes"
+                    value={novoCardTitulo}
+                    onChange={(e) => setNovoCardTitulo(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-md border border-input bg-background focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-foreground mb-1">Valor Numérico (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Ex: 85000000"
+                    value={novoCardValor}
+                    onChange={(e) => setNovoCardValor(e.target.value ? Number(e.target.value) : "")}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-md border border-input bg-background font-mono focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-foreground mb-1">Subtítulo / Legenda</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Custeio e Manutenção"
+                    value={novoCardLegenda}
+                    onChange={(e) => setNovoCardLegenda(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-md border border-input bg-background focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-foreground mb-1">Formato Visual</label>
+                  <select
+                    value={novoCardFormato}
+                    onChange={(e) => setNovoCardFormato(e.target.value as "compact" | "currency" | "integer")}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-md border border-input bg-background focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="compact">Compacto (ex: R$ 85,0 mi)</option>
+                    <option value="currency">Moeda cheia (ex: R$ 85.000.000,00)</option>
+                    <option value="integer">Número inteiro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNovoCardTitulo("Despesas Correntes");
+                      setNovoCardLegenda("Custeio e Manutenção");
+                      setNovoCardIcone("receipt_long");
+                      setNovoCardFormato("compact");
+                    }}
+                    className="text-[11px] text-primary hover:underline font-medium inline-flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-xs">auto_fix_high</span>
+                    Preencher com: Despesas Correntes
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddCardDestaque}
+                  disabled={!novoCardTitulo.trim() || novoCardValor === ""}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-sm">add</span>
+                  Adicionar Card
+                </button>
+              </div>
+            </div>
+
+            {/* Lista dos cards extras existentes */}
+            {(!config.cardsDestaque || config.cardsDestaque.length === 0) ? (
+              <p className="text-xs text-muted-foreground italic py-2">
+                Nenhum card adicional cadastrado. O portal exibirá os 3 cards padrão (Orçamento Total, Investimentos e Órgãos).
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                {config.cardsDestaque.map((card, idx) => (
+                  <div
+                    key={card.id || idx}
+                    className="p-3 rounded-lg border border-border bg-background flex items-start justify-between gap-2 shadow-2xs hover:border-primary/40 transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-amber-600 text-sm">
+                          {card.icone || "payments"}
+                        </span>
+                        <span className="text-xs font-bold text-foreground">{card.titulo}</span>
+                      </div>
+                      <div className="text-sm font-extrabold text-foreground font-mono">
+                        {card.tipoFormato === "currency"
+                          ? currency.format(card.valor)
+                          : card.tipoFormato === "integer"
+                          ? card.valor.toLocaleString("pt-BR")
+                          : `R$ ${(card.valor / 1_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mi`}
+                      </div>
+                      {card.legenda && (
+                        <p className="text-[11px] text-muted-foreground">{card.legenda}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCardDestaque(card.id)}
+                      className="p-1 text-muted-foreground hover:text-destructive rounded hover:bg-muted transition-colors"
+                      title="Remover card"
+                    >
+                      <span className="material-symbols-outlined text-base">delete</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

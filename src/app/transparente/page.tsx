@@ -152,6 +152,53 @@ export default async function TransparentePage() {
                       <h3 className="font-headline-lg text-headline-lg text-secondary animate-in-target">{integer.format(resumo.totalSecretarias)}</h3>
                       <p className="text-label-md text-on-surface-variant mt-2 italic">Com dotação prevista</p>
                     </div>
+
+                    {/* Cards Extras Dinâmicos cadastrados no Admin */}
+                    {resumo.cardsDestaque?.map((card) => {
+                      const numValor = typeof card.valor === "number" ? card.valor : Number(card.valor);
+                      const isNum = !isNaN(numValor) && card.valor !== "" && card.valor !== null;
+                      const textoExibicao = isNum
+                        ? card.tipoFormato === "moeda"
+                          ? currency.format(numValor)
+                          : card.tipoFormato === "inteiro"
+                          ? integer.format(numValor)
+                          : formatCompact(numValor)
+                        : String(card.valor);
+
+                      return (
+                        <div
+                          key={card.id}
+                          className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-soft"
+                        >
+                          <div
+                            className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${
+                              card.corFundoIcone || "bg-primary-fixed"
+                            }`}
+                          >
+                            <span
+                              className={`material-symbols-outlined ${
+                                card.corIcone || "text-primary"
+                              }`}
+                            >
+                              {card.icone || "insights"}
+                            </span>
+                          </div>
+                          <p className="text-label-md text-on-surface-variant mb-1">{card.titulo}</p>
+                          <h3
+                            className={`font-headline-lg text-headline-lg animate-in-target ${
+                              card.corIcone || "text-primary"
+                            }`}
+                          >
+                            {textoExibicao}
+                          </h3>
+                          {card.legenda && (
+                            <p className="text-label-md text-on-surface-variant mt-2 italic">
+                              {card.legenda}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </section>

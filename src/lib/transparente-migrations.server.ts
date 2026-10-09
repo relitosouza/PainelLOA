@@ -9,11 +9,14 @@ const DDL_COMMANDS = [
     "totalGeral" DECIMAL(18, 2) NOT NULL DEFAULT 0,
     "totalInvestimentos" DECIMAL(18, 2) NOT NULL DEFAULT 0,
     "totalSecretarias" INTEGER NOT NULL DEFAULT 0,
+    "cardsDestaque" JSONB,
     "tituloHero" TEXT,
     "subtituloHero" TEXT,
     "notaInformativa" TEXT,
     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+
+  `ALTER TABLE "TransparenteConfig" ADD COLUMN IF NOT EXISTS "cardsDestaque" JSONB`,
 
   `CREATE TABLE IF NOT EXISTS "TransparenteArea" (
     "id" TEXT NOT NULL PRIMARY KEY,

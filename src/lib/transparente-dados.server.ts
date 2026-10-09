@@ -32,11 +32,24 @@ export type ResumoInvestimento = {
   destaque?: boolean;
 };
 
+export type CardDestaqueItem = {
+  id: string;
+  titulo: string;
+  valor: number | string;
+  legenda?: string;
+  icone: string;
+  tipoFormato?: "compacto" | "moeda" | "inteiro" | "texto";
+  corIcone?: string;
+  corFundoIcone?: string;
+  ordem?: number;
+};
+
 export type TransparenteResumo = {
   exercicio: string;
   total: number;
   totalInvestimentos: number;
   totalSecretarias: number;
+  cardsDestaque?: CardDestaqueItem[];
   porSecretaria: ResumoSecretaria[];
   porArea: ResumoArea[];
   topInvestimentos: ResumoInvestimento[];
@@ -277,6 +290,7 @@ export async function getTransparenteDados(): Promise<TransparenteResumo> {
       total: Number(config.totalGeral),
       totalInvestimentos: Number(config.totalInvestimentos),
       totalSecretarias: config.totalSecretarias,
+      cardsDestaque: Array.isArray(config.cardsDestaque) ? (config.cardsDestaque as unknown as CardDestaqueItem[]) : undefined,
       porSecretaria,
       porArea,
       topInvestimentos,

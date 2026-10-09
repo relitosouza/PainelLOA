@@ -503,6 +503,7 @@ model TransparenteConfig {
   totalGeral         Decimal  @default(0) @db.Decimal(18, 2)
   totalInvestimentos Decimal  @default(0) @db.Decimal(18, 2)
   totalSecretarias   Int      @default(0)
+  cardsDestaque      Json?
   tituloHero         String?
   subtituloHero      String?
   notaInformativa    String?
