@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getTransparenteDados } from "@/lib/transparente-dados.server";
+import { assegurarTabelasTransparente } from "@/lib/transparente-migrations.server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   try {
+    await assegurarTabelasTransparente();
     const body = await req.json();
     const { config, areas, topInvestimentos } = body;
 

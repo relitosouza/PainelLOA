@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { loadAnaliseLoaItems } from "@/lib/loa-analise-items.server";
 import { calculateAnalyticalValues, getSecretariatCode } from "@/lib/loa-analytical-values";
 import { AREAS_TRANSPARENTE } from "@/lib/transparente-areas";
+import { assegurarTabelasTransparente } from "@/lib/transparente-migrations.server";
 
 export type ResumoSecretaria = {
   codigo: string;
@@ -59,6 +60,7 @@ function rotuloPublico(acao: string) {
  * do Orçamento Transparente.
  */
 export async function sincronizarSnapshotTransparente(): Promise<TransparenteResumo> {
+  await assegurarTabelasTransparente();
   const items = await loadAnaliseLoaItems();
 
   let total = 0;
@@ -225,6 +227,7 @@ export async function sincronizarSnapshotTransparente(): Promise<TransparenteRes
  */
 export async function getTransparenteDados(): Promise<TransparenteResumo> {
   try {
+    await assegurarTabelasTransparente();
     const config = await db.transparenteConfig.findUnique({
       where: { id: "default" },
     });
