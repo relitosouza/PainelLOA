@@ -3,6 +3,7 @@ import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 // Rotas públicas que não exigem autenticação
 const PUBLIC_PATHS = [
+  "/",
   "/login",
   "/favicon.ico",
   "/brasao.png",
