@@ -62,19 +62,9 @@ export default async function TransparentePage() {
         {/* TopNavBar */}
         <header className="bg-surface-container-lowest sticky top-0 z-50 shadow-sm">
           <nav className="flex justify-between items-center w-full px-margin-desktop max-w-container-max mx-auto h-20">
-            <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">Orçamento Transparente</Link>
-            <div className="hidden md:flex items-center space-x-6 font-body-md text-body-md">
-              <Link href="/" className="text-on-surface-variant hover:text-primary transition-colors">
-                Visão Analítica
-              </Link>
-              <Link
-                href="/transparente/admin"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-outline-variant/60 bg-surface-container-low text-on-surface hover:border-primary hover:text-primary transition-all shadow-2xs"
-              >
-                <span className="material-symbols-outlined text-sm">tune</span>
-                Gestão de Dados
-              </Link>
-            </div>
+            <Link href="/" className="font-headline-md text-headline-md font-bold text-primary cursor-pointer hover:opacity-80">
+              Orçamento Transparente
+            </Link>
           </nav>
         </header>
 
@@ -95,13 +85,13 @@ export default async function TransparentePage() {
               <div className="max-w-2xl">
                 <h1 className="font-display-lg text-display-lg text-primary mb-6">Orçamento Transparente: O Orçamento de Osasco na palma da sua mão</h1>
                 <p className="font-body-lg text-body-lg text-on-surface-variant mb-10">Consulte cada real da proposta orçamentária de {EXERCICIO} e acompanhe como os recursos são distribuídos entre as secretarias.</p>
-                <Link
-                  href="/analise-loa"
+                <a
+                  href="#visao-geral"
                   className="inline-flex items-center gap-2 bg-primary text-on-primary px-8 py-3 rounded-lg font-label-md text-label-md hover:opacity-90 transition-opacity"
                 >
                   <span className="material-symbols-outlined">query_stats</span>
-                  Explorar os dados detalhados
-                </Link>
+                  Explorar os dados do orçamento
+                </a>
               </div>
             </div>
           </section>
@@ -120,7 +110,7 @@ export default async function TransparentePage() {
           {resumo && (
             <>
               {/* Overview Stats */}
-              <section className="py-16 bg-surface-container-low">
+              <section id="visao-geral" className="py-16 bg-surface-container-low scroll-mt-20">
                 <div className="px-margin-desktop max-w-container-max mx-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter">
                     {/* Total Budget */}
